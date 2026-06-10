@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "otter",
+    "otter_codegen",
+]
+default-members = [
+    "otter",
+    "otter_codegen",
+]
+# Test fixtures under test_apps/ are separate cargo projects with their
+# own workspaces. Excluding them keeps `cargo build` at the root from
+# treating their crates as workspace members.
+exclude = [
+    "test_apps/*",
+]
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"

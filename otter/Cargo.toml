@@ -1,0 +1,23 @@
+[package]
+name = "otter"
+version = "0.1.0"
+edition = "2024"
+authors = ["Lynn Gabbay"]
+license = "MIT OR Apache-2.0"
+description = "Write Erlang NIFs in Rust. Direct mapping of the NIF C ABI with compile-time lifetime safety and no hidden magic."
+repository = "https://github.com/cubelio/otter"
+readme = "../README.md"
+keywords = ["erlang", "nif", "beam", "otp", "ffi"]
+categories = ["api-bindings", "external-ffi-bindings"]
+
+[dependencies]
+otter_codegen = { path = "../otter_codegen" }
+
+[dev-dependencies]
+trybuild = "1"
+
+[features]
+nif_2_18 = []
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

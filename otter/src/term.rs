@@ -1,0 +1,496 @@
+//! `RawTerm<'a>` and `Term<'a>`.
+
+use crate::codec::{CodecError, Decoder, Encoder};
+use crate::env::Env;
+use crate::sys::{NifHash, NifTerm, NifTermType, NifUniqueInteger};
+use crate::types::{
+    Atom, Binary, Bitstring, Float, Fun, Integer, List, Map, Pid, Port, Reference, Tuple,
+};
+use crate::wrapper;
+
+// ---------------------------------------------------------------------------
+// RawTerm
+// ---------------------------------------------------------------------------
+
+/// Level 1: the bare `ERL_NIF_TERM` machine word plus its environment.
+///
+/// Zero work done — no type check, no data extraction. The fastest possible
+/// way to hold a received term. Call `resolve()` to pay the cost of one
+/// `enif_term_type` call and produce a typed `Term<'a>`.
+///
+/// `RawTerm` is a received type. You cannot construct one from scratch —
+/// all term construction goes through concrete types (`Atom::new`, `Map::new`,
+/// etc.), which always produce a known type.
+#[derive(Clone, Copy)]
+pub struct RawTerm<'a> {
+    pub(crate) term: NifTerm,
+    pub(crate) env: Env<'a>,
+}
+
+impl<'a> RawTerm<'a> {
+    /// Wrap a raw term pointer. Used internally by NIF argument unpacking.
+    #[inline]
+    pub(crate) fn new(env: Env<'a>, term: NifTerm) -> RawTerm<'a> {
+        RawTerm { term, env }
+    }
+
+    /// The environment this term belongs to.
+    #[inline]
+    pub fn env(self) -> Env<'a> {
+        self.env
+    }
+
+    /// The underlying machine word. Returned directly from a NIF with zero
+    /// additional work.
+    #[inline]
+    pub fn as_raw(self) -> NifTerm {
+        self.term
+    }
+
+    /// Resolve to a typed `Term<'a>` by calling `enif_term_type`.
+    ///
+    /// For the `Bitstring` type tag, a second call to `enif_is_binary` is
+    /// needed to determine whether the value is a byte-aligned `Binary` or a
+    /// sub-byte `Bitstring`.
+    pub fn resolve(self) -> Term<'a> {
+        let env_ptr = self.env.as_ptr();
+        match unsafe { wrapper::term::term_type(env_ptr, self.term) } {
+            NifTermType::Atom => {
+                Term::Atom(Atom::from_raw(self.term))
+            }
+            NifTermType::Bitstring => {
+                if unsafe { wrapper::check::is_binary(env_ptr, self.term) } {
+                    Term::Binary(Binary { term: self.term, env: self.env })
+                } else {
+                    Term::Bitstring(Bitstring { term: self.term, env: self.env })
+                }
+            }
+            NifTermType::Float => {
+                Term::Float(Float { term: self.term, env: self.env })
+            }
+            NifTermType::Fun => {
+                Term::Fun(Fun { term: self.term, env: self.env })
+            }
+            NifTermType::Integer => {
+                Term::Integer(Integer { term: self.term, env: self.env })
+            }
+            NifTermType::List => {
+                Term::List(List { term: self.term, env: self.env })
+            }
+            NifTermType::Map => {
+                Term::Map(Map { term: self.term, env: self.env })
+            }
+            NifTermType::Pid => {
+                Term::Pid(Pid { term: self.term })
+            }
+            NifTermType::Port => {
+                Term::Port(Port { term: self.term })
+            }
+            NifTermType::Reference => {
+                Term::Reference(Reference { term: self.term, env: self.env })
+            }
+            NifTermType::Tuple => {
+                Term::Tuple(Tuple { term: self.term, env: self.env })
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Term
+// ---------------------------------------------------------------------------
+
+/// Level 2: typed enum. One `enif_term_type` call has been made.
+///
+/// The correct variant is known. Data is still on the BEAM heap — nothing
+/// has been extracted.
+///
+/// The `Bitstring` type tag in `ErlNifTermType` maps to two variants here
+/// (`Binary` and `Bitstring`) because `enif_is_binary` must be called to
+/// distinguish them. Resolving a `Bitstring`-tagged term costs two NIF calls.
+#[derive(Clone, Copy)]
+pub enum Term<'a> {
+    Atom(Atom),
+    Binary(Binary<'a>),
+    Bitstring(Bitstring<'a>),
+    Float(Float<'a>),
+    Fun(Fun<'a>),
+    Integer(Integer<'a>),
+    List(List<'a>),
+    Map(Map<'a>),
+    Pid(Pid),
+    Port(Port),
+    Reference(Reference<'a>),
+    Tuple(Tuple<'a>),
+}
+
+impl<'a> Term<'a> {
+    /// Extract the underlying machine word. Discards the variant tag.
+    /// Use this when returning a `Term` from a NIF at the C boundary.
+    pub fn as_raw(self) -> NifTerm {
+        match self {
+            Term::Atom(v)      => v.term,
+            Term::Binary(v)    => v.term,
+            Term::Bitstring(v) => v.term,
+            Term::Float(v)     => v.term,
+            Term::Fun(v)       => v.term,
+            Term::Integer(v)   => v.term,
+            Term::List(v)      => v.term,
+            Term::Map(v)       => v.term,
+            Term::Pid(v)       => v.term,
+            Term::Port(v)      => v.term,
+            Term::Reference(v) => v.term,
+            Term::Tuple(v)     => v.term,
+        }
+    }
+}
+
+impl<'a> PartialEq for RawTerm<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
+    }
+}
+
+impl<'a> Eq for RawTerm<'a> {}
+
+impl<'a> PartialOrd for RawTerm<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Ord for RawTerm<'a> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
+        c.cmp(&0)
+    }
+}
+
+impl<'a> PartialEq for Term<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe { crate::wrapper::term::is_identical(self.as_raw(), other.as_raw()) }
+    }
+}
+
+impl<'a> Eq for Term<'a> {}
+
+impl<'a> PartialOrd for Term<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Ord for Term<'a> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let c = unsafe { crate::wrapper::term::compare(self.as_raw(), other.as_raw()) };
+        c.cmp(&0)
+    }
+}
+
+impl<'a> Term<'a> {
+    /// Serialize this term to the external binary format.
+    ///
+    /// Returns `None` if serialization fails (should not happen for valid terms).
+    ///
+    /// Wraps `enif_term_to_binary`.
+    pub fn to_binary(self, env: Env<'a>) -> Option<Binary<'a>> {
+        let mut bin: crate::sys::NifBinary = unsafe { std::mem::zeroed() };
+        if unsafe { crate::wrapper::binary::term_to_binary(env.as_ptr(), self.as_raw(), &mut bin) }
+        {
+            // term_to_binary allocates via alloc_binary; we need to make it into a term.
+            let term = unsafe { crate::wrapper::binary::make_binary(env.as_ptr(), &mut bin) };
+            Some(Binary { term, env })
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> From<RawTerm<'a>> for Term<'a> {
+    fn from(raw: RawTerm<'a>) -> Term<'a> {
+        raw.resolve()
+    }
+}
+
+impl<'a> From<Atom> for Term<'a> {
+    fn from(v: Atom) -> Term<'a> { Term::Atom(v) }
+}
+impl<'a> From<Binary<'a>> for Term<'a> {
+    fn from(v: Binary<'a>) -> Term<'a> { Term::Binary(v) }
+}
+impl<'a> From<Bitstring<'a>> for Term<'a> {
+    fn from(v: Bitstring<'a>) -> Term<'a> { Term::Bitstring(v) }
+}
+impl<'a> From<Float<'a>> for Term<'a> {
+    fn from(v: Float<'a>) -> Term<'a> { Term::Float(v) }
+}
+impl<'a> From<Fun<'a>> for Term<'a> {
+    fn from(v: Fun<'a>) -> Term<'a> { Term::Fun(v) }
+}
+impl<'a> From<Integer<'a>> for Term<'a> {
+    fn from(v: Integer<'a>) -> Term<'a> { Term::Integer(v) }
+}
+impl<'a> From<List<'a>> for Term<'a> {
+    fn from(v: List<'a>) -> Term<'a> { Term::List(v) }
+}
+impl<'a> From<Map<'a>> for Term<'a> {
+    fn from(v: Map<'a>) -> Term<'a> { Term::Map(v) }
+}
+impl<'a> From<Pid> for Term<'a> {
+    fn from(v: Pid) -> Term<'a> { Term::Pid(v) }
+}
+impl<'a> From<Port> for Term<'a> {
+    fn from(v: Port) -> Term<'a> { Term::Port(v) }
+}
+impl<'a> From<Reference<'a>> for Term<'a> {
+    fn from(v: Reference<'a>) -> Term<'a> { Term::Reference(v) }
+}
+impl<'a> From<Tuple<'a>> for Term<'a> {
+    fn from(v: Tuple<'a>) -> Term<'a> { Term::Tuple(v) }
+}
+
+impl<'b> Encoder for Term<'b> {
+    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+        let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.as_raw()) };
+        RawTerm::new(env, term)
+    }
+}
+
+impl<'a> Decoder<'a> for Term<'a> {
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        Ok(term)
+    }
+}
+
+impl<'b> Encoder for RawTerm<'b> {
+    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+        let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
+        RawTerm::new(env, term)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TermIn — sealed trait for "anything that wraps a NIF term"
+// ---------------------------------------------------------------------------
+
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// A type that wraps a NIF term and can be used as an argument to otter
+/// functions.
+///
+/// All otter term types implement this: [`Atom`], [`Binary`], [`Integer`],
+/// [`List`], [`Term`], [`RawTerm`], etc. This trait is sealed — it cannot
+/// be implemented outside the crate.
+pub trait TermIn: sealed::Sealed {
+    /// Extract the underlying NIF term value.
+    #[doc(hidden)]
+    fn as_c_arg(&self) -> NifTerm;
+}
+
+impl sealed::Sealed for Atom {}
+impl sealed::Sealed for Binary<'_> {}
+impl sealed::Sealed for Bitstring<'_> {}
+impl sealed::Sealed for Float<'_> {}
+impl sealed::Sealed for Fun<'_> {}
+impl sealed::Sealed for Integer<'_> {}
+impl sealed::Sealed for List<'_> {}
+impl sealed::Sealed for Map<'_> {}
+impl sealed::Sealed for Pid {}
+impl sealed::Sealed for Port {}
+impl sealed::Sealed for Reference<'_> {}
+impl sealed::Sealed for Tuple<'_> {}
+impl sealed::Sealed for RawTerm<'_> {}
+impl sealed::Sealed for Term<'_> {}
+impl<T: sealed::Sealed> sealed::Sealed for &T {}
+
+impl TermIn for Atom {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Binary<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Bitstring<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Float<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Fun<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Integer<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for List<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Map<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Pid {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Port {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Reference<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Tuple<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for RawTerm<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.term }
+}
+impl TermIn for Term<'_> {
+    fn as_c_arg(&self) -> NifTerm { self.as_raw() }
+}
+impl<T: TermIn> TermIn for &T {
+    fn as_c_arg(&self) -> NifTerm { (**self).as_c_arg() }
+}
+
+// ---------------------------------------------------------------------------
+// Env::raise / Env::raise_badarg
+// ---------------------------------------------------------------------------
+
+impl<'a> Env<'a> {
+    /// Tell the scheduler how much of the current timeslice this NIF has consumed.
+    ///
+    /// `percent` should be between 1 and 100. Returns `true` if the timeslice
+    /// has been exhausted — the NIF should return as soon as possible to allow
+    /// the scheduler to run other processes.
+    ///
+    /// Wraps `enif_consume_timeslice`.
+    pub fn consume_timeslice(self, percent: i32) -> bool {
+        unsafe { crate::wrapper::term::consume_timeslice(self.as_ptr(), percent) != 0 }
+    }
+
+    /// Create a unique integer.
+    ///
+    /// `properties` is a bitmask of `NifUniqueInteger::POSITIVE` and
+    /// `NifUniqueInteger::MONOTONIC`. Use `NifUniqueInteger(0)` for an arbitrary unique integer.
+    ///
+    /// Wraps `enif_make_unique_integer`.
+    pub fn make_unique_integer(self, properties: NifUniqueInteger) -> Term<'a> {
+        let raw = unsafe {
+            wrapper::term::make_unique_integer(self.as_ptr(), properties)
+        };
+        RawTerm::new(self, raw).resolve()
+    }
+
+    /// Hash a term using the specified algorithm.
+    ///
+    /// `algorithm` is `NifHash::Phash2` (portable, consistent across nodes)
+    /// or `NifHash::InternalHash` (node-local, faster).
+    ///
+    /// Wraps `enif_hash`.
+    pub fn hash(self, algorithm: NifHash, term: impl TermIn, salt: u64) -> u64 {
+        wrapper::term::hash(algorithm, term.as_c_arg(), salt)
+    }
+
+    /// Check if the calling process is still alive.
+    ///
+    /// Returns `true` if the process that invoked this NIF is still alive.
+    /// Wraps `enif_is_current_process_alive`.
+    pub fn is_current_process_alive(self) -> bool {
+        unsafe { wrapper::pid::is_current_process_alive(self.as_ptr()) }
+    }
+
+    /// Raise an exception with the given reason term.
+    ///
+    /// The returned value must be returned from the NIF function via
+    /// `.as_raw()`. It is **not** a valid term — do not inspect or resolve it.
+    /// Wraps `enif_raise_exception`.
+    pub fn raise(self, reason: impl TermIn) -> RawTerm<'a> {
+        let raw =
+            unsafe { wrapper::exception::raise_exception(self.as_ptr(), reason.as_c_arg()) };
+        RawTerm::new(self, raw)
+    }
+
+    /// Raise a `badarg` error.
+    ///
+    /// The returned value must be returned from the NIF function via
+    /// `.as_raw()`. It is **not** a valid term — do not inspect or resolve it.
+    /// Wraps `enif_make_badarg`.
+    pub fn raise_badarg(self) -> RawTerm<'a> {
+        let raw = unsafe { wrapper::exception::make_badarg(self.as_ptr()) };
+        RawTerm::new(self, raw)
+    }
+
+    /// Reschedule the current NIF to run `fp` with the given arguments.
+    ///
+    /// `fun_name` is the name reported to Erlang tracing. `flags` is one of
+    /// `sys::NIF_DIRTY_JOB_NORMAL`, `sys::NIF_DIRTY_JOB_CPU_BOUND`, or
+    /// `sys::NIF_DIRTY_JOB_IO_BOUND`.
+    ///
+    /// The return value of this function must be returned directly from
+    /// the NIF.
+    ///
+    /// # Safety
+    ///
+    /// `fp` must be a valid NIF function pointer. `argv` must point to
+    /// `argc` valid terms.
+    ///
+    /// Wraps `enif_schedule_nif`.
+    pub unsafe fn schedule_nif(
+        self,
+        fun_name: &std::ffi::CStr,
+        flags: i32,
+        fp: unsafe extern "C" fn(
+            *mut crate::sys::NifEnv,
+            std::ffi::c_int,
+            *const crate::sys::NifTerm,
+        ) -> crate::sys::NifTerm,
+        argc: i32,
+        argv: *const crate::sys::NifTerm,
+    ) -> Term<'a> {
+        let raw = unsafe {
+            wrapper::schedule::schedule_nif(
+                self.as_ptr(),
+                fun_name.as_ptr(),
+                flags,
+                fp,
+                argc,
+                argv,
+            )
+        };
+        RawTerm::new(self, raw).resolve()
+    }
+
+    /// Set the halt delay in milliseconds. Must be called from the load callback.
+    ///
+    /// Wraps `enif_set_option(ERL_NIF_OPT_DELAY_HALT, ...)`.
+    pub fn set_option_delay_halt(self, delay_ms: u64) -> bool {
+        unsafe { wrapper::system::set_option_delay_halt(self.as_ptr(), delay_ms) }
+    }
+
+    /// Set the on-halt callback. Must be called from the load callback.
+    ///
+    /// # Safety
+    ///
+    /// `callback` must remain valid for the lifetime of the VM.
+    ///
+    /// Wraps `enif_set_option(ERL_NIF_OPT_ON_HALT, ...)`.
+    pub unsafe fn set_option_on_halt(
+        self,
+        callback: unsafe extern "C" fn(*mut std::ffi::c_void),
+    ) -> bool {
+        unsafe { wrapper::system::set_option_on_halt(self.as_ptr(), callback) }
+    }
+
+    /// Set the on-unload-thread callback. Must be called from the load callback.
+    ///
+    /// # Safety
+    ///
+    /// `callback` must remain valid for the lifetime of the VM.
+    ///
+    /// Wraps `enif_set_option(ERL_NIF_OPT_ON_UNLOAD_THREAD, ...)`.
+    pub unsafe fn set_option_on_unload_thread(
+        self,
+        callback: unsafe extern "C" fn(*mut std::ffi::c_void),
+    ) -> bool {
+        unsafe { wrapper::system::set_option_on_unload_thread(self.as_ptr(), callback) }
+    }
+}
