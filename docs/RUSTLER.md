@@ -62,7 +62,7 @@ Rustler exposes lists with an iterator interface. Otter exposes `List<'a>` as a 
 
 Rustler has an `Error` enum with five variants: `BadArg`, `Atom(&str)` and `Term(Box<dyn Encoder>)` (which *return* — the latter as `{error, term}`), and `RaiseAtom(&str)` and `RaiseTerm(Box<dyn Encoder>)` (which *raise*). The same return type encodes two different control-flow behaviors; which one happens depends on which variant you picked.
 
-The NIF C API exposes exactly two exception mechanisms: `enif_make_badarg` and `enif_raise_exception`. Otter exposes those as `Env::raise_badarg()` and `Env::raise(term)`. `Ok(value)` returns. `Err(reason)` always raises (via `enif_raise_exception`). One mechanism per behavior.
+The NIF C API exposes exactly two exception mechanisms: `enif_make_badarg` and `enif_raise_exception`. Otter exposes those as `Env::raise_badarg()` and `Env::raise(term)` for direct use. The idiomatic shape is a `Result<T, E>` return type where both `T: Encoder` and `E: Encoder`: `Ok(value)` encodes and returns, `Err(reason)` encodes the reason and raises it via `enif_raise_exception`. One behavior per shape, no enum dispatch.
 
 ### Explicit NIF registration
 

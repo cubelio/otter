@@ -554,22 +554,9 @@ pub trait Decoder<'a>: Sized {
 
 ## Error Handling
 
-### Raising exceptions
-
-```rust
-// Raise badarg
-let err_term = env.raise_badarg();
-// Must return err_term from the NIF
-
-// Raise with a reason — accepts any TermIn, no .encode(env) needed
-let reason = Atom::new(env, "my_error").unwrap();
-let err_term = env.raise(reason);
-// Must return err_term from the NIF
-```
-
 ### Result return type
 
-The `#[otter::nif]` macro handles `Result<T, E>` where both `T: Encoder` and `E: Encoder`:
+The idiomatic shape is a `Result<T, E>` return type where both `T: Encoder` and `E: Encoder`. `Ok(val)` encodes and returns; `Err(reason)` encodes the reason and raises it as a class-`error` exception (via `enif_raise_exception`):
 
 ```rust
 #[otter::nif]
@@ -584,7 +571,22 @@ fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a
 }
 ```
 
-`Ok(val)` encodes and returns normally. `Err(reason)` encodes the reason and raises it as an exception.
+This is normal `Encoder` trait dispatch on the return type — `Result<T, E>` has a blanket impl. No macro-level special case; a user type happening to be named `Result` does not inherit this behavior.
+
+### Raising exceptions explicitly
+
+For the cases where a `Result` return type doesn't fit — raising from a helper, or building the error term mid-function — call the raise primitives directly. Both produce a `Term<'a>` that you return from the NIF:
+
+```rust
+// badarg
+return env.raise_badarg();
+
+// arbitrary reason — accepts any TermIn, no .encode(env) needed
+let reason = Atom::new(env, "my_error").unwrap();
+return env.raise(reason);
+```
+
+These are the only two exception mechanisms in the NIF C API (`enif_make_badarg` and `enif_raise_exception`). The `Err` branch of a `Result` return goes through `enif_raise_exception` under the hood.
 
 ---
 
