@@ -444,7 +444,7 @@ rustler = "0.37"
 ```erlang
 %% rebar.config
 {plugins, [
-    {rebar3_otter, {git, "https://github.com/cubelio/otter.git", {branch, "master"}}}
+    {rebar3_otter, {git_subdir, "https://github.com/cubelio/otter.git", {branch, "master"}, "rebar3_otter"}}
 ]}.
 {provider_hooks, [
     {pre, [{compile, otter_compile}, {clean, otter_clean}]}

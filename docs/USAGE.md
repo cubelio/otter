@@ -38,7 +38,7 @@ The crate must be `cdylib` — this produces a shared library the BEAM can load.
 ```erlang
 {erl_opts, [debug_info]}.
 {plugins, [
-    {rebar3_otter, {git, "https://github.com/cubelio/otter.git", {branch, "master"}}}
+    {rebar3_otter, {git_subdir, "https://github.com/cubelio/otter.git", {branch, "master"}, "rebar3_otter"}}
 ]}.
 {provider_hooks, [
     {pre, [{compile, otter_compile}, {clean, otter_clean}]}

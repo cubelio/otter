@@ -39,7 +39,7 @@ In `rebar.config`:
 
 ```erlang
 {plugins, [
-    {rebar3_otter, {git, "https://github.com/cubelio/otter.git", {branch, "master"}}}
+    {rebar3_otter, {git_subdir, "https://github.com/cubelio/otter.git", {branch, "master"}, "rebar3_otter"}}
 ]}.
 
 {otter_crates, [

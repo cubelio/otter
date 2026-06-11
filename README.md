@@ -16,77 +16,93 @@ See [docs/RUSTLER.md](docs/RUSTLER.md) for a detailed comparison.
 
 ## Quick start
 
-### Rust (`native/my_nifs/src/lib.rs`)
+This walks through a working NIF from an empty directory. It assumes `rebar3`,
+`cargo`, and an OTP 26+ install are on your `PATH`. The example uses an
+application called `my_app` with a NIF crate called `my_nifs`.
 
-```rust
-use otter::env::Env;
-use otter::types::{Atom, Integer};
+**1. Create the Erlang application.**
 
-otter::declare_atoms![world];
-
-#[otter::nif]
-fn hello(_env: Env) -> Atom {
-    otter::atom![world]
-}
-
-#[otter::nif]
-fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    let sum = i64::try_from(a).unwrap() + i64::try_from(b).unwrap();
-    Integer::from_i64(env, sum)
-}
-
-fn on_load(env: Env, _load_info: otter::term::Term) -> bool {
-    otter::init_atoms!(env);
-    true
-}
-
-otter::init!("my_nifs", [hello, add], load = on_load);
+```console
+$ rebar3 new app name=my_app
+$ cd my_app
 ```
 
-### Erlang (`src/my_nifs.erl`)
-
-```erlang
--module(my_nifs).
--on_load(init/0).
--export([hello/0, add/2]).
-
-init() ->
-    erlang:load_nif(filename:join(code:priv_dir(my_app), "native/my_nifs"), 0).
-
-hello()     -> exit(nif_not_loaded).
-add(_A, _B) -> exit(nif_not_loaded).
-```
-
-### Cargo.toml (`native/my_nifs/Cargo.toml`)
-
-```toml
-[package]
-name = "my_nifs"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-otter = { git = "https://github.com/cubelio/otter.git" }
-```
-
-### rebar.config
+**2. Add the plugin to `rebar.config`.** The plugin lives in a subdirectory of
+the otter repo, so it must be referenced with `git_subdir`:
 
 ```erlang
 {plugins, [
-    {rebar3_otter, {git, "https://github.com/cubelio/otter.git", {branch, "master"}}}
+    {rebar3_otter, {git_subdir, "https://github.com/cubelio/otter.git", {branch, "master"}, "rebar3_otter"}}
+]}.
+```
+
+**3. Scaffold the NIF crate.**
+
+```console
+$ rebar3 otter new --name my_nifs
+```
+
+This creates `native/my_nifs/Cargo.toml` (already depending on otter from git)
+and `native/my_nifs/src/lib.rs` with a minimal NIF:
+
+```rust
+use otter::env::Env;
+use otter::types::Atom;
+
+#[otter::nif]
+fn hello(env: Env) -> Atom {
+    Atom::new(env, "world").unwrap()
+}
+
+otter::init!("my_nifs", [hello]);
+```
+
+**4. Register the crate and build hooks in `rebar.config`** (the scaffolder
+prints this for you):
+
+```erlang
+{otter_crates, [
+    #{name => my_nifs, path => "native/my_nifs"}
 ]}.
 {provider_hooks, [
     {pre, [{compile, otter_compile}, {clean, otter_clean}]}
 ]}.
-{otter_crates, [
-    #{name => my_nifs, path => "native/my_nifs"}
-]}.
 ```
 
-Build with `rebar3 compile`. The plugin calls `cargo`, finds the `.so`, and puts it in `priv/native/`.
+**5. Write the Erlang loader module `src/my_nifs.erl`.** This is standard
+Erlang and is yours to write — the plugin never generates Erlang source. The
+module name must match the name passed to `otter::init!`:
+
+```erlang
+-module(my_nifs).
+-export([hello/0]).
+-on_load(init/0).
+
+init() ->
+    erlang:load_nif(filename:join(code:priv_dir(my_app), "native/my_nifs"), 0).
+
+%% Stub replaced at load time by the NIF implementation.
+hello() -> exit(nif_not_loaded).
+```
+
+**6. Build.** The `pre_compile` hook invokes `cargo` (pulling otter from git on
+the first build), locates the `.so`, and installs it into `priv/native/`.
+
+```console
+$ rebar3 compile
+===> Compiling Rust crate my_nifs
+===> Installed .../my_app/priv/native/my_nifs.so
+```
+
+**7. Verify.**
+
+```console
+$ rebar3 shell --eval 'io:format("~p~n", [my_nifs:hello()]), halt().'
+world
+```
+
+To grow from here — more types, pre-declared atoms, an `on_load` callback,
+resources, scheduling — see [docs/USAGE.md](docs/USAGE.md).
 
 ## Components
 
