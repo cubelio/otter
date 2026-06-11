@@ -329,9 +329,9 @@ enum Node<'a> {
 | `try_string(self) → Result<String, CodecError>` | Extract string as UTF-8 `String` | `enif_get_string_length` + `enif_get_string` |
 | `len(self) → Option<usize>` | Element count; `None` for improper lists | `enif_get_list_length` |
 | `reverse(self) → Option<List<'a>>` | Reverse a proper list; `None` for improper | `enif_make_reverse_list` |
-| `from_terms(env, impl IntoIterator<Item: TermIn>) → List<'a>` | Construct from iterable | `enif_make_list_from_array` |
+| `from_terms(env, impl IntoIterator<Item: AsNifTerm<'a>>) → List<'a>` | Construct from iterable | `enif_make_list_from_array` |
 | `from_str(env, &str) → List<'a>` | Construct string (list of codepoints) from UTF-8 | `enif_make_string_len` |
-| `cons(env, impl TermIn, impl TermIn) → List<'a>` | Construct cons cell `[head \| tail]` | `enif_make_list_cell` |
+| `cons(env, impl AsNifTerm<'a>, impl AsNifTerm<'a>) → List<'a>` | Construct cons cell `[head \| tail]` | `enif_make_list_cell` |
 
 **ListIterator** — yields `Term<'a>` heads, one `enif_get_list_cell` per step:
 
@@ -387,7 +387,7 @@ struct Tuple<'a> { term: NifTerm, env: Env<'a> }
 | `len(self) → usize` | Arity | `enif_get_tuple` |
 | `is_empty(self) → bool` | Zero-element check | `enif_get_tuple` |
 | `element(self, i) → TypedTerm<'a>` | Element at zero-based index; panics if out of bounds | `enif_get_tuple` |
-| `from_terms(env, impl IntoIterator<Item: TermIn>) → Tuple<'a>` | Construct from iterable | `enif_make_tuple_from_array` |
+| `from_terms(env, impl IntoIterator<Item: AsNifTerm<'a>>) → Tuple<'a>` | Construct from iterable | `enif_make_tuple_from_array` |
 
 ### Internals
 
@@ -438,10 +438,10 @@ struct MapIterator<'a> { iter: Box<NifMapIterator>, env: Env<'a>, exhausted: boo
 |---|---|---|
 | `new(env) → Map<'a>` | Create empty map | `enif_make_new_map` |
 | `size(self) → usize` | Key-value pair count | `enif_get_map_size` |
-| `get(self, impl TermIn) → Option<TypedTerm<'a>>` | Look up key | `enif_get_map_value` |
-| `put(self, impl TermIn, impl TermIn) → Map<'a>` | Insert or replace | `enif_make_map_put` |
-| `update(self, impl TermIn, impl TermIn) → Option<Map<'a>>` | Update existing key; `None` if absent | `enif_make_map_update` |
-| `remove(self, impl TermIn) → Option<Map<'a>>` | Remove key; `None` if absent | `enif_make_map_remove` |
+| `get(self, impl AsNifTerm<'a>) → Option<TypedTerm<'a>>` | Look up key | `enif_get_map_value` |
+| `put(self, impl AsNifTerm<'a>, impl AsNifTerm<'a>) → Map<'a>` | Insert or replace | `enif_make_map_put` |
+| `update(self, impl AsNifTerm<'a>, impl AsNifTerm<'a>) → Option<Map<'a>>` | Update existing key; `None` if absent | `enif_make_map_update` |
+| `remove(self, impl AsNifTerm<'a>) → Option<Map<'a>>` | Remove key; `None` if absent | `enif_make_map_remove` |
 | `iter(self) → MapIterator<'a>` | Forward iterator over key-value pairs | `enif_map_iterator_create` |
 
 `MapIterator` implements `Iterator<Item = (TypedTerm<'a>, TypedTerm<'a>)>` and `Drop`.

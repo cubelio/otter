@@ -270,23 +270,31 @@ impl<'b> Encoder for Term<'b> {
 }
 
 // ---------------------------------------------------------------------------
-// TermIn — sealed trait for "anything that wraps a NIF term"
+// AsNifTerm — sealed, lifetime-bound trait for "anything that wraps a NIF term"
 // ---------------------------------------------------------------------------
 
 mod sealed {
     pub trait Sealed {}
 }
 
-/// A type that wraps a NIF term and can be used as an argument to otter
-/// functions.
+/// A type whose underlying NIF term is valid in environment `'a`.
 ///
-/// All otter term types implement this: [`Atom`], [`Binary`], [`Integer`],
-/// [`List`], [`TypedTerm`], [`Term`], etc. This trait is sealed — it cannot
-/// be implemented outside the crate.
-pub trait TermIn: sealed::Sealed {
-    /// Extract the underlying NIF term value.
+/// Used as the bound on polymorphic term arguments. The lifetime parameter
+/// ties the term to a specific env: an `impl AsNifTerm<'a>` argument will
+/// only accept terms whose env matches the call site's `'a`, so cross-env
+/// terms are rejected at compile time. BEAM treats cross-env terms as
+/// undefined behavior, so this check is load-bearing for soundness.
+///
+/// Env-portable types (`Atom`, `Pid`, `Port`) implement `AsNifTerm<'a>` for
+/// every `'a` — BEAM treats them as stable across envs. Env-bound types
+/// (`Term<'a>`, `TypedTerm<'a>`, `Binary<'a>`, etc.) implement it only for
+/// their own lifetime.
+///
+/// This trait is sealed — it cannot be implemented outside the crate.
+pub trait AsNifTerm<'a>: sealed::Sealed {
+    /// Extract the underlying NIF term word.
     #[doc(hidden)]
-    fn as_c_arg(&self) -> NifTerm;
+    fn as_nif_term(&self) -> NifTerm;
 }
 
 impl sealed::Sealed for Atom {}
@@ -303,52 +311,56 @@ impl sealed::Sealed for Reference<'_> {}
 impl sealed::Sealed for Tuple<'_> {}
 impl sealed::Sealed for Term<'_> {}
 impl sealed::Sealed for TypedTerm<'_> {}
-impl<T: sealed::Sealed> sealed::Sealed for &T {}
+impl<T: sealed::Sealed + ?Sized> sealed::Sealed for &T {}
 
-impl TermIn for Atom {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+// Env-portable: any 'a works.
+impl<'a> AsNifTerm<'a> for Atom {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Binary<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for Pid {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Bitstring<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for Port {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Float<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+
+// Env-bound: tied to the type's lifetime.
+impl<'a> AsNifTerm<'a> for Binary<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Fun<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for Bitstring<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Integer<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for Float<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for List<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for Fun<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Map<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for Integer<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Pid {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for List<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Port {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for Map<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Reference<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for Reference<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Tuple<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for Tuple<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for Term<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.term }
+impl<'a> AsNifTerm<'a> for Term<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl TermIn for TypedTerm<'_> {
-    fn as_c_arg(&self) -> NifTerm { self.as_raw() }
+impl<'a> AsNifTerm<'a> for TypedTerm<'a> {
+    fn as_nif_term(&self) -> NifTerm { self.as_raw() }
 }
-impl<T: TermIn> TermIn for &T {
-    fn as_c_arg(&self) -> NifTerm { (**self).as_c_arg() }
+
+impl<'a, T: AsNifTerm<'a> + ?Sized> AsNifTerm<'a> for &T {
+    fn as_nif_term(&self) -> NifTerm { (**self).as_nif_term() }
 }
 
 // ---------------------------------------------------------------------------
@@ -386,8 +398,8 @@ impl<'a> Env<'a> {
     /// or `NifHash::InternalHash` (node-local, faster).
     ///
     /// Wraps `enif_hash`.
-    pub fn hash(self, algorithm: NifHash, term: impl TermIn, salt: u64) -> u64 {
-        wrapper::term::hash(algorithm, term.as_c_arg(), salt)
+    pub fn hash(self, algorithm: NifHash, term: impl AsNifTerm<'a>, salt: u64) -> u64 {
+        wrapper::term::hash(algorithm, term.as_nif_term(), salt)
     }
 
     /// Check if the calling process is still alive.
@@ -403,9 +415,9 @@ impl<'a> Env<'a> {
     /// The returned value must be returned from the NIF function via
     /// `.as_raw()`. It is **not** a valid term — do not inspect or resolve it.
     /// Wraps `enif_raise_exception`.
-    pub fn raise(self, reason: impl TermIn) -> Term<'a> {
+    pub fn raise(self, reason: impl AsNifTerm<'a>) -> Term<'a> {
         let raw =
-            unsafe { wrapper::exception::raise_exception(self.as_ptr(), reason.as_c_arg()) };
+            unsafe { wrapper::exception::raise_exception(self.as_ptr(), reason.as_nif_term()) };
         Term::new(self, raw)
     }
 

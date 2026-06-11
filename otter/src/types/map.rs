@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifMapIterator, NifMapIteratorEntry, NifTerm};
-use crate::term::{Term, TypedTerm, TermIn};
+use crate::term::{Term, TypedTerm, AsNifTerm};
 
 /// An Erlang map. Immutable — all mutations return a new map.
 #[derive(Clone, Copy)]
@@ -23,20 +23,20 @@ impl<'a> Map<'a> {
     }
 
     /// Look up `key`. Returns `None` if the key is absent.
-    pub fn get(self, key: impl TermIn) -> Option<TypedTerm<'a>> {
+    pub fn get(self, key: impl AsNifTerm<'a>) -> Option<TypedTerm<'a>> {
         let raw =
-            unsafe { crate::wrapper::map::get_map_value(self.env.as_ptr(), self.term, key.as_c_arg()) }?;
+            unsafe { crate::wrapper::map::get_map_value(self.env.as_ptr(), self.term, key.as_nif_term()) }?;
         Some(Term::new(self.env, raw).resolve())
     }
 
     /// Return a new map with `key` set to `value` (insert or replace).
-    pub fn put(self, key: impl TermIn, value: impl TermIn) -> Map<'a> {
+    pub fn put(self, key: impl AsNifTerm<'a>, value: impl AsNifTerm<'a>) -> Map<'a> {
         let term = unsafe {
             crate::wrapper::map::make_map_put(
                 self.env.as_ptr(),
                 self.term,
-                key.as_c_arg(),
-                value.as_c_arg(),
+                key.as_nif_term(),
+                value.as_nif_term(),
             )
         }
         .unwrap();
@@ -46,13 +46,13 @@ impl<'a> Map<'a> {
     /// Return a new map with `key` updated to `value`.
     ///
     /// Returns `None` if the key is not present (unlike `put`, which inserts).
-    pub fn update(self, key: impl TermIn, value: impl TermIn) -> Option<Map<'a>> {
+    pub fn update(self, key: impl AsNifTerm<'a>, value: impl AsNifTerm<'a>) -> Option<Map<'a>> {
         let term = unsafe {
             crate::wrapper::map::make_map_update(
                 self.env.as_ptr(),
                 self.term,
-                key.as_c_arg(),
-                value.as_c_arg(),
+                key.as_nif_term(),
+                value.as_nif_term(),
             )
         }?;
         Some(Map { term, env: self.env })
@@ -61,9 +61,9 @@ impl<'a> Map<'a> {
     /// Return a new map with `key` removed.
     ///
     /// Returns `None` if the key was not present.
-    pub fn remove(self, key: impl TermIn) -> Option<Map<'a>> {
+    pub fn remove(self, key: impl AsNifTerm<'a>) -> Option<Map<'a>> {
         let term = unsafe {
-            crate::wrapper::map::make_map_remove(self.env.as_ptr(), self.term, key.as_c_arg())
+            crate::wrapper::map::make_map_remove(self.env.as_ptr(), self.term, key.as_nif_term())
         }?;
         Some(Map { term, env: self.env })
     }

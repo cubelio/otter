@@ -202,7 +202,7 @@ let tup = Tuple::from_terms(env, [
 ]);
 ```
 
-Elements are `TypedTerm` values. You resolve and decode them yourself. Construction uses `Tuple::from_terms` with any iterable of `impl TermIn` values — concrete types can be passed directly for homogeneous tuples, or use `.into()` to convert to `TypedTerm` for mixed types.
+Elements are `TypedTerm` values. You resolve and decode them yourself. Construction uses `Tuple::from_terms` with any iterable of `impl AsNifTerm<'a>` values — concrete types can be passed directly for homogeneous tuples, or use `.into()` to convert to `TypedTerm` for mixed types.
 
 ---
 
@@ -283,7 +283,7 @@ fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a
 For direct control:
 ```rust
 env.raise_badarg()              // enif_make_badarg
-env.raise(reason)               // enif_raise_exception — accepts impl TermIn
+env.raise(reason)               // enif_raise_exception — accepts impl AsNifTerm<'a>
 ```
 
 These are the only two exception mechanisms in the NIF C API. Otter exposes exactly those.

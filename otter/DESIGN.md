@@ -181,9 +181,11 @@ Construction is always free. Extraction is on demand. Every concrete type is `Ni
 - `Integer<'a>`, `Float<'a>`, `Binary<'a>`, `Bitstring<'a>`, `Fun<'a>`, `List<'a>`, `Map<'a>`, `Reference<'a>`, `Tuple<'a>` — carry `'a` because values may live on the BEAM heap.
 - `Bitstring` and `Fun` carry `env` for lifetime only — no NIF inspection functions exist for them. These fields have `#[allow(dead_code)]`.
 
-### `TermIn` — universal term input
+### `AsNifTerm<'a>` — universal term input
 
-Functions that accept a term as input use `impl TermIn` instead of `TypedTerm<'a>`. This sealed trait is implemented for all otter term types (`Atom`, `Binary`, `Integer`, `List`, `TypedTerm`, `Term`, etc.) and for `&T` where `T: TermIn`. It extracts the underlying `NifTerm` without allocating or copying.
+Functions that accept a term as input use `impl AsNifTerm<'a>` instead of `TypedTerm<'a>`. This sealed trait is implemented for all otter term types (`Atom`, `Binary`, `Integer`, `List`, `TypedTerm`, `Term`, etc.) and for `&T` where `T: AsNifTerm<'a>`. It extracts the underlying `NifTerm` without allocating or copying.
+
+The lifetime parameter binds the term to a specific env: an `impl AsNifTerm<'a>` argument only accepts terms whose env is `'a`. Env-portable types (`Atom`, `Pid`, `Port`) implement `AsNifTerm<'a>` for every `'a` and so satisfy any call site. Env-bound types (`Term<'a>`, `Binary<'a>`, etc.) only implement it for their own lifetime, so cross-env terms are rejected at compile time. BEAM treats cross-env terms as undefined behavior; this constraint is load-bearing for soundness.
 
 This means you can pass concrete types directly — no `.encode(env)` needed:
 
@@ -193,7 +195,7 @@ List::from_terms(env, [int1, int2, int3])
 env.raise(some_atom)
 ```
 
-`TermIn` is sealed — it cannot be implemented outside the crate.
+`AsNifTerm` is sealed — it cannot be implemented outside the crate.
 
 ### Per-type methods
 
@@ -293,7 +295,7 @@ impl<'a> Env<'a> {
     fn make_unique_integer(self, properties) -> TypedTerm<'a>
     fn hash(self, algorithm, term, salt) -> u64
     fn is_current_process_alive(self) -> bool
-    fn raise(self, reason: impl TermIn) -> TypedTerm<'a>
+    fn raise(self, reason: impl AsNifTerm<'a>) -> TypedTerm<'a>
     fn raise_badarg(self) -> TypedTerm<'a>
     unsafe fn schedule_nif(self, name, flags, fp, argc, argv) -> TypedTerm<'a>
     fn set_option_delay_halt(self, ms) -> bool

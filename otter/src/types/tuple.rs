@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{Term, TypedTerm, TermIn};
+use crate::term::{Term, TypedTerm, AsNifTerm};
 
 /// An Erlang tuple.
 #[derive(Clone, Copy)]
@@ -38,9 +38,9 @@ impl<'a> Tuple<'a> {
     pub fn from_terms<I, T>(env: Env<'a>, terms: I) -> Tuple<'a>
     where
         I: IntoIterator<Item = T>,
-        T: TermIn,
+        T: AsNifTerm<'a>,
     {
-        let raw: Vec<NifTerm> = terms.into_iter().map(|t| t.as_c_arg()).collect();
+        let raw: Vec<NifTerm> = terms.into_iter().map(|t| t.as_nif_term()).collect();
         let term = unsafe { crate::wrapper::tuple::make_tuple(env.as_ptr(), &raw) };
         Tuple { term, env }
     }

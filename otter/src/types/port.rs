@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifPort, NifTerm};
-use crate::term::{Term, TypedTerm, TermIn};
+use crate::term::{Term, TypedTerm, AsNifTerm};
 
 /// An Erlang port identifier.
 ///
@@ -27,16 +27,25 @@ impl Port {
 
     /// Send a command to this port.
     ///
+    /// `caller_env` is the scheduler env making the call; `msg_env` is the
+    /// env that owns `msg`. The two need not be the same — BEAM copies `msg`
+    /// from `msg_env` into the port's mailbox.
+    ///
     /// Returns `true` if the command was accepted.
     /// Wraps `enif_port_command`.
-    pub fn command(self, env: Env<'_>, msg: impl TermIn) -> bool {
+    pub fn command<'a, 'b>(
+        self,
+        caller_env: Env<'a>,
+        msg_env: Env<'b>,
+        msg: impl AsNifTerm<'b>,
+    ) -> bool {
         let nif_port = NifPort { port_id: self.term };
         unsafe {
             crate::wrapper::port::port_command(
-                env.as_ptr(),
+                caller_env.as_ptr(),
                 &nif_port,
-                std::ptr::null_mut(),
-                msg.as_c_arg(),
+                msg_env.as_ptr(),
+                msg.as_nif_term(),
             )
         }
     }

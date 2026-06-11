@@ -364,7 +364,7 @@ let TypedTerm::Map(map) = term else { ... };
 // Size
 let n: usize = map.size();
 
-// Lookup — accepts any TermIn (Atom, Integer, TypedTerm, etc.)
+// Lookup — accepts any AsNifTerm (Atom, Integer, TypedTerm, etc.)
 let val: Option<TypedTerm> = map.get(atom_key);
 
 // Insert (returns a new map — maps are immutable)
@@ -581,7 +581,7 @@ For the cases where a `Result` return type doesn't fit — raising from a helper
 // badarg
 return env.raise_badarg();
 
-// arbitrary reason — accepts any TermIn, no .encode(env) needed
+// arbitrary reason — accepts any AsNifTerm, no .encode(env) needed
 let reason = Atom::new(env, "my_error").unwrap();
 return env.raise(reason);
 ```
