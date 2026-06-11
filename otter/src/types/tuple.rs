@@ -85,10 +85,11 @@ impl<'b> Encoder for Tuple<'b> {
 }
 
 impl<'a> Decoder<'a> for Tuple<'a> {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        match term {
-            TypedTerm::Tuple(t) => Ok(t),
-            _ => Err(CodecError::WrongType),
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        if unsafe { crate::wrapper::check::is_tuple(term.env.as_ptr(), term.term) } {
+            Ok(Tuple { term: term.term, env: term.env })
+        } else {
+            Err(CodecError::WrongType)
         }
     }
 }

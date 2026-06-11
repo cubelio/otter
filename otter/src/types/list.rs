@@ -251,10 +251,11 @@ impl<'b> Encoder for List<'b> {
 }
 
 impl<'a> Decoder<'a> for List<'a> {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        match term {
-            TypedTerm::List(l) => Ok(l),
-            _ => Err(CodecError::WrongType),
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        if unsafe { crate::wrapper::check::is_list(term.env.as_ptr(), term.term) } {
+            Ok(List { term: term.term, env: term.env })
+        } else {
+            Err(CodecError::WrongType)
         }
     }
 }

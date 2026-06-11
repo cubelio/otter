@@ -133,7 +133,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
                     ::otter::__codegen::new_raw_term(
                         __otter_env,
                         unsafe { *__otter_argv.add(#idx) },
-                    ).resolve()
+                    )
                 )?;
             }
         })

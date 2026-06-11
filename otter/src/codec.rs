@@ -5,7 +5,7 @@
 //! subsequent step.
 
 use crate::env::Env;
-use crate::term::{Term, TypedTerm};
+use crate::term::Term;
 
 /// Error returned by term type conversion operations.
 ///
@@ -78,9 +78,13 @@ impl<T: Encoder, E: Encoder> Encoder for Result<T, E> {
 
 /// Extract a value from an Erlang term.
 ///
-/// Implemented by otter term types. Returns `Err(CodecError)` if the term
-/// is not the expected type or the value does not fit.
+/// Implemented by otter term types. Takes a [`Term<'a>`] — the env-bound
+/// wrapper around a raw NIF word, with no type tag attached — so each impl
+/// pays exactly the type check it needs (one `enif_term_type` /
+/// `enif_is_binary` call per decode, no eager resolve discriminator that
+/// gets discarded). Returns `Err(CodecError)` if the term is not the
+/// expected type or the value does not fit.
 pub trait Decoder<'a>: Sized {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError>;
+    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
 }
 

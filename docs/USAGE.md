@@ -110,10 +110,11 @@ fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
 | Type | What happens | Cost |
 |---|---|---|
 | `Env<'a>` | Passed through, must be first, does not count toward arity | 0 |
-| `TypedTerm<'a>` | Wraps argv[i] + `enif_term_type` | 1 NIF call |
-| `T: Decoder` | Wraps + resolves + decodes, badarg on failure | 2+ NIF calls |
+| `Term<'a>` | Wraps argv[i]. `Decoder` is identity | 0 NIF calls |
+| `TypedTerm<'a>` | Wraps + `.resolve()` (`enif_term_type`) | 1 NIF call (2 for binary-tagged terms, refining `Bitstring` → `Binary`/`Bitstring`) |
+| `T: Decoder` (concrete type) | Wraps + `enif_is_*` (or `enif_term_type`) check, badarg on failure | 1 NIF call |
 
-`Term<'a>` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `TypedTerm`.
+Every argument goes through `Decoder::decode(term: Term<'a>)`. `Term::decode` is the identity (zero cost — pick this when you want the raw word with a lifetime and no type discrimination). `TypedTerm::decode` calls `.resolve()` internally. Concrete-type decoders (`Integer`, `Binary`, `Atom`, …) call the dedicated `enif_is_*` check directly off the `Term`, so each is a single NIF call with no eager discriminator.
 
 **Return type:**
 
@@ -541,11 +542,11 @@ pub trait Encoder {
 }
 
 pub trait Decoder<'a>: Sized {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError>;
+    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
 }
 ```
 
-`Decoder::decode` is called on resolved `TypedTerm` values. If the term doesn't match the expected type, it returns `CodecError::WrongType`. The generated wrapper converts this to a `badarg` exception.
+`Decoder::decode` is called on `Term<'a>` — the env-bound wrapper around a raw NIF word, with no type tag attached. Each impl calls its own type-specific `enif_is_*` (or `enif_term_type`) check directly, so a decode is one NIF call regardless of which concrete type you ask for. If the term doesn't match the expected type, it returns `CodecError::WrongType` and the generated wrapper converts that to a `badarg` exception.
 
 `Encoder::encode` converts a value back into a `Term` tied to the target env's lifetime. For types that already hold a NIF term (like `Integer`, `Binary`), the impl compares the source and target env pointers: same-env is a zero-copy passthrough; cross-env falls back to `enif_make_copy`. The macro return path is always same-env, so the common case is free.
 

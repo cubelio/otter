@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{Term, TypedTerm};
+use crate::term::Term;
 
 /// An Erlang reference.
 #[derive(Clone, Copy)]
@@ -59,10 +59,11 @@ impl<'b> Encoder for Reference<'b> {
 }
 
 impl<'a> Decoder<'a> for Reference<'a> {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        match term {
-            TypedTerm::Reference(r) => Ok(r),
-            _ => Err(CodecError::WrongType),
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        if unsafe { crate::wrapper::check::is_ref(term.env.as_ptr(), term.term) } {
+            Ok(Reference { term: term.term, env: term.env })
+        } else {
+            Err(CodecError::WrongType)
         }
     }
 }

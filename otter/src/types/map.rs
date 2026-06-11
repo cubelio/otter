@@ -173,10 +173,11 @@ impl<'b> Encoder for Map<'b> {
 }
 
 impl<'a> Decoder<'a> for Map<'a> {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        match term {
-            TypedTerm::Map(m) => Ok(m),
-            _ => Err(CodecError::WrongType),
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        if unsafe { crate::wrapper::check::is_map(term.env.as_ptr(), term.term) } {
+            Ok(Map { term: term.term, env: term.env })
+        } else {
+            Err(CodecError::WrongType)
         }
     }
 }

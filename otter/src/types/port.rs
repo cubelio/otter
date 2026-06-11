@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifPort, NifTerm};
-use crate::term::{Term, TypedTerm, AsNifTerm};
+use crate::term::{Term, AsNifTerm};
 
 /// An Erlang port identifier.
 ///
@@ -85,10 +85,11 @@ impl Encoder for Port {
 }
 
 impl<'a> Decoder<'a> for Port {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        match term {
-            TypedTerm::Port(p) => Ok(p),
-            _ => Err(CodecError::WrongType),
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        if unsafe { crate::wrapper::check::is_port(term.env.as_ptr(), term.term) } {
+            Ok(Port { term: term.term })
+        } else {
+            Err(CodecError::WrongType)
         }
     }
 }

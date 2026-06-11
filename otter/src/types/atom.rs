@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{Term, TypedTerm};
+use crate::term::Term;
 
 /// An Erlang atom.
 ///
@@ -169,10 +169,11 @@ impl Encoder for Atom {
 }
 
 impl<'a> Decoder<'a> for Atom {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        match term {
-            TypedTerm::Atom(a) => Ok(a),
-            _ => Err(CodecError::WrongType),
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        if unsafe { crate::wrapper::check::is_atom(term.env.as_ptr(), term.term) } {
+            Ok(Atom::from_raw(term.term))
+        } else {
+            Err(CodecError::WrongType)
         }
     }
 }

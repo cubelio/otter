@@ -359,14 +359,11 @@ impl<'a, T: Resource> Decoder<'a> for ResourceArc<T> {
     /// Decode a resource term into a `ResourceArc<T>`.
     ///
     /// Returns `WrongType` if the term is not a resource of type `T`, or if
-    /// the resource type has not been registered.
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        // Resources appear as Reference terms from enif_term_type's perspective.
-        let (raw_term, env) = match term {
-            TypedTerm::Reference(r) => (r.term, r.env),
-            _ => return Err(CodecError::WrongType),
-        };
-
+    /// the resource type has not been registered. `enif_get_resource` is a
+    /// strict check — it returns false for any non-resource term and for
+    /// resources of the wrong type — so we call it directly without a
+    /// preliminary type-tag check.
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
         let type_ptr = T::resource_type_handle()
             .get()
             .ok_or(CodecError::WrongType)?
@@ -374,7 +371,7 @@ impl<'a, T: Resource> Decoder<'a> for ResourceArc<T> {
 
         let mut obj: *mut c_void = std::ptr::null_mut();
         if !unsafe {
-            crate::wrapper::resource::get_resource(env.as_ptr(), raw_term, type_ptr, &mut obj)
+            crate::wrapper::resource::get_resource(term.env.as_ptr(), term.term, type_ptr, &mut obj)
         } {
             return Err(CodecError::WrongType);
         }

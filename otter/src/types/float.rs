@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
-use crate::term::{Term, TypedTerm};
+use crate::sys::{NifTerm, NifTermType};
+use crate::term::Term;
 
 /// An Erlang float. Always IEEE 754 double precision.
 ///
@@ -68,10 +68,13 @@ impl<'b> Encoder for Float<'b> {
 }
 
 impl<'a> Decoder<'a> for Float<'a> {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        match term {
-            TypedTerm::Float(f) => Ok(f),
-            _ => Err(CodecError::WrongType),
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        if unsafe { crate::wrapper::term::term_type(term.env.as_ptr(), term.term) }
+            == NifTermType::Float
+        {
+            Ok(Float { term: term.term, env: term.env })
+        } else {
+            Err(CodecError::WrongType)
         }
     }
 }

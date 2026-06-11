@@ -1,7 +1,7 @@
 use std::str::Utf8Error;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
+use crate::sys::{NifTerm, NifTermType};
 use crate::term::{Term, TypedTerm};
 
 /// A byte-aligned binary (`enif_is_binary` returned true).
@@ -14,15 +14,18 @@ pub struct Binary<'a> {
     pub(crate) env: Env<'a>,
 }
 
-/// A sub-byte bitstring (`enif_is_binary` returned false).
+/// An Erlang bitstring (`enif_term_type` returned `Bitstring`).
 ///
-/// The NIF API provides no inspection functions for sub-byte bitstrings.
-/// A `Bitstring` can only be held and passed back to Erlang unchanged.
+/// In BEAM, every binary is a bitstring. A `Bitstring` may hold a byte-
+/// aligned binary or a sub-byte bitstring; decoding via `Bitstring::decode`
+/// accepts both. The NIF API provides no inspection functions for the
+/// sub-byte case, so a `Bitstring` can only be held and passed back to
+/// Erlang unchanged.
 #[derive(Clone, Copy)]
 pub struct Bitstring<'a> {
     pub(crate) term: NifTerm,
-    // Env is stored for lifetime tracking only — sub-byte bitstrings have no
-    // NIF inspection functions, so `env` is never read directly.
+    // Env is stored for lifetime tracking only — no inspection functions
+    // distinguish at this level; refine to `Binary` if you need the bytes.
     #[allow(dead_code)]
     pub(crate) env: Env<'a>,
 }
@@ -397,10 +400,11 @@ impl<'b> Encoder for Binary<'b> {
 }
 
 impl<'a> Decoder<'a> for Binary<'a> {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        match term {
-            TypedTerm::Binary(b) => Ok(b),
-            _ => Err(CodecError::WrongType),
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        if unsafe { crate::wrapper::check::is_binary(term.env.as_ptr(), term.term) } {
+            Ok(Binary { term: term.term, env: term.env })
+        } else {
+            Err(CodecError::WrongType)
         }
     }
 }
@@ -417,10 +421,16 @@ impl<'b> Encoder for Bitstring<'b> {
 }
 
 impl<'a> Decoder<'a> for Bitstring<'a> {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        match term {
-            TypedTerm::Bitstring(b) => Ok(b),
-            _ => Err(CodecError::WrongType),
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        // In BEAM every binary is a bitstring, so `Bitstring::decode` accepts
+        // both byte-aligned binaries and sub-byte bitstrings. Use `Binary` if
+        // you want the byte-aligned refinement.
+        if unsafe { crate::wrapper::term::term_type(term.env.as_ptr(), term.term) }
+            == NifTermType::Bitstring
+        {
+            Ok(Bitstring { term: term.term, env: term.env })
+        } else {
+            Err(CodecError::WrongType)
         }
     }
 }

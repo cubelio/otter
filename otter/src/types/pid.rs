@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifPid, NifTerm};
-use crate::term::{Term, TypedTerm};
+use crate::term::Term;
 
 /// An Erlang process identifier.
 ///
@@ -88,10 +88,11 @@ impl Encoder for Pid {
 }
 
 impl<'a> Decoder<'a> for Pid {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
-        match term {
-            TypedTerm::Pid(p) => Ok(p),
-            _ => Err(CodecError::WrongType),
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        if unsafe { crate::wrapper::check::is_pid(term.env.as_ptr(), term.term) } {
+            Ok(Pid { term: term.term })
+        } else {
+            Err(CodecError::WrongType)
         }
     }
 }

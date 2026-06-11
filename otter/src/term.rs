@@ -268,9 +268,15 @@ impl<'b> Encoder for TypedTerm<'b> {
     }
 }
 
-impl<'a> Decoder<'a> for TypedTerm<'a> {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
+impl<'a> Decoder<'a> for Term<'a> {
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
         Ok(term)
+    }
+}
+
+impl<'a> Decoder<'a> for TypedTerm<'a> {
+    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+        Ok(term.resolve())
     }
 }
 
