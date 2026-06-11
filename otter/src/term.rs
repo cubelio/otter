@@ -48,10 +48,9 @@ impl<'a> Term<'a> {
     }
 
     /// Resolve to a typed `TypedTerm<'a>` by calling `enif_term_type`.
-    ///
-    /// For the `Bitstring` type tag, a second call to `enif_is_binary` is
-    /// needed to determine whether the value is a byte-aligned `Binary` or a
-    /// sub-byte `Bitstring`.
+    /// Exactly one NIF call regardless of variant. Binary-tagged terms
+    /// surface as [`TypedTerm::Bitstring`]; call [`Bitstring::is_binary`] or
+    /// [`Bitstring::try_into_binary`] to refine.
     pub fn resolve(self) -> TypedTerm<'a> {
         let env_ptr = self.env.as_ptr();
         match unsafe { wrapper::term::term_type(env_ptr, self.term) } {
@@ -59,11 +58,7 @@ impl<'a> Term<'a> {
                 TypedTerm::Atom(Atom::from_raw(self.term))
             }
             NifTermType::Bitstring => {
-                if unsafe { wrapper::check::is_binary(env_ptr, self.term) } {
-                    TypedTerm::Binary(Binary { term: self.term, env: self.env })
-                } else {
-                    TypedTerm::Bitstring(Bitstring { term: self.term, env: self.env })
-                }
+                TypedTerm::Bitstring(Bitstring { term: self.term, env: self.env })
             }
             NifTermType::Float => {
                 TypedTerm::Float(Float { term: self.term, env: self.env })
@@ -105,13 +100,14 @@ impl<'a> Term<'a> {
 /// The correct variant is known. Data is still on the BEAM heap — nothing
 /// has been extracted.
 ///
-/// The `Bitstring` type tag in `ErlNifTermType` maps to two variants here
-/// (`Binary` and `Bitstring`) because `enif_is_binary` must be called to
-/// distinguish them. Resolving a `Bitstring`-tagged term costs two NIF calls.
+/// Mirrors BEAM's `ErlNifTermType` exactly: byte-aligned binaries and
+/// sub-byte bitstrings share the [`Bitstring`](Self::Bitstring) variant
+/// because BEAM treats every binary as a bitstring. Refine with
+/// [`Bitstring::is_binary`] / [`Bitstring::try_into_binary`] if you need
+/// the byte-aligned distinction.
 #[derive(Clone, Copy)]
 pub enum TypedTerm<'a> {
     Atom(Atom),
-    Binary(Binary<'a>),
     Bitstring(Bitstring<'a>),
     Float(Float<'a>),
     Fun(Fun<'a>),
@@ -130,7 +126,6 @@ impl<'a> TypedTerm<'a> {
     pub fn as_raw(self) -> NifTerm {
         match self {
             TypedTerm::Atom(v)      => v.term,
-            TypedTerm::Binary(v)    => v.term,
             TypedTerm::Bitstring(v) => v.term,
             TypedTerm::Float(v)     => v.term,
             TypedTerm::Fun(v)       => v.term,
@@ -216,7 +211,9 @@ impl<'a> From<Atom> for TypedTerm<'a> {
     fn from(v: Atom) -> TypedTerm<'a> { TypedTerm::Atom(v) }
 }
 impl<'a> From<Binary<'a>> for TypedTerm<'a> {
-    fn from(v: Binary<'a>) -> TypedTerm<'a> { TypedTerm::Binary(v) }
+    fn from(v: Binary<'a>) -> TypedTerm<'a> {
+        TypedTerm::Bitstring(Bitstring { term: v.term, env: v.env })
+    }
 }
 impl<'a> From<Bitstring<'a>> for TypedTerm<'a> {
     fn from(v: Bitstring<'a>) -> TypedTerm<'a> { TypedTerm::Bitstring(v) }
@@ -253,7 +250,6 @@ impl<'b> Encoder for TypedTerm<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         match self {
             TypedTerm::Atom(v)      => v.encode(env),
-            TypedTerm::Binary(v)    => v.encode(env),
             TypedTerm::Bitstring(v) => v.encode(env),
             TypedTerm::Float(v)     => v.encode(env),
             TypedTerm::Fun(v)       => v.encode(env),

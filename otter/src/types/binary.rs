@@ -18,16 +18,34 @@ pub struct Binary<'a> {
 ///
 /// In BEAM, every binary is a bitstring. A `Bitstring` may hold a byte-
 /// aligned binary or a sub-byte bitstring; decoding via `Bitstring::decode`
-/// accepts both. The NIF API provides no inspection functions for the
-/// sub-byte case, so a `Bitstring` can only be held and passed back to
-/// Erlang unchanged.
+/// accepts both. Call [`is_binary`](Self::is_binary) or
+/// [`try_into_binary`](Self::try_into_binary) to refine. The NIF API
+/// provides no inspection functions for the sub-byte case, so a sub-byte
+/// `Bitstring` can only be held and passed back to Erlang unchanged.
 #[derive(Clone, Copy)]
 pub struct Bitstring<'a> {
     pub(crate) term: NifTerm,
-    // Env is stored for lifetime tracking only — no inspection functions
-    // distinguish at this level; refine to `Binary` if you need the bytes.
-    #[allow(dead_code)]
     pub(crate) env: Env<'a>,
+}
+
+impl<'a> Bitstring<'a> {
+    /// Returns `true` if this bitstring is byte-aligned (a binary).
+    ///
+    /// One `enif_is_binary` call.
+    pub fn is_binary(self) -> bool {
+        unsafe { crate::wrapper::check::is_binary(self.env.as_ptr(), self.term) }
+    }
+
+    /// Refine to a [`Binary`] if this bitstring is byte-aligned, else `None`.
+    ///
+    /// One `enif_is_binary` call.
+    pub fn try_into_binary(self) -> Option<Binary<'a>> {
+        if self.is_binary() {
+            Some(Binary { term: self.term, env: self.env })
+        } else {
+            None
+        }
+    }
 }
 
 impl<'a> Binary<'a> {

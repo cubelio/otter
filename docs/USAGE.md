@@ -111,7 +111,7 @@ fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
 |---|---|---|
 | `Env<'a>` | Passed through, must be first, does not count toward arity | 0 |
 | `Term<'a>` | Wraps argv[i]. `Decoder` is identity | 0 NIF calls |
-| `TypedTerm<'a>` | Wraps + `.resolve()` (`enif_term_type`) | 1 NIF call (2 for binary-tagged terms, refining `Bitstring` → `Binary`/`Bitstring`) |
+| `TypedTerm<'a>` | Wraps + `.resolve()` (`enif_term_type`) | 1 NIF call |
 | `T: Decoder` (concrete type) | Wraps + `enif_is_*` (or `enif_term_type`) check, badarg on failure | 1 NIF call |
 
 Every argument goes through `Decoder::decode(term: Term<'a>)`. `Term::decode` is the identity (zero cost — pick this when you want the raw word with a lifetime and no type discrimination). `TypedTerm::decode` calls `.resolve()` internally. Concrete-type decoders (`Integer`, `Binary`, `Atom`, …) call the dedicated `enif_is_*` check directly off the `Term`, so each is a single NIF call with no eager discriminator.
@@ -247,7 +247,13 @@ let pi = Float::from_f64(env, 3.14159);
 Zero-copy access to BEAM-heap binaries.
 
 ```rust
-let TypedTerm::Binary(bin) = term else { ... };
+// Decode an argument as Binary (rejects sub-byte bitstrings):
+//   fn read<'a>(_env: Env<'a>, bin: Binary<'a>) -> ...
+//
+// Or refine from a TypedTerm — every binary surfaces as TypedTerm::Bitstring,
+// and Bitstring::try_into_binary refines to Binary if byte-aligned:
+let TypedTerm::Bitstring(bs) = term else { ... };
+let bin = bs.try_into_binary().ok_or(...)?;
 
 // Read
 let bytes: &[u8] = bin.as_bytes();

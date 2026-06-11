@@ -15,14 +15,16 @@ NifTerm (u64 machine word)
   │    │
   │    └─ .resolve()  one enif_term_type call
   │         │
-  │         └─ TypedTerm<'a>   typed enum (Atom | Binary | ... | Tuple)
+  │         └─ TypedTerm<'a>   typed enum (Atom | Bitstring | ... | Tuple)
   │              │
   │              └─ T::decode()   full extraction (e.g. Integer → i64)
 ```
 
-The `Bitstring` type tag from `enif_term_type` covers both binaries and
-non-byte-aligned bitstrings. `resolve()` calls `enif_is_binary` to
-distinguish the two, producing either `TypedTerm::Binary` or `TypedTerm::Bitstring`.
+`TypedTerm` mirrors `ErlNifTermType` exactly — one variant per tag, no
+peer variants. The `Bitstring` variant covers both byte-aligned binaries
+and sub-byte bitstrings (BEAM treats every binary as a bitstring); call
+`Bitstring::is_binary` or `Bitstring::try_into_binary` to refine.
+`resolve()` is uniformly one NIF call regardless of variant.
 
 
 ## Lifetime Model

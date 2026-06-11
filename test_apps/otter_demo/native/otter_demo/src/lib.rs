@@ -55,8 +55,11 @@ fn type_of(_env: Env, val: TypedTerm) -> Atom {
         TypedTerm::Atom(_)      => otter::atom![atom],
         TypedTerm::Integer(_)   => otter::atom![integer],
         TypedTerm::Float(_)     => otter::atom![float],
-        TypedTerm::Binary(_)    => otter::atom![binary],
-        TypedTerm::Bitstring(_) => otter::atom![bitstring],
+        TypedTerm::Bitstring(bs) => if bs.is_binary() {
+            otter::atom![binary]
+        } else {
+            otter::atom![bitstring]
+        },
         TypedTerm::List(_)      => otter::atom![list],
         TypedTerm::Tuple(_)     => otter::atom![tuple],
         TypedTerm::Map(_)       => otter::atom![map],
@@ -103,7 +106,7 @@ fn test_eq<'a>(_env: Env<'a>, a: TypedTerm<'a>, b: TypedTerm<'a>) -> Atom {
         (TypedTerm::Atom(a), TypedTerm::Atom(b)) => a == b,
         (TypedTerm::Integer(a), TypedTerm::Integer(b)) => a == b,
         (TypedTerm::Float(a), TypedTerm::Float(b)) => a == b,
-        (TypedTerm::Binary(a), TypedTerm::Binary(b)) => a == b,
+        (TypedTerm::Bitstring(a), TypedTerm::Bitstring(b)) => a == b,
         (TypedTerm::List(a), TypedTerm::List(b)) => a == b,
         (TypedTerm::Tuple(a), TypedTerm::Tuple(b)) => a == b,
         (TypedTerm::Map(a), TypedTerm::Map(b)) => a == b,
@@ -126,7 +129,7 @@ fn test_ord<'a>(_env: Env<'a>, a: TypedTerm<'a>, b: TypedTerm<'a>) -> Atom {
         (TypedTerm::Atom(a), TypedTerm::Atom(b)) => a.cmp(&b),
         (TypedTerm::Integer(a), TypedTerm::Integer(b)) => a.cmp(&b),
         (TypedTerm::Float(a), TypedTerm::Float(b)) => a.cmp(&b),
-        (TypedTerm::Binary(a), TypedTerm::Binary(b)) => a.cmp(&b),
+        (TypedTerm::Bitstring(a), TypedTerm::Bitstring(b)) => a.cmp(&b),
         (TypedTerm::List(a), TypedTerm::List(b)) => a.cmp(&b),
         (TypedTerm::Tuple(a), TypedTerm::Tuple(b)) => a.cmp(&b),
         (TypedTerm::Map(a), TypedTerm::Map(b)) => a.cmp(&b),
@@ -150,7 +153,6 @@ fn test_debug<'a>(env: Env<'a>, val: TypedTerm<'a>) -> Binary<'a> {
         TypedTerm::Atom(v) => format!("{:?}", v),
         TypedTerm::Integer(v) => format!("{:?}", v),
         TypedTerm::Float(v) => format!("{:?}", v),
-        TypedTerm::Binary(v) => format!("{:?}", v),
         TypedTerm::Bitstring(v) => format!("{:?}", v),
         TypedTerm::List(v) => format!("{:?}", v),
         TypedTerm::Tuple(v) => format!("{:?}", v),
