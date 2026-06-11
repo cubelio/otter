@@ -123,7 +123,7 @@ The user's return type must implement `Encoder`. The macro emits a single `Encod
 |---|---|
 | `T: Encoder` (any otter term type) | `.encode(env).as_raw()` — one NIF call to build the term, plus the BEAM-bound machine word |
 | `Result<T, E>` where `T: Encoder, E: Encoder` | `Ok(v)` encodes `v` and returns; `Err(e)` encodes `e` and raises it as a class-`error` exception |
-| `TypedTerm<'a>` / `Term<'a>` | Same path — both implement `Encoder`. The encode is essentially a passthrough |
+| `TypedTerm<'a>` / `Term<'a>` | Same path — both implement `Encoder`. Same-env (the macro return path is always same-env) is a zero-copy passthrough; cross-env falls back to `enif_make_copy` |
 
 **Attributes:**
 
@@ -538,7 +538,7 @@ pub trait Decoder<'a>: Sized {
 
 `Decoder::decode` is called on resolved `TypedTerm` values. If the term doesn't match the expected type, it returns `CodecError::WrongType`. The generated wrapper converts this to a `badarg` exception.
 
-`Encoder::encode` converts a value back into a `Term` tied to the target env's lifetime. For types that already hold a NIF term (like `Integer`, `Binary`), this copies the term into the target environment via `enif_make_copy`.
+`Encoder::encode` converts a value back into a `Term` tied to the target env's lifetime. For types that already hold a NIF term (like `Integer`, `Binary`), the impl compares the source and target env pointers: same-env is a zero-copy passthrough; cross-env falls back to `enif_make_copy`. The macro return path is always same-env, so the common case is free.
 
 `Result<T, E>` implements `Encoder` when both `T` and `E` do: `Ok(v)` encodes `v`, `Err(e)` encodes `e` and raises it via `enif_raise_exception`. This is how `Result`-returning NIFs work — through normal trait dispatch on the return type, not through any macro-level special case. A user type happening to be called `Result` does not inherit this behavior.
 

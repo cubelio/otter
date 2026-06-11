@@ -251,8 +251,20 @@ impl<'a> From<Tuple<'a>> for TypedTerm<'a> {
 
 impl<'b> Encoder for TypedTerm<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.as_raw()) };
-        Term::new(env, term)
+        match self {
+            TypedTerm::Atom(v)      => v.encode(env),
+            TypedTerm::Binary(v)    => v.encode(env),
+            TypedTerm::Bitstring(v) => v.encode(env),
+            TypedTerm::Float(v)     => v.encode(env),
+            TypedTerm::Fun(v)       => v.encode(env),
+            TypedTerm::Integer(v)   => v.encode(env),
+            TypedTerm::List(v)      => v.encode(env),
+            TypedTerm::Map(v)       => v.encode(env),
+            TypedTerm::Pid(v)       => v.encode(env),
+            TypedTerm::Port(v)      => v.encode(env),
+            TypedTerm::Reference(v) => v.encode(env),
+            TypedTerm::Tuple(v)     => v.encode(env),
+        }
     }
 }
 
@@ -264,8 +276,12 @@ impl<'a> Decoder<'a> for TypedTerm<'a> {
 
 impl<'b> Encoder for Term<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        Term::new(env, term)
+        let raw = if self.env.as_ptr() == env.as_ptr() {
+            self.term
+        } else {
+            unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) }
+        };
+        Term::new(env, raw)
     }
 }
 

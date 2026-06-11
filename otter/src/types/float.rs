@@ -58,8 +58,12 @@ impl std::fmt::Debug for Float<'_> {
 
 impl<'b> Encoder for Float<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        Term::new(env, term)
+        let raw = if self.env.as_ptr() == env.as_ptr() {
+            self.term
+        } else {
+            unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) }
+        };
+        Term::new(env, raw)
     }
 }
 

@@ -100,8 +100,12 @@ impl std::fmt::Debug for Integer<'_> {
 
 impl<'b> Encoder for Integer<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        Term::new(env, term)
+        let raw = if self.env.as_ptr() == env.as_ptr() {
+            self.term
+        } else {
+            unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) }
+        };
+        Term::new(env, raw)
     }
 }
 
