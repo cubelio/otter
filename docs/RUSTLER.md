@@ -80,6 +80,12 @@ Rustler's resource type registry uses a `static mut OnceLock<HashMap<TypeId, usi
 
 Rustler defaults to NIF 2.15 (OTP 22) and exposes Cargo features to opt up to 2.16 or 2.17. Otter requires NIF 2.17 (OTP 26) because the library calls 2.17 APIs (`enif_select_x`, `enif_set_option`, and others) as part of its core surface, with an optional `nif_2_18` feature for 2.18 additions. The version floor in each library follows from which APIs it calls.
 
+### Atom encoding
+
+Default-configured rustler can only create Latin-1 atoms. Passing UTF-8 bytes silently produces the wrong atom — `"é"` becomes `Ã©` (two Latin-1 chars), with no error returned. Enabling the `nif_version_2_17` feature switches to the same `enif_make_new_atom_len` call otter uses unconditionally.
+
+This is one specimen of a broader pattern: rustler papers over the NIF C API with assumed defaults that have hidden edge cases. Otter takes the opposite approach — `Atom::intern` always calls `enif_make_new_atom_len(... ERL_NIF_UTF8)`, no Latin-1 path. The BEAM team designed the NIF surface deliberately; otter's job is to reflect it faithfully, not abridge it.
+
 ---
 
 ## What otter adds
