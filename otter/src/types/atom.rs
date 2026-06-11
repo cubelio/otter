@@ -106,7 +106,7 @@ impl StaticAtom {
     #[inline]
     pub fn get(&self) -> Atom {
         let term = self.term.load(Ordering::Relaxed);
-        debug_assert!(term != 0, "StaticAtom::get called before init");
+        assert!(term != 0, "StaticAtom::get called before init");
         Atom { term }
     }
 }
