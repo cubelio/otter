@@ -291,7 +291,7 @@ fn test_map(env: Env) -> Atom {
     let m = Map::new(env);
     assert_eq!(m.size(), 0);
 
-    let k1 = Atom::new(env, "x").unwrap();
+    let k1 = Atom::intern(env, "x").unwrap();
     let v1 = Integer::from_i64(env, 1);
     let m = m.put(k1, v1);
     assert_eq!(m.size(), 1);
@@ -301,7 +301,7 @@ fn test_map(env: Env) -> Atom {
         TypedTerm::Integer(i) => assert_eq!(i64::try_from(i).unwrap(), 1),
         _ => panic!("expected integer"),
     }
-    assert!(m.get(Atom::new(env, "missing").unwrap()).is_none());
+    assert!(m.get(Atom::intern(env, "missing").unwrap()).is_none());
 
     // update existing key
     let v2 = Integer::from_i64(env, 2);
@@ -312,10 +312,10 @@ fn test_map(env: Env) -> Atom {
     }
 
     // update missing key returns None
-    assert!(m.update(Atom::new(env, "missing").unwrap(), v1).is_none());
+    assert!(m.update(Atom::intern(env, "missing").unwrap(), v1).is_none());
 
     // put second key, iterate
-    let k2 = Atom::new(env, "y").unwrap();
+    let k2 = Atom::intern(env, "y").unwrap();
     let m = m.put(k2, Integer::from_i64(env, 3));
     assert_eq!(m.size(), 2);
     assert_eq!(m.iter().count(), 2);
@@ -333,7 +333,7 @@ fn test_map(env: Env) -> Atom {
 
 #[otter::nif]
 fn test_tuple(env: Env) -> Atom {
-    let a = TypedTerm::Atom(Atom::new(env, "hello").unwrap());
+    let a = TypedTerm::Atom(Atom::intern(env, "hello").unwrap());
     let b = TypedTerm::Integer(Integer::from_i64(env, 42));
     let t = Tuple::from_terms(env, [a, b]);
 
@@ -367,7 +367,7 @@ fn test_pid(env: Env) -> Pid {
     assert!(pid.as_nif_pid(env).is_some());
 
     // whereis — 'init' is always registered
-    let init = Pid::whereis(env, Atom::new(env, "init").unwrap());
+    let init = Pid::whereis(env, Atom::intern(env, "init").unwrap());
     assert!(init.is_some());
 
     pid

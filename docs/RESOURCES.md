@@ -79,24 +79,25 @@ This reference is the BEAM's handle to your Rust struct. You cannot inspect it f
 ### 4. Use the instance from other NIFs
 
 ```rust
+// `ok` and `error` are pre-declared via `declare_atoms![ok, error]` at module scope.
 #[otter::nif]
-fn put<'a>(env: Env<'a>, key: Binary<'a>, val: Binary<'a>, map: ResourceArc<MyMap>) -> Atom {
+fn put<'a>(_env: Env<'a>, key: Binary<'a>, val: Binary<'a>, map: ResourceArc<MyMap>) -> Atom {
     map.data.lock().unwrap().insert(
         key.as_bytes().to_vec(),
         val.as_bytes().to_vec(),
     );
-    Atom::new(env, "ok").unwrap()
+    otter::atom![ok]
 }
 
 #[otter::nif]
 fn get<'a>(env: Env<'a>, key: Binary<'a>, map: ResourceArc<MyMap>) -> TypedTerm<'a> {
     match map.data.lock().unwrap().get(key.as_bytes()) {
         Some(val) => {
-            let ok: TypedTerm = Atom::new(env, "ok").unwrap().into();
+            let ok: TypedTerm = otter::atom![ok].into();
             let bin: TypedTerm = Binary::from_bytes(env, val).into();
             TypedTerm::Tuple(Tuple::from_terms(env, [ok, bin]))
         }
-        None => TypedTerm::Atom(Atom::new(env, "error").unwrap()),
+        None => TypedTerm::Atom(otter::atom![error]),
     }
 }
 ```

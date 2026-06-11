@@ -25,6 +25,8 @@ One rule: **the first argument is the NIF call environment, and every remaining 
 - The first parameter does not count toward the NIF arity. Remaining parameters do.
 
 ```rust
+otter::declare_atoms![division_by_zero, integer, atom, other];
+
 // Every NIF takes Env first, even if it doesn't use it.
 #[otter::nif]
 fn add(_env: Env, a: Integer, b: Integer) -> Integer { a + b }
@@ -33,7 +35,7 @@ fn add(_env: Env, a: Integer, b: Integer) -> Integer { a + b }
 #[otter::nif]
 fn divide(env: Env, a: Integer, b: Integer) -> TypedTerm {
     match i64::try_from(b) {
-        Ok(0)  => env.raise(Atom::new(env, "division_by_zero").unwrap().encode(env)),
+        Ok(0)  => env.raise(otter::atom![division_by_zero].encode(env)),
         Ok(_)  => (a / b).encode(env),
         Err(_) => env.raise_badarg(),
     }
@@ -41,11 +43,11 @@ fn divide(env: Env, a: Integer, b: Integer) -> TypedTerm {
 
 // TypedTerm is a Decoder (no-op resolve), so it flows through the same path.
 #[otter::nif]
-fn inspect(env: Env, val: TypedTerm) -> Atom {
+fn inspect(_env: Env, val: TypedTerm) -> Atom {
     match val {
-        TypedTerm::Integer(_) => Atom::new(env, "integer").unwrap(),
-        TypedTerm::Atom(_)    => Atom::new(env, "atom").unwrap(),
-        _                => Atom::new(env, "other").unwrap(),
+        TypedTerm::Integer(_) => otter::atom![integer],
+        TypedTerm::Atom(_)    => otter::atom![atom],
+        _                     => otter::atom![other],
     }
 }
 ```
@@ -96,7 +98,7 @@ unsafe extern "C" fn add_nif(
     match result {
         Ok(Ok(val))  => val.encode(env).as_raw(),
         Ok(Err(_))   => env.raise_badarg().as_raw(),
-        Err(_panic)  => env.raise(Atom::new(env, "nif_panicked").unwrap().encode(env)).as_raw(),
+        Err(_panic)  => env.raise(Atom::intern(env, "nif_panicked").unwrap().encode(env)).as_raw(),
     }
 }
 ```
@@ -114,10 +116,12 @@ fn add(_env: Env, a: Integer, b: Integer) -> Integer { a + b }
 fn identity(_env: Env, val: TypedTerm) -> TypedTerm { val }
 
 // Result — Ok encodes and returns, Err raises as exception
+// `division_by_zero` is pre-declared via `declare_atoms![division_by_zero]`
+// at module scope (omitted here for brevity).
 #[otter::nif]
-fn divide(env: Env, a: Integer, b: Integer) -> Result<Integer, Atom> {
+fn divide(_env: Env, a: Integer, b: Integer) -> Result<Integer, Atom> {
     if i64::try_from(b)? == 0 {
-        Err(Atom::new(env, "division_by_zero").unwrap())
+        Err(otter::atom![division_by_zero])
     } else {
         Ok(a / b)
     }

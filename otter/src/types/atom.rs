@@ -16,11 +16,29 @@ pub struct Atom {
 }
 
 impl Atom {
-    /// Create (or intern) an atom from a UTF-8 string.
+    /// Intern an atom in the BEAM's global atom table.
     ///
-    /// Returns `None` if `name` is not valid UTF-8 or the atom table is full
-    /// (which is effectively never in practice).
-    pub fn new(env: Env<'_>, name: &str) -> Option<Atom> {
+    /// Returns `None` if `name` is not valid UTF-8 or the atom table is full.
+    ///
+    /// # Safety against atom-table exhaustion
+    ///
+    /// The atom table is global, has a fixed maximum size (default
+    /// 1,048,576), and **never shrinks** — every interned name persists for
+    /// the life of the VM. A NIF that calls `intern` with attacker-influenced
+    /// input (a network protocol field, a binary parsed from a file, etc.)
+    /// turns each unique string into a permanent atom-table entry, which is
+    /// a well-known BEAM denial-of-service vector that crashes the entire
+    /// VM, not just the NIF.
+    ///
+    /// **Never call `intern` on untrusted input.** For input handling, use
+    /// [`Atom::try_existing`] and treat `None` as "atom not recognized,
+    /// reject input." Reserve `intern` for compile-time-known names — and
+    /// even there, prefer the [`declare_atoms!`](crate::declare_atoms)
+    /// macro, which interns each name exactly once at NIF load and
+    /// retrieves it thereafter as a single atomic load.
+    ///
+    /// Wraps `enif_make_atom_len`.
+    pub fn intern(env: Env<'_>, name: &str) -> Option<Atom> {
         let term = unsafe {
             crate::wrapper::atom::make_atom(env.as_ptr(), name.as_bytes())
         }?;
@@ -30,6 +48,8 @@ impl Atom {
     /// Look up an existing atom by name without creating it.
     ///
     /// Returns `None` if no atom with this name exists in the atom table.
+    /// Use this instead of [`Atom::intern`] when looking up atoms from
+    /// untrusted input — `None` means "not a known name, reject."
     /// Wraps `enif_make_existing_atom_len`.
     pub fn try_existing(env: Env<'_>, name: &str) -> Option<Atom> {
         let term = unsafe {
@@ -92,7 +112,7 @@ impl StaticAtom {
     /// Initialize this atom by interning it in the BEAM atom table.
     /// Must be called from the NIF load callback.
     pub fn init(&self, env: Env<'_>) {
-        let atom = Atom::new(env, self.name)
+        let atom = Atom::intern(env, self.name)
             .expect("StaticAtom::init: failed to create atom");
         self.term.store(atom.term, Ordering::Relaxed);
     }

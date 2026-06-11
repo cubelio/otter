@@ -103,12 +103,20 @@ cargo_toml(Name) ->
 lib_rs(Name) ->
   io_lib:format(
     "use otter::env::Env;\n"
+    "use otter::term::TypedTerm;\n"
     "use otter::types::Atom;\n"
     "\n"
-    "#[otter::nif]\n"
-    "fn hello(env: Env) -> Atom {\n"
-    "    Atom::new(env, \"world\").unwrap()\n"
+    "otter::declare_atoms![world];\n"
+    "\n"
+    "fn on_load(env: Env, _info: TypedTerm) -> bool {\n"
+    "    otter::init_atoms!(env);\n"
+    "    true\n"
     "}\n"
     "\n"
-    "otter::init!(\"~s\", [hello]);\n",
+    "#[otter::nif]\n"
+    "fn hello(_env: Env) -> Atom {\n"
+    "    otter::atom![world]\n"
+    "}\n"
+    "\n"
+    "otter::init!(\"~s\", [hello], load = on_load);\n",
     [Name]).

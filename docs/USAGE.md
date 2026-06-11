@@ -175,20 +175,7 @@ The load callback receives `Env` (with `EnvKind::Init`) and the load info term. 
 
 Atoms are tagged immediates — no lifetime needed. They are valid across environments.
 
-```rust
-// Create (interns if new)
-let ok = Atom::new(env, "ok").unwrap();
-
-// Look up without creating
-let existing = Atom::try_existing(env, "error");
-
-// Extract name
-let name: String = ok.name(env);
-```
-
-`Atom::new` returns `None` if the atom table is full (extremely unlikely). `try_existing` returns `None` if the atom doesn't exist.
-
-**Pre-declared atoms** — for atoms used repeatedly, declare them once and retrieve them with zero cost (a single atomic load, no NIF call):
+**Use `declare_atoms!` + `atom![…]` for literal atom names** — it interns each name exactly once at NIF load and retrieves it at use as a single atomic load, with no NIF call:
 
 ```rust
 otter::declare_atoms![ok, error, not_found, content_type = "content-type"];
@@ -203,6 +190,28 @@ let ok = otter::atom![ok];
 ```
 
 Bare identifiers use the identifier as the atom name. For names that aren't valid Rust identifiers, use `ident = "name"` syntax. See the [Pre-Declared Atoms](#pre-declared-atoms) section for details.
+
+**Lookup and inspection:**
+
+```rust
+// Look up by name without creating — None if it doesn't exist
+let existing = Atom::try_existing(env, "error");
+
+// Extract name
+let name: String = ok.name(env);
+```
+
+**`Atom::intern(env, name)` exists for the rare case where you need to construct an atom from a runtime string, but read [Atom-table safety](#atom-table-safety) first.**
+
+#### Atom-table safety
+
+The BEAM atom table is global, has a fixed maximum size (default 1,048,576), and **never shrinks** — every interned name persists for the life of the VM. Calling `Atom::intern` on attacker-influenced input (a network protocol field, a binary parsed from a file, etc.) turns each unique string into a permanent atom-table entry. Eventually the table fills, and the entire VM crashes — not just the NIF, the whole node.
+
+This is a well-known BEAM DoS vector. The rule:
+
+- **Never call `Atom::intern` on untrusted strings.** For input handling, use `Atom::try_existing` and treat `None` as "atom not recognized, reject input."
+- **For compile-time-known names, use `declare_atoms!`** rather than `Atom::intern`. Same atom, but with no chance of leaking growth from a mistaken hot-path call.
+- `Atom::intern` returns `None` if the atom table is full or `name` is not valid UTF-8. The full case is a soft signal that something has been mishandled upstream — by the time you observe it, the VM is close to crashing.
 
 ### Integer
 
@@ -431,7 +440,7 @@ let new_ref = Reference::new(env);
 
 ## Pre-Declared Atoms
 
-For atoms used frequently across NIFs, pre-declaration avoids repeated `Atom::new` calls. Pre-declared atoms are interned once at NIF load time and retrieved thereafter as a single atomic load — no NIF call, no lookup.
+For atoms used frequently across NIFs, pre-declaration avoids repeated `Atom::intern` calls. Pre-declared atoms are interned once at NIF load time and retrieved thereafter as a single atomic load — no NIF call, no lookup.
 
 ### Step 1: Declare
 
@@ -559,11 +568,13 @@ pub trait Decoder<'a>: Sized {
 The idiomatic shape is a `Result<T, E>` return type where both `T: Encoder` and `E: Encoder`. `Ok(val)` encodes and returns; `Err(reason)` encodes the reason and raises it as a class-`error` exception (via `enif_raise_exception`):
 
 ```rust
+otter::declare_atoms![division_by_zero];
+
 #[otter::nif]
 fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Atom> {
     let bv = i64::try_from(b).unwrap();
     if bv == 0 {
-        Err(Atom::new(env, "division_by_zero").unwrap())
+        Err(otter::atom![division_by_zero])
     } else {
         let av = i64::try_from(a).unwrap();
         Ok(Integer::from_i64(env, av / bv))
@@ -581,9 +592,9 @@ For the cases where a `Result` return type doesn't fit — raising from a helper
 // badarg
 return env.raise_badarg();
 
-// arbitrary reason — accepts any AsNifTerm, no .encode(env) needed
-let reason = Atom::new(env, "my_error").unwrap();
-return env.raise(reason);
+// arbitrary reason — accepts any AsNifTerm, no .encode(env) needed.
+// `my_error` is pre-declared via `declare_atoms![my_error]` at module scope.
+return env.raise(otter::atom![my_error]);
 ```
 
 These are the only two exception mechanisms in the NIF C API (`enif_make_badarg` and `enif_raise_exception`). The `Err` branch of a `Result` return goes through `enif_raise_exception` under the hood.
@@ -637,9 +648,9 @@ fn create(env: Env) -> ResourceArc<MyState> {
 }
 
 #[otter::nif]
-fn increment(env: Env, state: ResourceArc<MyState>) -> Atom {
+fn increment(_env: Env, state: ResourceArc<MyState>) -> Atom {
     state.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    Atom::new(env, "ok").unwrap()
+    otter::atom![ok]
 }
 
 #[otter::nif]

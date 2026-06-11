@@ -47,14 +47,22 @@ and `native/my_nifs/src/lib.rs` with a minimal NIF:
 
 ```rust
 use otter::env::Env;
+use otter::term::TypedTerm;
 use otter::types::Atom;
 
-#[otter::nif]
-fn hello(env: Env) -> Atom {
-    Atom::new(env, "world").unwrap()
+otter::declare_atoms![world];
+
+fn on_load(env: Env, _info: TypedTerm) -> bool {
+    otter::init_atoms!(env);
+    true
 }
 
-otter::init!("my_nifs", [hello]);
+#[otter::nif]
+fn hello(_env: Env) -> Atom {
+    otter::atom![world]
+}
+
+otter::init!("my_nifs", [hello], load = on_load);
 ```
 
 **4. Register the crate and build hooks in `rebar.config`** (the scaffolder

@@ -19,7 +19,7 @@ use crate::wrapper;
 /// `enif_term_type` call and produce a typed `TypedTerm<'a>`.
 ///
 /// `Term` is a received type. You cannot construct one from scratch —
-/// all term construction goes through concrete types (`Atom::new`, `Map::new`,
+/// all term construction goes through concrete types (`Atom::intern`, `Map::new`,
 /// etc.), which always produce a known type.
 #[derive(Clone, Copy)]
 pub struct Term<'a> {

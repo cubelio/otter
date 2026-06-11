@@ -79,11 +79,11 @@ You choose the resolution level: `TypedTerm` when you need to branch on type, co
 | `f64` | `Float<'a>` | `f64::from(float)` to extract |
 | `String` | `Binary<'a>` | Call `.as_bytes()` or `.try_str()` |
 | `&str` | `Binary<'a>` | Same — binaries are the Erlang string type |
-| `bool` | `Atom` | Construct `Atom::new(env, "true")` |
+| `bool` | `Atom` | `declare_atoms![true_ = "true", false_ = "false"]` + `atom![true_]` / `atom![false_]` (the bare `true` / `false` identifiers are Rust keywords) |
 | `Vec<T>` | `List<'a>` | Walk with `iter()`, build with `List::from_terms()` |
 | `(A, B)` | `Tuple<'a>` | Access with `.element(i)`, build with `Tuple::from_terms()` |
 | `HashMap<K,V>` | `Map<'a>` | Use `.get()`, `.put()`, `.iter()` |
-| `rustler::Atom` | `Atom` | `Atom::new(env, "name")` |
+| `rustler::Atom` | `Atom` | `declare_atoms![name]` + `atom![name]` (or `Atom::intern` for runtime strings; see [Atom-table safety](USAGE.md#atom-table-safety)) |
 | `rustler::Binary` | `Binary<'a>` | `Binary::from_bytes(env, &[u8])` |
 | `rustler::TypedTerm` | `TypedTerm<'a>` | Typed enum, not opaque |
 | `rustler::Error` | *(none)* | Use `env.raise()` or `env.raise_badarg()` directly |
@@ -123,13 +123,13 @@ otter::atom![ok]
 
 `declare_atoms!` pre-declares atoms that are interned once at NIF load time. `atom!` retrieves them with a single atomic load. For atom names that aren't valid Rust identifiers, use `ident = "name"` syntax: `content_type = "content-type"`.
 
-For one-off atoms, you can also create them directly:
+For runtime atom strings (rare — prefer `declare_atoms!` for any compile-time-known name; **never** call `intern` on untrusted input — see [Atom-table safety](USAGE.md#atom-table-safety)):
 
 ```rust
-Atom::new(env, "ok").unwrap()
+Atom::intern(env, "ok").unwrap()
 
-// Look up without creating
-Atom::try_existing(env, "not_found")  // None if atom doesn't exist
+// Look up without creating — None if atom doesn't exist
+Atom::try_existing(env, "not_found")
 
 // Extract name
 atom.name(env)  // -> String
@@ -195,10 +195,11 @@ let a = tup.element(0);  // -> TypedTerm
 let b = tup.element(1);
 let c = tup.element(2);
 
+// `ok` is pre-declared via `declare_atoms![ok]` at module scope.
 let tup = Tuple::from_terms(env, [
     Integer::from_i64(env, 1).into(),
     Binary::from_bytes(env, b"hello").into(),
-    Atom::new(env, "ok").unwrap().into(),
+    otter::atom![ok].into(),
 ]);
 ```
 
@@ -232,10 +233,11 @@ for (k, v) in map.iter() {
     // k, v are TypedTerm<'a>
 }
 
-// Construct empty then build up — no .encode(env) needed
+// Construct empty then build up — no .encode(env) needed.
+// `key` is pre-declared via `declare_atoms![key]` at module scope.
 let mut m = Map::new(env);
 m = m.put(
-    Atom::new(env, "key").unwrap(),
+    otter::atom![key],
     Integer::from_i64(env, 42),
 );
 ```
@@ -266,11 +268,12 @@ Rustler's `Error` enum has multiple variants that do different things — some r
 
 **Otter:**
 ```rust
+// `badarith` is pre-declared via `declare_atoms![badarith]` at module scope.
 #[otter::nif]
 fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Atom> {
     let bv = i64::try_from(b).unwrap();
     if bv == 0 {
-        Err(Atom::new(env, "badarith").unwrap())  // raises exception
+        Err(otter::atom![badarith])  // raises exception
     } else {
         let av = i64::try_from(a).unwrap();
         Ok(Integer::from_i64(env, av / bv))
@@ -388,9 +391,10 @@ use otter::env::OwnedEnv;
 let pid = Pid::self_(env);
 std::thread::spawn(move || {
     let mut owned = OwnedEnv::new();
+    // `result` is pre-declared via `declare_atoms![result]` at module scope.
     owned.send(&pid, |env| {
         Tuple::from_terms(env, [
-            Atom::new(env, "result").unwrap().into(),
+            otter::atom![result].into(),
             Integer::from_i64(env, 42).into(),
         ]).into()
     });
@@ -488,7 +492,7 @@ otter = { git = "https://github.com/cubelio/otter.git" }
 3. Replace Rust primitive arguments with BEAM types (`i64` -> `Integer`, `String` -> `Binary`, etc.)
 4. Add explicit lifetime `<'a>` when multiple arguments carry lifetimes
 5. Replace `rustler::Error` returns with `Result<T, E>` where both implement `Encoder`, or use `env.raise()` / `env.raise_badarg()` directly
-6. Replace `atoms! {}` blocks with `declare_atoms!` / `init_atoms!` / `atom!`, or `Atom::new(env, "name")` for one-off atoms
+6. Replace `atoms! {}` blocks with `declare_atoms!` / `init_atoms!` / `atom!`. Reserve `Atom::intern(env, "name")` for runtime strings — and never call it on untrusted input ([Atom-table safety](USAGE.md#atom-table-safety))
 7. Replace `Vec<T>` list handling with `list.iter()` iterator
 8. Replace `resource!` macro with `OnceLock<ResourceTypeHandle>` + `Resource` trait impl + `register_resource_type` in load callback
 9. Replace `OwnedEnv::send_and_clear` with `OwnedEnv::send`

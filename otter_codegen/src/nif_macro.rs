@@ -78,7 +78,7 @@ fn arg_ident(arg: &FnArg) -> Result<syn::Ident> {
 
 fn panic_handler() -> TokenStream {
     quote! {
-        match ::otter::__codegen::Atom::new(__otter_env, "nif_panicked") {
+        match ::otter::__codegen::Atom::intern(__otter_env, "nif_panicked") {
             Some(__atom) => __otter_env.raise(
                 ::otter::__codegen::Encoder::encode(&__atom, __otter_env)
             ).as_raw(),
