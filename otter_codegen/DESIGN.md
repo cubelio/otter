@@ -31,7 +31,7 @@ fn add(_env: Env, a: Integer, b: Integer) -> Integer { a + b }
 
 // Use the env when raising custom exceptions or constructing terms.
 #[otter::nif]
-fn divide(env: Env, a: Integer, b: Integer) -> Term {
+fn divide(env: Env, a: Integer, b: Integer) -> TypedTerm {
     match i64::try_from(b) {
         Ok(0)  => env.raise(Atom::new(env, "division_by_zero").unwrap().encode(env)),
         Ok(_)  => (a / b).encode(env),
@@ -39,18 +39,18 @@ fn divide(env: Env, a: Integer, b: Integer) -> Term {
     }
 }
 
-// Term is a Decoder (no-op resolve), so it flows through the same path.
+// TypedTerm is a Decoder (no-op resolve), so it flows through the same path.
 #[otter::nif]
-fn inspect(env: Env, val: Term) -> Atom {
+fn inspect(env: Env, val: TypedTerm) -> Atom {
     match val {
-        Term::Integer(_) => Atom::new(env, "integer").unwrap(),
-        Term::Atom(_)    => Atom::new(env, "atom").unwrap(),
+        TypedTerm::Integer(_) => Atom::new(env, "integer").unwrap(),
+        TypedTerm::Atom(_)    => Atom::new(env, "atom").unwrap(),
         _                => Atom::new(env, "other").unwrap(),
     }
 }
 ```
 
-The macro does no name-based classification of arguments. A user type named `Term` decodes through its own `Decoder` impl (or fails to compile cleanly); an env-typed parameter renamed via `use otter::Env as E` works because the type is never inspected by name.
+The macro does no name-based classification of arguments. A user type named `TypedTerm` decodes through its own `Decoder` impl (or fails to compile cleanly); an env-typed parameter renamed via `use otter::Env as E` works because the type is never inspected by name.
 
 **Return type rule:**
 
@@ -58,7 +58,7 @@ One rule: **the user's return value must implement `Encoder`.** The macro emits 
 
 The interesting impls:
 
-- Every otter term type (`Integer`, `Binary`, `Atom`, `Term`, `RawTerm`, etc.) implements `Encoder`. `Encoder::encode` returns a `RawTerm<'a>` tied to the call's env.
+- Every otter term type (`Integer`, `Binary`, `Atom`, `TypedTerm`, `RawTerm`, etc.) implements `Encoder`. `Encoder::encode` returns a `RawTerm<'a>` tied to the call's env.
 - `Result<T: Encoder, E: Encoder>` implements `Encoder`: `Ok(v)` encodes `v` and returns the term, `Err(e)` encodes `e`, calls `enif_raise_exception` with the encoded term, and returns the resulting exception term. The BEAM treats this as a class-`error` raise of the encoded reason.
 
 Because the dispatch is by type (not by token-stream string matching on `Result`), a user type that happens to be named `Result` does not silently inherit the raise-on-`Err` behavior — it gets whatever `Encoder` impl it has, or a compile error if none.
@@ -109,9 +109,9 @@ The `?` propagation of `CodecError` is an internal detail of the generated code.
 #[otter::nif]
 fn add(_env: Env, a: Integer, b: Integer) -> Integer { a + b }
 
-// Term — macro passes it through unchanged
+// TypedTerm — macro passes it through unchanged
 #[otter::nif]
-fn identity(_env: Env, val: Term) -> Term { val }
+fn identity(_env: Env, val: TypedTerm) -> TypedTerm { val }
 
 // Result — Ok encodes and returns, Err raises as exception
 #[otter::nif]
@@ -157,7 +157,7 @@ otter::init!("my_module", [
 pointers via `dlsym`, then builds and leaks the `ErlNifEntry`.
 
 The generated load callback (emitted only when `load = ...` is given) does one
-thing: it calls the user's `load` callback. It receives `(Env, Term)` — the env
+thing: it calls the user's `load` callback. It receives `(Env, TypedTerm)` — the env
 and the `load_info` term passed by `erlang:load_nif/2`. Resource types are
 **not** registered automatically; the user does that explicitly inside their
 `load` callback (see below).
@@ -173,7 +173,7 @@ type in their `init!` load callback, by calling the free function
 `otter::resource::register_resource_type::<T>(env, name)`:
 
 ```rust
-fn on_load(env: Env<'_>, _load_info: Term<'_>) -> bool {
+fn on_load(env: Env<'_>, _load_info: TypedTerm<'_>) -> bool {
     otter::resource::register_resource_type::<MyResource>(env, "MyResource");
     true
 }
@@ -195,6 +195,6 @@ All macros use `syn` to parse input token streams and `quote` to generate output
 
 ## What is deliberately excluded
 
-- **`NifUntaggedEnum`** — try-each structural dispatch has no Erlang equivalent. Users needing structural dispatch receive a `Term` and pattern match explicitly.
+- **`NifUntaggedEnum`** — try-each structural dispatch has no Erlang equivalent. Users needing structural dispatch receive a `TypedTerm` and pattern match explicitly.
 - **`NifStruct`** — Elixir struct with `__struct__` key. Not an Erlang concept.
 - **`NifException`** — Elixir exception struct. Not an Erlang concept.

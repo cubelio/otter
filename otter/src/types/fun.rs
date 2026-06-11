@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{RawTerm, Term};
+use crate::term::{RawTerm, TypedTerm};
 
 /// An Erlang fun (closure or function reference).
 ///
@@ -51,9 +51,9 @@ impl<'b> Encoder for Fun<'b> {
 }
 
 impl<'a> Decoder<'a> for Fun<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
         match term {
-            Term::Fun(f) => Ok(f),
+            TypedTerm::Fun(f) => Ok(f),
             _ => Err(CodecError::WrongType),
         }
     }

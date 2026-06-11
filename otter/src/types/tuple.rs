@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{RawTerm, Term, TermIn};
+use crate::term::{RawTerm, TypedTerm, TermIn};
 
 /// An Erlang tuple.
 #[derive(Clone, Copy)]
@@ -27,7 +27,7 @@ impl<'a> Tuple<'a> {
     ///
     /// Panics if `i >= self.len()`. The pointer returned by `enif_get_tuple`
     /// points into the BEAM heap and is valid for lifetime `'a`.
-    pub fn element(self, i: usize) -> Term<'a> {
+    pub fn element(self, i: usize) -> TypedTerm<'a> {
         let (ptr, _arity) =
             unsafe { crate::wrapper::tuple::get_tuple(self.env.as_ptr(), self.term) }.unwrap();
         let raw = unsafe { *ptr.add(i) };
@@ -81,9 +81,9 @@ impl<'b> Encoder for Tuple<'b> {
 }
 
 impl<'a> Decoder<'a> for Tuple<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
         match term {
-            Term::Tuple(t) => Ok(t),
+            TypedTerm::Tuple(t) => Ok(t),
             _ => Err(CodecError::WrongType),
         }
     }

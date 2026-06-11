@@ -65,26 +65,26 @@ add(_A, _B) -> exit(nif_not_loaded).
 
 ## Core Concepts
 
-### Term Resolution
+### TypedTerm Resolution
 
 Terms are resolved lazily. Each step costs one NIF call, and you only pay for what you use.
 
 ```
 NifTerm          bare machine word, no metadata
   -> RawTerm     + Env and lifetime, zero work
-    -> Term      + type tag (one enif_term_type call)
+    -> TypedTerm      + type tag (one enif_term_type call)
       -> data    extraction methods on concrete types
 ```
 
-`RawTerm` is what you receive from the BEAM. Call `.resolve()` to get a `Term` (typed enum). Call methods like `i64::try_from(integer)` or `.as_bytes()` to extract actual data. Each step is explicit.
+`RawTerm` is what you receive from the BEAM. Call `.resolve()` to get a `TypedTerm` (typed enum). Call methods like `i64::try_from(integer)` or `.as_bytes()` to extract actual data. Each step is explicit.
 
 ### Env and Lifetimes
 
-`Env<'a>` ties every term to the NIF call that created it. When the NIF returns, the `Env` is gone and no `Term<'a>` can outlive it. This is enforced at compile time — there is no runtime check.
+`Env<'a>` ties every term to the NIF call that created it. When the NIF returns, the `Env` is gone and no `TypedTerm<'a>` can outlive it. This is enforced at compile time — there is no runtime check.
 
 ```rust
 #[otter::nif]
-fn example(env: Env, val: Term) -> Term {
+fn example(env: Env, val: TypedTerm) -> TypedTerm {
     // env and val share lifetime 'a
     // both are valid until this function returns
     val
@@ -110,10 +110,10 @@ fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
 | Type | What happens | Cost |
 |---|---|---|
 | `Env<'a>` | Passed through, must be first, does not count toward arity | 0 |
-| `Term<'a>` | Wraps argv[i] + `enif_term_type` | 1 NIF call |
+| `TypedTerm<'a>` | Wraps argv[i] + `enif_term_type` | 1 NIF call |
 | `T: Decoder` | Wraps + resolves + decodes, badarg on failure | 2+ NIF calls |
 
-`RawTerm<'a>` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `Term`.
+`RawTerm<'a>` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `TypedTerm`.
 
 **Return type:**
 
@@ -123,7 +123,7 @@ The user's return type must implement `Encoder`. The macro emits a single `Encod
 |---|---|
 | `T: Encoder` (any otter term type) | `.encode(env).as_raw()` — one NIF call to build the term, plus the BEAM-bound machine word |
 | `Result<T, E>` where `T: Encoder, E: Encoder` | `Ok(v)` encodes `v` and returns; `Err(e)` encodes `e` and raises it as a class-`error` exception |
-| `Term<'a>` / `RawTerm<'a>` | Same path — both implement `Encoder`. The encode is essentially a passthrough |
+| `TypedTerm<'a>` / `RawTerm<'a>` | Same path — both implement `Encoder`. The encode is essentially a passthrough |
 
 **Attributes:**
 
@@ -156,7 +156,7 @@ otter::init!("my_module", [add, subtract, hello]);
 With an optional load callback:
 
 ```rust
-fn on_load(env: Env, _load_info: Term) -> bool {
+fn on_load(env: Env, _load_info: TypedTerm) -> bool {
     otter::init_atoms!(env);  // initialize pre-declared atoms
     otter::resource::register_resource_type::<MyResource>(env, "my_resource");
     true
@@ -193,7 +193,7 @@ let name: String = ok.name(env);
 ```rust
 otter::declare_atoms![ok, error, not_found, content_type = "content-type"];
 
-fn on_load(env: Env, _load_info: Term) -> bool {
+fn on_load(env: Env, _load_info: TypedTerm) -> bool {
     otter::init_atoms!(env);
     true
 }
@@ -207,8 +207,8 @@ Bare identifiers use the identifier as the atom name. For names that aren't vali
 ### Integer
 
 ```rust
-// Decode from a Term
-let Term::Integer(i) = term else { ... };
+// Decode from a TypedTerm
+let TypedTerm::Integer(i) = term else { ... };
 
 // Extract value
 let val: i64 = i.try_into()?;          // may overflow
@@ -223,7 +223,7 @@ let big = Integer::from_u64(env, u64::MAX);
 ### Float
 
 ```rust
-let Term::Float(f) = term else { ... };
+let TypedTerm::Float(f) = term else { ... };
 
 // Extract (always succeeds — Erlang floats are f64)
 let val: f64 = f.into();
@@ -237,7 +237,7 @@ let pi = Float::from_f64(env, 3.14159);
 Zero-copy access to BEAM-heap binaries.
 
 ```rust
-let Term::Binary(bin) = term else { ... };
+let TypedTerm::Binary(bin) = term else { ... };
 
 // Read
 let bytes: &[u8] = bin.as_bytes();
@@ -276,7 +276,7 @@ let bin: Binary = builder.finish(env);
 
 ### Bitstring
 
-Sub-byte bitstrings. Received via `Term::Bitstring`. No inspection API exists in the NIF interface — you can pass them through or encode them, but you cannot read the bits.
+Sub-byte bitstrings. Received via `TypedTerm::Bitstring`. No inspection API exists in the NIF interface — you can pass them through or encode them, but you cannot read the bits.
 
 ### List
 
@@ -286,7 +286,7 @@ Lists in the BEAM are cons cells or nil (`[]`). Use `iter()` to walk a list:
 // Sum all integers in a list
 let sum: i64 = list.iter()
     .filter_map(|raw| match raw.resolve() {
-        Term::Integer(i) => Some(i64::try_from(i).unwrap()),
+        TypedTerm::Integer(i) => Some(i64::try_from(i).unwrap()),
         _ => None,
     })
     .sum();
@@ -300,7 +300,7 @@ for head in &mut iter {
     // process head.resolve()
 }
 match iter.tail().unwrap() {
-    Term::List(_) => { /* proper list — tail is [] */ }
+    TypedTerm::List(_) => { /* proper list — tail is [] */ }
     other => { /* improper list — tail is some other term */ }
 }
 ```
@@ -343,14 +343,14 @@ let s: String = list.try_string()?;
 ### Tuple
 
 ```rust
-let Term::Tuple(tup) = term else { ... };
+let TypedTerm::Tuple(tup) = term else { ... };
 
 // Arity
 let len: usize = tup.len();
 
 // Element access (0-indexed)
-let first: Term = tup.element(0);
-let second: Term = tup.element(1);
+let first: TypedTerm = tup.element(0);
+let second: TypedTerm = tup.element(1);
 
 // Construct from a slice
 let tup = Tuple::from_terms(env, &[term1, term2]);
@@ -359,13 +359,13 @@ let tup = Tuple::from_terms(env, &[term1, term2]);
 ### Map
 
 ```rust
-let Term::Map(map) = term else { ... };
+let TypedTerm::Map(map) = term else { ... };
 
 // Size
 let n: usize = map.size();
 
-// Lookup — accepts any TermIn (Atom, Integer, Term, etc.)
-let val: Option<Term> = map.get(atom_key);
+// Lookup — accepts any TermIn (Atom, Integer, TypedTerm, etc.)
+let val: Option<TypedTerm> = map.get(atom_key);
 
 // Insert (returns a new map — maps are immutable)
 let map2: Map = map.put(atom_key, integer_val);
@@ -381,7 +381,7 @@ let empty = Map::new(env);
 
 // Iterate
 for (key, value) in map.iter() {
-    // key and value are Term<'a>
+    // key and value are TypedTerm<'a>
 }
 ```
 
@@ -390,7 +390,7 @@ for (key, value) in map.iter() {
 No lifetime — pids are tagged immediates.
 
 ```rust
-let Term::Pid(pid) = term else { ... };
+let TypedTerm::Pid(pid) = term else { ... };
 
 // Current process
 let self_pid = Pid::self_(env);
@@ -405,7 +405,7 @@ let pid = Pid::whereis(env, name_atom);
 ### Port
 
 ```rust
-let Term::Port(port) = term else { ... };
+let TypedTerm::Port(port) = term else { ... };
 
 // Registered name lookup
 let port = Port::whereis(env, name_atom);
@@ -416,12 +416,12 @@ let ok: bool = port.command(env, msg_term);
 
 ### Fun
 
-Received via `Term::Fun`. Can be passed through or encoded, but there is no NIF API to call or inspect funs.
+Received via `TypedTerm::Fun`. Can be passed through or encoded, but there is no NIF API to call or inspect funs.
 
 ### Reference
 
 ```rust
-let Term::Reference(r) = term else { ... };
+let TypedTerm::Reference(r) = term else { ... };
 
 // Create a new unique reference
 let new_ref = Reference::new(env);
@@ -454,7 +454,7 @@ This generates a hidden `__otter_atoms` module containing one `StaticAtom` per e
 Call `init_atoms!` from your `on_load` callback:
 
 ```rust
-fn on_load(env: Env, _load_info: Term) -> bool {
+fn on_load(env: Env, _load_info: TypedTerm) -> bool {
     otter::init_atoms!(env);
     true
 }
@@ -532,11 +532,11 @@ pub trait Encoder {
 }
 
 pub trait Decoder<'a>: Sized {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError>;
 }
 ```
 
-`Decoder::decode` is called on resolved `Term` values. If the term doesn't match the expected type, it returns `CodecError::WrongType`. The generated wrapper converts this to a `badarg` exception.
+`Decoder::decode` is called on resolved `TypedTerm` values. If the term doesn't match the expected type, it returns `CodecError::WrongType`. The generated wrapper converts this to a `badarg` exception.
 
 `Encoder::encode` converts a value back into a `RawTerm` tied to the target env's lifetime. For types that already hold a NIF term (like `Integer`, `Binary`), this copies the term into the target environment via `enif_make_copy`.
 
@@ -546,7 +546,7 @@ pub trait Decoder<'a>: Sized {
 
 | Variant | Meaning |
 |---|---|
-| `WrongType` | Term is not the expected type |
+| `WrongType` | TypedTerm is not the expected type |
 | `IntegerOverflow` | Integer doesn't fit in the target Rust type |
 | `InvalidCodepoint` | Integer is not a valid Unicode codepoint |
 
@@ -575,7 +575,7 @@ This is normal `Encoder` trait dispatch on the return type — `Result<T, E>` ha
 
 ### Raising exceptions explicitly
 
-For the cases where a `Result` return type doesn't fit — raising from a helper, or building the error term mid-function — call the raise primitives directly. Both produce a `Term<'a>` that you return from the NIF:
+For the cases where a `Result` return type doesn't fit — raising from a helper, or building the error term mid-function — call the raise primitives directly. Both produce a `TypedTerm<'a>` that you return from the NIF:
 
 ```rust
 // badarg
@@ -618,7 +618,7 @@ impl Resource for MyState {
 Registration must happen in the load callback:
 
 ```rust
-fn on_load(env: Env, _load_info: Term) -> bool {
+fn on_load(env: Env, _load_info: TypedTerm) -> bool {
     otter::resource::register_resource_type::<MyState>(env, "my_state");
     true
 }
@@ -797,7 +797,7 @@ The BEAM sends a message to `pid` when the event fires. Use `NifSelectFlags::REA
 
 ```rust
 use otter::env::Env;
-use otter::term::Term;
+use otter::term::TypedTerm;
 use otter::types::{Atom, Binary, BinaryBuilder, Integer, List};
 
 otter::declare_atoms![world, ok];
@@ -814,7 +814,7 @@ fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
 }
 
 #[otter::nif]
-fn echo(_env: Env, val: Term) -> Term {
+fn echo(_env: Env, val: TypedTerm) -> TypedTerm {
     val
 }
 
@@ -832,14 +832,14 @@ fn reverse_binary<'a>(env: Env<'a>, bin: Binary<'a>) -> Binary<'a> {
 fn sum_list<'a>(env: Env<'a>, list: List<'a>) -> Integer<'a> {
     let sum: i64 = list.iter()
         .filter_map(|raw| match raw.resolve() {
-            Term::Integer(i) => Some(i64::try_from(i).unwrap()),
+            TypedTerm::Integer(i) => Some(i64::try_from(i).unwrap()),
             _ => None,
         })
         .sum();
     Integer::from_i64(env, sum)
 }
 
-fn on_load(env: Env, _load_info: Term) -> bool {
+fn on_load(env: Env, _load_info: TypedTerm) -> bool {
     otter::init_atoms!(env);
     true
 }

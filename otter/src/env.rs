@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use crate::sys::{NifEnv, NifPid};
-use crate::term::Term;
+use crate::term::TypedTerm;
 use crate::types::Pid;
 use crate::wrapper;
 
@@ -36,7 +36,7 @@ pub enum EnvKind {
 ///
 /// The lifetime is synthesized in the generated `extern "C"` NIF wrapper by
 /// borrowing a stack-allocated `()`. This means `'a` is strictly scoped to
-/// one NIF call: the compiler rejects any attempt to store a `Term<'a>` past
+/// one NIF call: the compiler rejects any attempt to store a `TypedTerm<'a>` past
 /// the point where the NIF returns.
 ///
 /// `PhantomData<*mut &'a u8>` makes `Env` *invariant* over `'a`. Without
@@ -63,7 +63,7 @@ impl<'a> Env<'a> {
     ///
     /// `env` must be a valid `ErlNifEnv` pointer for the entire duration of
     /// `'a`, and must not be freed or cleared while any `Env<'a>` or
-    /// `Term<'a>` derived from it exists.
+    /// `TypedTerm<'a>` derived from it exists.
     #[inline]
     pub(crate) unsafe fn new(
         _marker: &'a (),
@@ -83,7 +83,7 @@ impl<'a> Env<'a> {
 // Env is not Send or Sync: *mut NifEnv is neither, and Env must not cross
 // thread boundaries. The compiler enforces this automatically via PhantomData.
 
-// raise() and raise_badarg() are defined in term.rs after Term<'a> is declared,
+// raise() and raise_badarg() are defined in term.rs after TypedTerm<'a> is declared,
 // as an additional impl block on Env<'a>.
 
 // ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ impl OwnedEnv {
     /// for non-scheduler threads.
     pub fn send<F>(&mut self, pid: &Pid, f: F) -> bool
     where
-        F: FnOnce(Env<'_>) -> Term<'_>,
+        F: FnOnce(Env<'_>) -> TypedTerm<'_>,
     {
         let marker = ();
         // SAFETY: self.env is valid; marker ties the lifetime to this frame.

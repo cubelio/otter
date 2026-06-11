@@ -31,19 +31,19 @@ otter::init!("my_module", [add]);
 ```
 
 Key differences:
-- `Env` is required. Rustler's macro detects `Env` and `Term` by matching the *unqualified identifier string* of the argument type (see `rustler_codegen/src/nif.rs`), so an alias like `use rustler::Env as MyEnv` silently changes the macro's behavior. Otter requires `Env` as the first positional argument and routes all other arguments through `Decoder` — no name-based dispatch.
+- `Env` is required. Rustler's macro detects `Env` and `TypedTerm` by matching the *unqualified identifier string* of the argument type (see `rustler_codegen/src/nif.rs`), so an alias like `use rustler::Env as MyEnv` silently changes the macro's behavior. Otter requires `Env` as the first positional argument and routes all other arguments through `Decoder` — no name-based dispatch.
 - Arguments are BEAM types (`Integer`), not Rust primitives. Rustler auto-converts `i64`; otter gives you the BEAM term and you extract when ready.
 - NIFs are listed explicitly in `init!`. Rustler collects them via linker magic (`inventory` crate).
 - Module name is the bare Erlang module name. Rustler's `init!` accepts both styles (`"Elixir.MyModule"` and `"my_module"`); otter uses bare names.
 
 ---
 
-## Term Handling
+## TypedTerm Handling
 
 **Rustler:**
 ```rust
-// One type: Term<'a>, opaque wrapper around NIF_TERM
-fn example(term: Term) -> Term {
+// One type: TypedTerm<'a>, opaque wrapper around NIF_TERM
+fn example(term: TypedTerm) -> TypedTerm {
     term
 }
 ```
@@ -52,20 +52,20 @@ fn example(term: Term) -> Term {
 ```rust
 // Three resolution levels, each at a different cost:
 //   RawTerm  — bare machine word, zero work
-//   Term     — typed enum (one enif_term_type call)
+//   TypedTerm     — typed enum (one enif_term_type call)
 //   data     — extraction methods on concrete types
 //
 // Every #[otter::nif] takes Env as its first argument. Subsequent
-// arguments are decoded through Decoder; both Term and concrete types
+// arguments are decoded through Decoder; both TypedTerm and concrete types
 // implement Decoder.
 
 #[otter::nif]
-fn example(_env: Env, val: Term) -> Term {  // Term = typed enum
+fn example(_env: Env, val: TypedTerm) -> TypedTerm {  // TypedTerm = typed enum
     val
 }
 ```
 
-You choose the resolution level: `Term` when you need to branch on type, concrete types when you need the data. (`RawTerm` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `Term`.)
+You choose the resolution level: `TypedTerm` when you need to branch on type, concrete types when you need the data. (`RawTerm` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `TypedTerm`.)
 
 ---
 
@@ -85,7 +85,7 @@ You choose the resolution level: `Term` when you need to branch on type, concret
 | `HashMap<K,V>` | `Map<'a>` | Use `.get()`, `.put()`, `.iter()` |
 | `rustler::Atom` | `Atom` | `Atom::new(env, "name")` |
 | `rustler::Binary` | `Binary<'a>` | `Binary::from_bytes(env, &[u8])` |
-| `rustler::Term` | `Term<'a>` | Typed enum, not opaque |
+| `rustler::TypedTerm` | `TypedTerm<'a>` | Typed enum, not opaque |
 | `rustler::Error` | *(none)* | Use `env.raise()` or `env.raise_badarg()` directly |
 | `rustler::ResourceArc<T>` | `ResourceArc<T>` | Same concept, different registration |
 
@@ -112,7 +112,7 @@ atoms::ok().encode(env)
 // Pre-declare atoms for zero-cost retrieval
 otter::declare_atoms![ok, error, not_found];
 
-fn on_load(env: Env, _load_info: Term) -> bool {
+fn on_load(env: Env, _load_info: TypedTerm) -> bool {
     otter::init_atoms!(env);
     true
 }
@@ -160,7 +160,7 @@ use otter::types::List;
 
 // Iterator — yields RawTerm heads, one enif_get_list_cell per step
 for head in list.iter() {
-    let h: Term = head.resolve();
+    let h: TypedTerm = head.resolve();
     // process h...
 }
 
@@ -190,8 +190,8 @@ let tuple = (1, "hello", atoms::ok()).encode(env);
 
 **Otter:**
 ```rust
-let Term::Tuple(tup) = term else { return env.raise_badarg() };
-let a = tup.element(0);  // -> Term
+let TypedTerm::Tuple(tup) = term else { return env.raise_badarg() };
+let a = tup.element(0);  // -> TypedTerm
 let b = tup.element(1);
 let c = tup.element(2);
 
@@ -202,7 +202,7 @@ let tup = Tuple::from_terms(env, [
 ]);
 ```
 
-Elements are `Term` values. You resolve and decode them yourself. Construction uses `Tuple::from_terms` with any iterable of `impl TermIn` values — concrete types can be passed directly for homogeneous tuples, or use `.into()` to convert to `Term` for mixed types.
+Elements are `TypedTerm` values. You resolve and decode them yourself. Construction uses `Tuple::from_terms` with any iterable of `impl TermIn` values — concrete types can be passed directly for homogeneous tuples, or use `.into()` to convert to `TypedTerm` for mixed types.
 
 ---
 
@@ -216,10 +216,10 @@ let term = map.encode(env);
 
 **Otter:**
 ```rust
-let Term::Map(map) = term else { return env.raise_badarg() };
+let TypedTerm::Map(map) = term else { return env.raise_badarg() };
 
 // Lookup
-let val: Option<Term> = map.get(key_term);
+let val: Option<TypedTerm> = map.get(key_term);
 
 // Insert (returns new map)
 let map2 = map.put(key_term, val_term);
@@ -229,7 +229,7 @@ let map3: Option<Map> = map.update(key_term, new_val);
 
 // Iterate
 for (k, v) in map.iter() {
-    // k, v are Term<'a>
+    // k, v are TypedTerm<'a>
 }
 
 // Construct empty then build up — no .encode(env) needed
@@ -251,7 +251,7 @@ use rustler::Error;
 #[rustler::nif]
 fn divide(a: i64, b: i64) -> Result<i64, Error> {
     if b == 0 {
-        Err(Error::Term(Box::new("division_by_zero")))  // returns {error, reason}?
+        Err(Error::TypedTerm(Box::new("division_by_zero")))  // returns {error, reason}?
         // or
         Err(Error::RaiseAtom("badarith"))               // raises exception?
         // or
@@ -320,7 +320,7 @@ impl Resource for MyResource {
     }
 }
 
-fn on_load(env: Env, _load_info: Term) -> bool {
+fn on_load(env: Env, _load_info: TypedTerm) -> bool {
     otter::resource::register_resource_type::<MyResource>(env, "my_resource");
     true
 }

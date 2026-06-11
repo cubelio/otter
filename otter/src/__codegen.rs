@@ -12,7 +12,7 @@ pub use crate::sys::{
     NIF_FUNC_DIRTY_IO, NIF_MAJOR_VERSION, NIF_MIN_ERTS_VERSION, NIF_MINOR_VERSION,
     NIF_VM_VARIANT,
 };
-pub use crate::term::{RawTerm, Term};
+pub use crate::term::{RawTerm, TypedTerm};
 pub use crate::types::Atom;
 
 /// Value for `NifEntry.options` indicating `sizeof_resource_type_init` is set.

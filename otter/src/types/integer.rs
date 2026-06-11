@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{RawTerm, Term};
+use crate::term::{RawTerm, TypedTerm};
 
 /// An Erlang integer. Arbitrary precision — small integers are tagged
 /// immediates, large integers (bignums) are heap-allocated.
@@ -106,9 +106,9 @@ impl<'b> Encoder for Integer<'b> {
 }
 
 impl<'a> Decoder<'a> for Integer<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
         match term {
-            Term::Integer(i) => Ok(i),
+            TypedTerm::Integer(i) => Ok(i),
             _ => Err(CodecError::WrongType),
         }
     }

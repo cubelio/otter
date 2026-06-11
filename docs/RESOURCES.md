@@ -37,7 +37,7 @@ impl Resource for MyMap {
     }
 }
 
-fn on_load(env: Env, _load_info: Term) -> bool {
+fn on_load(env: Env, _load_info: TypedTerm) -> bool {
     otter::resource::register_resource_type::<MyMap>(env, "my_map");
     true
 }
@@ -89,14 +89,14 @@ fn put<'a>(env: Env<'a>, key: Binary<'a>, val: Binary<'a>, map: ResourceArc<MyMa
 }
 
 #[otter::nif]
-fn get<'a>(env: Env<'a>, key: Binary<'a>, map: ResourceArc<MyMap>) -> Term<'a> {
+fn get<'a>(env: Env<'a>, key: Binary<'a>, map: ResourceArc<MyMap>) -> TypedTerm<'a> {
     match map.data.lock().unwrap().get(key.as_bytes()) {
         Some(val) => {
-            let ok: Term = Atom::new(env, "ok").unwrap().into();
-            let bin: Term = Binary::from_bytes(env, val).into();
-            Term::Tuple(Tuple::from_terms(env, [ok, bin]))
+            let ok: TypedTerm = Atom::new(env, "ok").unwrap().into();
+            let bin: TypedTerm = Binary::from_bytes(env, val).into();
+            TypedTerm::Tuple(Tuple::from_terms(env, [ok, bin]))
         }
-        None => Term::Atom(Atom::new(env, "error").unwrap()),
+        None => TypedTerm::Atom(Atom::new(env, "error").unwrap()),
     }
 }
 ```
@@ -153,7 +153,7 @@ Pick the narrowest lock scope either way. A NIF that holds a lock across a long 
 
 Resources live outside the `Env<'a>` lifetime system. A resource outlives any single NIF call — that's the point. The `ResourceArc<T>` does not carry a lifetime parameter.
 
-This means you cannot store `Term<'a>` or `Binary<'a>` inside a resource — those are borrowed from the NIF call's environment and become invalid when the NIF returns. To store term data in a resource, copy it into an owned Rust type first (e.g. `Vec<u8>`, `String`, `i64`).
+This means you cannot store `TypedTerm<'a>` or `Binary<'a>` inside a resource — those are borrowed from the NIF call's environment and become invalid when the NIF returns. To store term data in a resource, copy it into an owned Rust type first (e.g. `Vec<u8>`, `String`, `i64`).
 
 ---
 

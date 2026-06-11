@@ -117,7 +117,7 @@ You only depend on `otter`. The codegen macros are re-exported through it.
 ## Features
 
 - **All 12 Erlang term types** — Atom, Integer, Float, Binary, Bitstring, List, Tuple, Map, Pid, Port, Reference, Fun
-- **Two-level term resolution** — `RawTerm` (zero cost) → `Term` (one NIF call) → data extraction. Pay only for what you use.
+- **Two-level term resolution** — `RawTerm` (zero cost) → `TypedTerm` (one NIF call) → data extraction. Pay only for what you use.
 - **Compile-time lifetime safety** — `Env<'a>` ties every term to its NIF call. Terms cannot escape. No runtime checks.
 - **Pre-declared atoms** — `declare_atoms!` / `init_atoms!` / `atom!` for zero-cost atom retrieval (single atomic load)
 - **Resource types** — BEAM-managed Rust objects with destructors and process monitors

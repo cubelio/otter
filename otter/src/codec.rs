@@ -5,7 +5,7 @@
 //! subsequent step.
 
 use crate::env::Env;
-use crate::term::{RawTerm, Term};
+use crate::term::{RawTerm, TypedTerm};
 
 /// Error returned by term type conversion operations.
 ///
@@ -81,6 +81,6 @@ impl<T: Encoder, E: Encoder> Encoder for Result<T, E> {
 /// Implemented by otter term types. Returns `Err(CodecError)` if the term
 /// is not the expected type or the value does not fit.
 pub trait Decoder<'a>: Sized {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError>;
 }
 

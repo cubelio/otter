@@ -2,7 +2,7 @@ use std::str::Utf8Error;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{RawTerm, Term};
+use crate::term::{RawTerm, TypedTerm};
 
 /// A byte-aligned binary (`enif_is_binary` returned true).
 ///
@@ -364,7 +364,7 @@ impl Binary<'_> {
     /// table are rejected. Returns `None` on decode failure.
     ///
     /// Wraps `enif_binary_to_term`.
-    pub fn to_term<'a>(&self, env: Env<'a>, safe: bool) -> Option<Term<'a>> {
+    pub fn to_term<'a>(&self, env: Env<'a>, safe: bool) -> Option<TypedTerm<'a>> {
         let bytes = self.as_bytes();
         let opts = if safe { crate::sys::NIF_BIN2TERM_SAFE } else { 0 };
         let mut term: NifTerm = 0;
@@ -393,9 +393,9 @@ impl<'b> Encoder for Binary<'b> {
 }
 
 impl<'a> Decoder<'a> for Binary<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
         match term {
-            Term::Binary(b) => Ok(b),
+            TypedTerm::Binary(b) => Ok(b),
             _ => Err(CodecError::WrongType),
         }
     }
@@ -409,9 +409,9 @@ impl<'b> Encoder for Bitstring<'b> {
 }
 
 impl<'a> Decoder<'a> for Bitstring<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
         match term {
-            Term::Bitstring(b) => Ok(b),
+            TypedTerm::Bitstring(b) => Ok(b),
             _ => Err(CodecError::WrongType),
         }
     }

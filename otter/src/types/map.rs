@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifMapIterator, NifMapIteratorEntry, NifTerm};
-use crate::term::{RawTerm, Term, TermIn};
+use crate::term::{RawTerm, TypedTerm, TermIn};
 
 /// An Erlang map. Immutable — all mutations return a new map.
 #[derive(Clone, Copy)]
@@ -23,7 +23,7 @@ impl<'a> Map<'a> {
     }
 
     /// Look up `key`. Returns `None` if the key is absent.
-    pub fn get(self, key: impl TermIn) -> Option<Term<'a>> {
+    pub fn get(self, key: impl TermIn) -> Option<TypedTerm<'a>> {
         let raw =
             unsafe { crate::wrapper::map::get_map_value(self.env.as_ptr(), self.term, key.as_c_arg()) }?;
         Some(RawTerm::new(self.env, raw).resolve())
@@ -98,7 +98,7 @@ pub struct MapIterator<'a> {
 }
 
 impl<'a> Iterator for MapIterator<'a> {
-    type Item = (Term<'a>, Term<'a>);
+    type Item = (TypedTerm<'a>, TypedTerm<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.exhausted {
@@ -169,9 +169,9 @@ impl<'b> Encoder for Map<'b> {
 }
 
 impl<'a> Decoder<'a> for Map<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
         match term {
-            Term::Map(m) => Ok(m),
+            TypedTerm::Map(m) => Ok(m),
             _ => Err(CodecError::WrongType),
         }
     }

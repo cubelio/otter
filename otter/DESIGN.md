@@ -16,7 +16,7 @@ otter/src/
 ├── enif.rs     Complete enif_* function pointer table, dlsym loading, ~200 pub(crate) shims
 ├── wrapper/    Rust-idiomatic wrappers over enif shims (pub for codegen)
 ├── env.rs      Env<'a>, EnvKind, OwnedEnv
-├── term.rs     RawTerm, Term enum, Env methods (raise, hash, schedule, etc.)
+├── term.rs     RawTerm, TypedTerm enum, Env methods (raise, hash, schedule, etc.)
 ├── codec.rs    Encoder + Decoder traits, CodecError
 ├── types/      One file per concrete term type
 ├── resource/   Resource trait, ResourceArc<T>, Monitor, dynamic_resource_call
@@ -106,7 +106,7 @@ Both `enif` and `wrapper` are `pub(crate)` — entirely internal. Wrapper submod
 
 ### `Env<'a>`
 
-The central lifetime safety mechanism. Each NIF call gets an `Env<'a>` with a unique per-call lifetime synthesized from a stack borrow. `PhantomData<*mut &'a u8>` makes `Env` invariant over `'a`, preventing any `Term<'a>` from being stored past the call's lifetime. There is no runtime check — this is enforced entirely by the type system.
+The central lifetime safety mechanism. Each NIF call gets an `Env<'a>` with a unique per-call lifetime synthesized from a stack borrow. `PhantomData<*mut &'a u8>` makes `Env` invariant over `'a`, preventing any `TypedTerm<'a>` from being stored past the call's lifetime. There is no runtime check — this is enforced entirely by the type system.
 
 ```rust
 pub struct Env<'a> {
@@ -137,7 +137,7 @@ pub struct OwnedEnv {
 impl OwnedEnv {
     pub fn new() -> OwnedEnv;
     pub fn send<F>(&mut self, pid: &Pid, f: F) -> bool
-    where F: FnOnce(Env<'_>) -> Term<'_>;
+    where F: FnOnce(Env<'_>) -> TypedTerm<'_>;
     pub fn clear(&mut self);
 }
 ```
@@ -152,10 +152,10 @@ impl OwnedEnv {
 
 **Level 1 — `RawTerm<'a>`:** The bare machine word plus its `Env`. Zero work done. The fastest possible representation. A received type — you cannot construct one from scratch.
 
-**Level 2 — `Term<'a>` enum:** One `enif_term_type` call has been made. The correct variant is known. Data is still on the BEAM heap.
+**Level 2 — `TypedTerm<'a>` enum:** One `enif_term_type` call has been made. The correct variant is known. Data is still on the BEAM heap.
 
 ```rust
-pub enum Term<'a> {
+pub enum TypedTerm<'a> {
     Atom(Atom), Binary(Binary<'a>), Bitstring(Bitstring<'a>),
     Float(Float<'a>), Fun(Fun<'a>), Integer(Integer<'a>),
     List(List<'a>), Map(Map<'a>), Pid(Pid), Port(Port),
@@ -165,9 +165,9 @@ pub enum Term<'a> {
 
 12 variants for 11 type tags — `Bitstring` maps to both `Binary` and `Bitstring` depending on `enif_is_binary`.
 
-`Term` and `RawTerm` implement `PartialEq`/`Eq` (via `enif_is_identical`) and `PartialOrd`/`Ord` (via `enif_compare`).
+`TypedTerm` and `RawTerm` implement `PartialEq`/`Eq` (via `enif_is_identical`) and `PartialOrd`/`Ord` (via `enif_compare`).
 
-All concrete types implement `From<T> for Term<'a>`, so `let t: Term = atom.into()` works. `RawTerm` converts via `From` as well (calls `resolve()`).
+All concrete types implement `From<T> for TypedTerm<'a>`, so `let t: TypedTerm = atom.into()` works. `RawTerm` converts via `From` as well (calls `resolve()`).
 
 **Level 3 — concrete types:** Type is known. Data is still on the BEAM heap. Accessor methods pull data out on demand.
 
@@ -183,7 +183,7 @@ Construction is always free. Extraction is on demand. Every concrete type is `Ni
 
 ### `TermIn` — universal term input
 
-Functions that accept a term as input use `impl TermIn` instead of `Term<'a>`. This sealed trait is implemented for all otter term types (`Atom`, `Binary`, `Integer`, `List`, `Term`, `RawTerm`, etc.) and for `&T` where `T: TermIn`. It extracts the underlying `NifTerm` without allocating or copying.
+Functions that accept a term as input use `impl TermIn` instead of `TypedTerm<'a>`. This sealed trait is implemented for all otter term types (`Atom`, `Binary`, `Integer`, `List`, `TypedTerm`, `RawTerm`, etc.) and for `&T` where `T: TermIn`. It extracts the underlying `NifTerm` without allocating or copying.
 
 This means you can pass concrete types directly — no `.encode(env)` needed:
 
@@ -225,7 +225,7 @@ fn len(self) -> usize
 fn try_str(self) -> Result<&'a str, Utf8Error>
 fn sub(self, pos, len) -> Binary<'a>   // zero-copy slice
 fn from_bytes(env, data) -> Binary<'a>
-fn to_term(self, env, safe) -> Option<Term<'a>>  // deserialize from external format
+fn to_term(self, env, safe) -> Option<TypedTerm<'a>>  // deserialize from external format
 impl Deref<Target=[u8]>            // auto-coerce to &[u8]
 impl AsRef<[u8]>                   // trait-based byte access
 impl Debug                         // Binary(N bytes)
@@ -257,13 +257,13 @@ fn cons(env, head, tail) -> List<'a>
 
 // Tuple
 fn len(self) -> usize
-fn element(self, i) -> Term<'a>
+fn element(self, i) -> TypedTerm<'a>
 fn from_terms(env, terms) -> Tuple<'a>
 
 // Map
 fn new(env) -> Map<'a>
 fn size(self) -> usize
-fn get(self, key) -> Option<Term<'a>>
+fn get(self, key) -> Option<TypedTerm<'a>>
 fn put(self, key, value) -> Map<'a>
 fn update(self, key, value) -> Option<Map<'a>>
 fn remove(self, key) -> Option<Map<'a>>
@@ -281,7 +281,7 @@ fn command(self, env, msg) -> bool
 // Reference
 fn new(env) -> Reference<'a>
 
-// Term
+// TypedTerm
 fn to_binary(self, env) -> Option<Binary<'a>>  // serialize to external format
 ```
 
@@ -290,12 +290,12 @@ fn to_binary(self, env) -> Option<Binary<'a>>  // serialize to external format
 ```rust
 impl<'a> Env<'a> {
     fn consume_timeslice(self, percent: i32) -> bool
-    fn make_unique_integer(self, properties) -> Term<'a>
+    fn make_unique_integer(self, properties) -> TypedTerm<'a>
     fn hash(self, algorithm, term, salt) -> u64
     fn is_current_process_alive(self) -> bool
-    fn raise(self, reason: impl TermIn) -> Term<'a>
-    fn raise_badarg(self) -> Term<'a>
-    unsafe fn schedule_nif(self, name, flags, fp, argc, argv) -> Term<'a>
+    fn raise(self, reason: impl TermIn) -> TypedTerm<'a>
+    fn raise_badarg(self) -> TypedTerm<'a>
+    unsafe fn schedule_nif(self, name, flags, fp, argc, argv) -> TypedTerm<'a>
     fn set_option_delay_halt(self, ms) -> bool
     unsafe fn set_option_on_halt(self, callback) -> bool
     unsafe fn set_option_on_unload_thread(self, callback) -> bool
@@ -314,13 +314,13 @@ pub trait Encoder {
 }
 
 pub trait Decoder<'a>: Sized {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError>;
 }
 ```
 
 Implemented for all otter term types. Not implemented for native Rust types.
 
-Note: a blanket `TryFrom<Term<'a>> for T: Decoder<'a>` cannot be provided — it violates Rust's orphan rules (E0210). Use `T::decode(term)` directly.
+Note: a blanket `TryFrom<TypedTerm<'a>> for T: Decoder<'a>` cannot be provided — it violates Rust's orphan rules (E0210). Use `T::decode(term)` directly.
 
 ---
 
@@ -393,6 +393,6 @@ Requires a `ResourceArc<T>` — the BEAM ties I/O event lifecycle to resource ob
 - **`NifUntaggedEnum`** — structural dispatch belongs in user code.
 - **Convenience wrappers** — no built-in `IoData`, no pre-assembled type hierarchies.
 - **Thread spawning** — not a core NIF concept. Use `OwnedEnv::send` for messaging from OS threads spawned via standard Rust threading.
-- **Type predicates** (`enif_is_atom`, `enif_is_list`, etc.) — `Term` enum + pattern matching is strictly better.
+- **Type predicates** (`enif_is_atom`, `enif_is_list`, etc.) — `TypedTerm` enum + pattern matching is strictly better.
 - **Raw memory allocation** (`enif_alloc`/`enif_free`) — use Rust's allocator.
 - **NIF threading primitives** (`enif_mutex_*`, `enif_cond_*`, etc.) — use `std::sync`.

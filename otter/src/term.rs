@@ -1,4 +1,4 @@
-//! `RawTerm<'a>` and `Term<'a>`.
+//! `RawTerm<'a>` and `TypedTerm<'a>`.
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
@@ -16,7 +16,7 @@ use crate::wrapper;
 ///
 /// Zero work done — no type check, no data extraction. The fastest possible
 /// way to hold a received term. Call `resolve()` to pay the cost of one
-/// `enif_term_type` call and produce a typed `Term<'a>`.
+/// `enif_term_type` call and produce a typed `TypedTerm<'a>`.
 ///
 /// `RawTerm` is a received type. You cannot construct one from scratch —
 /// all term construction goes through concrete types (`Atom::new`, `Map::new`,
@@ -47,57 +47,57 @@ impl<'a> RawTerm<'a> {
         self.term
     }
 
-    /// Resolve to a typed `Term<'a>` by calling `enif_term_type`.
+    /// Resolve to a typed `TypedTerm<'a>` by calling `enif_term_type`.
     ///
     /// For the `Bitstring` type tag, a second call to `enif_is_binary` is
     /// needed to determine whether the value is a byte-aligned `Binary` or a
     /// sub-byte `Bitstring`.
-    pub fn resolve(self) -> Term<'a> {
+    pub fn resolve(self) -> TypedTerm<'a> {
         let env_ptr = self.env.as_ptr();
         match unsafe { wrapper::term::term_type(env_ptr, self.term) } {
             NifTermType::Atom => {
-                Term::Atom(Atom::from_raw(self.term))
+                TypedTerm::Atom(Atom::from_raw(self.term))
             }
             NifTermType::Bitstring => {
                 if unsafe { wrapper::check::is_binary(env_ptr, self.term) } {
-                    Term::Binary(Binary { term: self.term, env: self.env })
+                    TypedTerm::Binary(Binary { term: self.term, env: self.env })
                 } else {
-                    Term::Bitstring(Bitstring { term: self.term, env: self.env })
+                    TypedTerm::Bitstring(Bitstring { term: self.term, env: self.env })
                 }
             }
             NifTermType::Float => {
-                Term::Float(Float { term: self.term, env: self.env })
+                TypedTerm::Float(Float { term: self.term, env: self.env })
             }
             NifTermType::Fun => {
-                Term::Fun(Fun { term: self.term, env: self.env })
+                TypedTerm::Fun(Fun { term: self.term, env: self.env })
             }
             NifTermType::Integer => {
-                Term::Integer(Integer { term: self.term, env: self.env })
+                TypedTerm::Integer(Integer { term: self.term, env: self.env })
             }
             NifTermType::List => {
-                Term::List(List { term: self.term, env: self.env })
+                TypedTerm::List(List { term: self.term, env: self.env })
             }
             NifTermType::Map => {
-                Term::Map(Map { term: self.term, env: self.env })
+                TypedTerm::Map(Map { term: self.term, env: self.env })
             }
             NifTermType::Pid => {
-                Term::Pid(Pid { term: self.term })
+                TypedTerm::Pid(Pid { term: self.term })
             }
             NifTermType::Port => {
-                Term::Port(Port { term: self.term })
+                TypedTerm::Port(Port { term: self.term })
             }
             NifTermType::Reference => {
-                Term::Reference(Reference { term: self.term, env: self.env })
+                TypedTerm::Reference(Reference { term: self.term, env: self.env })
             }
             NifTermType::Tuple => {
-                Term::Tuple(Tuple { term: self.term, env: self.env })
+                TypedTerm::Tuple(Tuple { term: self.term, env: self.env })
             }
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Term
+// TypedTerm
 // ---------------------------------------------------------------------------
 
 /// Level 2: typed enum. One `enif_term_type` call has been made.
@@ -109,7 +109,7 @@ impl<'a> RawTerm<'a> {
 /// (`Binary` and `Bitstring`) because `enif_is_binary` must be called to
 /// distinguish them. Resolving a `Bitstring`-tagged term costs two NIF calls.
 #[derive(Clone, Copy)]
-pub enum Term<'a> {
+pub enum TypedTerm<'a> {
     Atom(Atom),
     Binary(Binary<'a>),
     Bitstring(Bitstring<'a>),
@@ -124,23 +124,23 @@ pub enum Term<'a> {
     Tuple(Tuple<'a>),
 }
 
-impl<'a> Term<'a> {
+impl<'a> TypedTerm<'a> {
     /// Extract the underlying machine word. Discards the variant tag.
-    /// Use this when returning a `Term` from a NIF at the C boundary.
+    /// Use this when returning a `TypedTerm` from a NIF at the C boundary.
     pub fn as_raw(self) -> NifTerm {
         match self {
-            Term::Atom(v)      => v.term,
-            Term::Binary(v)    => v.term,
-            Term::Bitstring(v) => v.term,
-            Term::Float(v)     => v.term,
-            Term::Fun(v)       => v.term,
-            Term::Integer(v)   => v.term,
-            Term::List(v)      => v.term,
-            Term::Map(v)       => v.term,
-            Term::Pid(v)       => v.term,
-            Term::Port(v)      => v.term,
-            Term::Reference(v) => v.term,
-            Term::Tuple(v)     => v.term,
+            TypedTerm::Atom(v)      => v.term,
+            TypedTerm::Binary(v)    => v.term,
+            TypedTerm::Bitstring(v) => v.term,
+            TypedTerm::Float(v)     => v.term,
+            TypedTerm::Fun(v)       => v.term,
+            TypedTerm::Integer(v)   => v.term,
+            TypedTerm::List(v)      => v.term,
+            TypedTerm::Map(v)       => v.term,
+            TypedTerm::Pid(v)       => v.term,
+            TypedTerm::Port(v)      => v.term,
+            TypedTerm::Reference(v) => v.term,
+            TypedTerm::Tuple(v)     => v.term,
         }
     }
 }
@@ -166,28 +166,28 @@ impl<'a> Ord for RawTerm<'a> {
     }
 }
 
-impl<'a> PartialEq for Term<'a> {
+impl<'a> PartialEq for TypedTerm<'a> {
     fn eq(&self, other: &Self) -> bool {
         unsafe { crate::wrapper::term::is_identical(self.as_raw(), other.as_raw()) }
     }
 }
 
-impl<'a> Eq for Term<'a> {}
+impl<'a> Eq for TypedTerm<'a> {}
 
-impl<'a> PartialOrd for Term<'a> {
+impl<'a> PartialOrd for TypedTerm<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a> Ord for Term<'a> {
+impl<'a> Ord for TypedTerm<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let c = unsafe { crate::wrapper::term::compare(self.as_raw(), other.as_raw()) };
         c.cmp(&0)
     }
 }
 
-impl<'a> Term<'a> {
+impl<'a> TypedTerm<'a> {
     /// Serialize this term to the external binary format.
     ///
     /// Returns `None` if serialization fails (should not happen for valid terms).
@@ -206,58 +206,58 @@ impl<'a> Term<'a> {
     }
 }
 
-impl<'a> From<RawTerm<'a>> for Term<'a> {
-    fn from(raw: RawTerm<'a>) -> Term<'a> {
+impl<'a> From<RawTerm<'a>> for TypedTerm<'a> {
+    fn from(raw: RawTerm<'a>) -> TypedTerm<'a> {
         raw.resolve()
     }
 }
 
-impl<'a> From<Atom> for Term<'a> {
-    fn from(v: Atom) -> Term<'a> { Term::Atom(v) }
+impl<'a> From<Atom> for TypedTerm<'a> {
+    fn from(v: Atom) -> TypedTerm<'a> { TypedTerm::Atom(v) }
 }
-impl<'a> From<Binary<'a>> for Term<'a> {
-    fn from(v: Binary<'a>) -> Term<'a> { Term::Binary(v) }
+impl<'a> From<Binary<'a>> for TypedTerm<'a> {
+    fn from(v: Binary<'a>) -> TypedTerm<'a> { TypedTerm::Binary(v) }
 }
-impl<'a> From<Bitstring<'a>> for Term<'a> {
-    fn from(v: Bitstring<'a>) -> Term<'a> { Term::Bitstring(v) }
+impl<'a> From<Bitstring<'a>> for TypedTerm<'a> {
+    fn from(v: Bitstring<'a>) -> TypedTerm<'a> { TypedTerm::Bitstring(v) }
 }
-impl<'a> From<Float<'a>> for Term<'a> {
-    fn from(v: Float<'a>) -> Term<'a> { Term::Float(v) }
+impl<'a> From<Float<'a>> for TypedTerm<'a> {
+    fn from(v: Float<'a>) -> TypedTerm<'a> { TypedTerm::Float(v) }
 }
-impl<'a> From<Fun<'a>> for Term<'a> {
-    fn from(v: Fun<'a>) -> Term<'a> { Term::Fun(v) }
+impl<'a> From<Fun<'a>> for TypedTerm<'a> {
+    fn from(v: Fun<'a>) -> TypedTerm<'a> { TypedTerm::Fun(v) }
 }
-impl<'a> From<Integer<'a>> for Term<'a> {
-    fn from(v: Integer<'a>) -> Term<'a> { Term::Integer(v) }
+impl<'a> From<Integer<'a>> for TypedTerm<'a> {
+    fn from(v: Integer<'a>) -> TypedTerm<'a> { TypedTerm::Integer(v) }
 }
-impl<'a> From<List<'a>> for Term<'a> {
-    fn from(v: List<'a>) -> Term<'a> { Term::List(v) }
+impl<'a> From<List<'a>> for TypedTerm<'a> {
+    fn from(v: List<'a>) -> TypedTerm<'a> { TypedTerm::List(v) }
 }
-impl<'a> From<Map<'a>> for Term<'a> {
-    fn from(v: Map<'a>) -> Term<'a> { Term::Map(v) }
+impl<'a> From<Map<'a>> for TypedTerm<'a> {
+    fn from(v: Map<'a>) -> TypedTerm<'a> { TypedTerm::Map(v) }
 }
-impl<'a> From<Pid> for Term<'a> {
-    fn from(v: Pid) -> Term<'a> { Term::Pid(v) }
+impl<'a> From<Pid> for TypedTerm<'a> {
+    fn from(v: Pid) -> TypedTerm<'a> { TypedTerm::Pid(v) }
 }
-impl<'a> From<Port> for Term<'a> {
-    fn from(v: Port) -> Term<'a> { Term::Port(v) }
+impl<'a> From<Port> for TypedTerm<'a> {
+    fn from(v: Port) -> TypedTerm<'a> { TypedTerm::Port(v) }
 }
-impl<'a> From<Reference<'a>> for Term<'a> {
-    fn from(v: Reference<'a>) -> Term<'a> { Term::Reference(v) }
+impl<'a> From<Reference<'a>> for TypedTerm<'a> {
+    fn from(v: Reference<'a>) -> TypedTerm<'a> { TypedTerm::Reference(v) }
 }
-impl<'a> From<Tuple<'a>> for Term<'a> {
-    fn from(v: Tuple<'a>) -> Term<'a> { Term::Tuple(v) }
+impl<'a> From<Tuple<'a>> for TypedTerm<'a> {
+    fn from(v: Tuple<'a>) -> TypedTerm<'a> { TypedTerm::Tuple(v) }
 }
 
-impl<'b> Encoder for Term<'b> {
+impl<'b> Encoder for TypedTerm<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
         let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.as_raw()) };
         RawTerm::new(env, term)
     }
 }
 
-impl<'a> Decoder<'a> for Term<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+impl<'a> Decoder<'a> for TypedTerm<'a> {
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
         Ok(term)
     }
 }
@@ -281,7 +281,7 @@ mod sealed {
 /// functions.
 ///
 /// All otter term types implement this: [`Atom`], [`Binary`], [`Integer`],
-/// [`List`], [`Term`], [`RawTerm`], etc. This trait is sealed — it cannot
+/// [`List`], [`TypedTerm`], [`RawTerm`], etc. This trait is sealed — it cannot
 /// be implemented outside the crate.
 pub trait TermIn: sealed::Sealed {
     /// Extract the underlying NIF term value.
@@ -302,7 +302,7 @@ impl sealed::Sealed for Port {}
 impl sealed::Sealed for Reference<'_> {}
 impl sealed::Sealed for Tuple<'_> {}
 impl sealed::Sealed for RawTerm<'_> {}
-impl sealed::Sealed for Term<'_> {}
+impl sealed::Sealed for TypedTerm<'_> {}
 impl<T: sealed::Sealed> sealed::Sealed for &T {}
 
 impl TermIn for Atom {
@@ -344,7 +344,7 @@ impl TermIn for Tuple<'_> {
 impl TermIn for RawTerm<'_> {
     fn as_c_arg(&self) -> NifTerm { self.term }
 }
-impl TermIn for Term<'_> {
+impl TermIn for TypedTerm<'_> {
     fn as_c_arg(&self) -> NifTerm { self.as_raw() }
 }
 impl<T: TermIn> TermIn for &T {
@@ -373,7 +373,7 @@ impl<'a> Env<'a> {
     /// `NifUniqueInteger::MONOTONIC`. Use `NifUniqueInteger(0)` for an arbitrary unique integer.
     ///
     /// Wraps `enif_make_unique_integer`.
-    pub fn make_unique_integer(self, properties: NifUniqueInteger) -> Term<'a> {
+    pub fn make_unique_integer(self, properties: NifUniqueInteger) -> TypedTerm<'a> {
         let raw = unsafe {
             wrapper::term::make_unique_integer(self.as_ptr(), properties)
         };
@@ -445,7 +445,7 @@ impl<'a> Env<'a> {
         ) -> crate::sys::NifTerm,
         argc: i32,
         argv: *const crate::sys::NifTerm,
-    ) -> Term<'a> {
+    ) -> TypedTerm<'a> {
         let raw = unsafe {
             wrapper::schedule::schedule_nif(
                 self.as_ptr(),

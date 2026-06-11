@@ -16,7 +16,7 @@ Repository: https://github.com/rusterlium/rustler
 
 ### The lifetime safety mechanism
 
-Rustler's core insight — using `PhantomData<*mut &'a u8>` to make `Env<'a>` invariant over `'a`, synthesizing a unique per-call lifetime from a stack borrow — is correct and elegant. Otter preserves this mechanism unchanged. It is the right way to prevent `Term` values from escaping a NIF call at compile time with zero runtime cost.
+Rustler's core insight — using `PhantomData<*mut &'a u8>` to make `Env<'a>` invariant over `'a`, synthesizing a unique per-call lifetime from a stack borrow — is correct and elegant. Otter preserves this mechanism unchanged. It is the right way to prevent `TypedTerm` values from escaping a NIF call at compile time with zero runtime cost.
 
 ### The `OwnedEnv` / `SavedTerm` pattern
 
@@ -46,10 +46,10 @@ Rustler's examples, getting-started flow, and derives default to Elixir conventi
 
 ### Three term resolution levels
 
-Rustler exposes a single `Term<'a>` type — a thin wrapper around `NIF_TERM` that defers all type information. Otter exposes three levels:
+Rustler exposes a single `TypedTerm<'a>` type — a thin wrapper around `NIF_TERM` that defers all type information. Otter exposes three levels:
 
 - `RawTerm<'a>` — zero work, bare machine word
-- `Term<'a>` — typed enum, one `enif_term_type` call
+- `TypedTerm<'a>` — typed enum, one `enif_term_type` call
 - Concrete types (`Integer<'a>`, `Bitstring<'a>`, etc.) — type known, data still lazy
 
 This gives users explicit control over how much work is done at argument receipt.
@@ -60,7 +60,7 @@ Rustler exposes lists with an iterator interface. Otter exposes `List<'a>` as a 
 
 ### No `Error` enum at the NIF boundary
 
-Rustler has an `Error` enum with five variants: `BadArg`, `Atom(&str)` and `Term(Box<dyn Encoder>)` (which *return* — the latter as `{error, term}`), and `RaiseAtom(&str)` and `RaiseTerm(Box<dyn Encoder>)` (which *raise*). The same return type encodes two different control-flow behaviors; which one happens depends on which variant you picked.
+Rustler has an `Error` enum with five variants: `BadArg`, `Atom(&str)` and `TypedTerm(Box<dyn Encoder>)` (which *return* — the latter as `{error, term}`), and `RaiseAtom(&str)` and `RaiseTerm(Box<dyn Encoder>)` (which *raise*). The same return type encodes two different control-flow behaviors; which one happens depends on which variant you picked.
 
 The NIF C API exposes exactly two exception mechanisms: `enif_make_badarg` and `enif_raise_exception`. Otter exposes those as `Env::raise_badarg()` and `Env::raise(term)` for direct use. The idiomatic shape is a `Result<T, E>` return type where both `T: Encoder` and `E: Encoder`: `Ok(value)` encodes and returns, `Err(reason)` encodes the reason and raises it via `enif_raise_exception`. One behavior per shape, no enum dispatch.
 
@@ -92,7 +92,7 @@ Erlang distinguishes byte-aligned binaries from arbitrary-length bitstrings. Ott
 
 ### `Port` and `Fun` decode
 
-Otter exposes `Port<'a>` and `Fun<'a>` as decodable term types. Rustler's public surface includes neither — a NIF receiving a port or fun argument keeps it as a generic `Term<'a>` and operates on it opaquely.
+Otter exposes `Port<'a>` and `Fun<'a>` as decodable term types. Rustler's public surface includes neither — a NIF receiving a port or fun argument keeps it as a generic `TypedTerm<'a>` and operates on it opaquely.
 
 ### `enif_select` and `enif_select_x`
 
@@ -120,7 +120,7 @@ Otter ships a first-party rebar3 plugin that orchestrates `cargo build` on `reba
 
 ### `NifUntaggedEnum`
 
-Try-each structural dispatch has no idiomatic Erlang equivalent. Users needing to handle multiple term shapes receive a `Term` and pattern match explicitly.
+Try-each structural dispatch has no idiomatic Erlang equivalent. Users needing to handle multiple term shapes receive a `TypedTerm` and pattern match explicitly.
 
 ### Serde integration
 

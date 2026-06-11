@@ -249,7 +249,7 @@ pub struct NifMapIterator {
 }
 
 // ---------------------------------------------------------------------------
-// Term type tag
+// TypedTerm type tag
 // ---------------------------------------------------------------------------
 
 /// `ErlNifTermType` — the 11 canonical term types returned by `enif_term_type`.

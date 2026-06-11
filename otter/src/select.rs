@@ -6,7 +6,7 @@
 use crate::env::Env;
 use crate::resource::{Resource, ResourceArc};
 use crate::sys::{NifEvent, NifPid, NifSelectFlags};
-use crate::term::Term;
+use crate::term::TypedTerm;
 use crate::types::Pid;
 
 pub use crate::sys::{
@@ -31,7 +31,7 @@ pub fn select<T: Resource>(
     flags: NifSelectFlags,
     obj: &ResourceArc<T>,
     pid: &Pid,
-    ref_term: Term<'_>,
+    ref_term: TypedTerm<'_>,
 ) -> i32 {
     let nif_pid = NifPid { pid: pid.term };
     unsafe {
@@ -58,7 +58,7 @@ pub fn select_x<T: Resource>(
     flags: NifSelectFlags,
     obj: &ResourceArc<T>,
     pid: &Pid,
-    msg: Term<'_>,
+    msg: TypedTerm<'_>,
     msg_env: Option<Env<'_>>,
 ) -> i32 {
     let nif_pid = NifPid { pid: pid.term };

@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{RawTerm, Term, TermIn};
+use crate::term::{RawTerm, TypedTerm, TermIn};
 
 /// An Erlang list term.
 ///
@@ -163,7 +163,7 @@ impl<'a> List<'a> {
 pub struct ListIterator<'a> {
     current: NifTerm,
     env: Env<'a>,
-    tail: Option<Term<'a>>,
+    tail: Option<TypedTerm<'a>>,
 }
 
 impl<'a> Iterator for ListIterator<'a> {
@@ -202,12 +202,12 @@ impl<'a> IntoIterator for List<'a> {
 impl<'a> ListIterator<'a> {
     /// The terminal value of the list walk.
     ///
-    /// For proper lists this is `Term::List` (nil / `[]`).
+    /// For proper lists this is `TypedTerm::List` (nil / `[]`).
     /// For improper lists this is whatever term was in the final tail
-    /// position (e.g. `Term::Integer`, `Term::Atom`, etc.).
+    /// position (e.g. `TypedTerm::Integer`, `TypedTerm::Atom`, etc.).
     ///
     /// Returns `None` if the iterator has not yet been exhausted.
-    pub fn tail(&self) -> Option<Term<'a>> {
+    pub fn tail(&self) -> Option<TypedTerm<'a>> {
         self.tail
     }
 }
@@ -247,9 +247,9 @@ impl<'b> Encoder for List<'b> {
 }
 
 impl<'a> Decoder<'a> for List<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
         match term {
-            Term::List(l) => Ok(l),
+            TypedTerm::List(l) => Ok(l),
             _ => Err(CodecError::WrongType),
         }
     }

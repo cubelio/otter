@@ -1,12 +1,12 @@
 # Types
 
 Every Erlang term that crosses the NIF boundary is represented by one of the
-types in this directory. The two-level resolution model (`RawTerm` → `Term`)
+types in this directory. The two-level resolution model (`RawTerm` → `TypedTerm`)
 lets callers choose how much work to pay for: zero cost with `RawTerm`, one
-`enif_term_type` call with `Term`, or full decoding with `Decoder`.
+`enif_term_type` call with `TypedTerm`, or full decoding with `Decoder`.
 
 
-## Term Resolution
+## TypedTerm Resolution
 
 ```
 NifTerm (u64 machine word)
@@ -15,14 +15,14 @@ NifTerm (u64 machine word)
   │    │
   │    └─ .resolve()  one enif_term_type call
   │         │
-  │         └─ Term<'a>   typed enum (Atom | Binary | ... | Tuple)
+  │         └─ TypedTerm<'a>   typed enum (Atom | Binary | ... | Tuple)
   │              │
   │              └─ T::decode()   full extraction (e.g. Integer → i64)
 ```
 
 The `Bitstring` type tag from `enif_term_type` covers both binaries and
 non-byte-aligned bitstrings. `resolve()` calls `enif_is_binary` to
-distinguish the two, producing either `Term::Binary` or `Term::Bitstring`.
+distinguish the two, producing either `TypedTerm::Binary` or `TypedTerm::Bitstring`.
 
 
 ## Lifetime Model
@@ -38,8 +38,8 @@ term directly rather than copying.
 All other types' `Encoder` impls call `enif_make_copy` to copy the term into
 the destination environment.
 
-All concrete types implement `From<T> for Term<'a>`, enabling `let t: Term = atom.into()`.
-`RawTerm` converts to `Term` via `From` (calls `resolve()`).
+All concrete types implement `From<T> for TypedTerm<'a>`, enabling `let t: TypedTerm = atom.into()`.
+`RawTerm` converts to `TypedTerm` via `From` (calls `resolve()`).
 
 
 ## Codec Traits
@@ -50,7 +50,7 @@ pub trait Encoder {
 }
 
 pub trait Decoder<'a>: Sized {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError>;
 }
 ```
 
@@ -59,7 +59,7 @@ pub trait Decoder<'a>: Sized {
 a `badarg` exception automatically.
 
 Every type in this directory implements both traits. `Decoder` accepts only
-the matching `Term` variant and rejects everything else with `WrongType`.
+the matching `TypedTerm` variant and rejects everything else with `WrongType`.
 
 ---
 
@@ -140,7 +140,7 @@ struct Bitstring<'a> { term: NifTerm, env: Env<'a> }
 | `try_str(self) → Result<&'a str, Utf8Error>` | Zero-copy UTF-8 view | `enif_inspect_binary` + `std::str::from_utf8` |
 | `sub(self, pos, len) → Binary<'a>` | Zero-copy sub-binary (panics on OOB) | `enif_make_sub_binary` |
 | `from_bytes(env, data) → Binary<'a>` | Allocate and copy bytes onto BEAM heap | `enif_alloc_binary` + `enif_make_binary` |
-| `to_term(self, env, safe) → Option<Term<'a>>` | Deserialize from external binary format | `enif_binary_to_term` |
+| `to_term(self, env, safe) → Option<TypedTerm<'a>>` | Deserialize from external binary format | `enif_binary_to_term` |
 | `impl Deref<Target=[u8]>` | Auto-coerce to `&[u8]` | `enif_inspect_binary` |
 | `impl AsRef<[u8]>` | Trait-based byte access | `enif_inspect_binary` |
 | `impl Debug` | `Binary(N bytes)` | `enif_inspect_binary` |
@@ -172,7 +172,7 @@ struct BinaryBuilder { bin: NifBinary, len: usize, released: bool }
 | `impl Debug` | `BinaryBuilder { len: N, capacity: M }` | — |
 | `Drop` | Release if not finalized | `enif_release_binary` |
 
-**Term methods** (on `Term<'a>`):
+**TypedTerm methods** (on `TypedTerm<'a>`):
 
 | Method | Does | Calls |
 |---|---|---|
@@ -338,7 +338,7 @@ enum Node<'a> {
 | Method | Does |
 |---|---|
 | `next() → Option<RawTerm<'a>>` | Yield next head; `None` when a non-cell tail is reached |
-| `tail() → Option<Term<'a>>` | Terminal value after iteration: `[]` for proper lists, improper tail otherwise |
+| `tail() → Option<TypedTerm<'a>>` | Terminal value after iteration: `[]` for proper lists, improper tail otherwise |
 
 ### Internals
 
@@ -386,7 +386,7 @@ struct Tuple<'a> { term: NifTerm, env: Env<'a> }
 |---|---|---|
 | `len(self) → usize` | Arity | `enif_get_tuple` |
 | `is_empty(self) → bool` | Zero-element check | `enif_get_tuple` |
-| `element(self, i) → Term<'a>` | Element at zero-based index; panics if out of bounds | `enif_get_tuple` |
+| `element(self, i) → TypedTerm<'a>` | Element at zero-based index; panics if out of bounds | `enif_get_tuple` |
 | `from_terms(env, impl IntoIterator<Item: TermIn>) → Tuple<'a>` | Construct from iterable | `enif_make_tuple_from_array` |
 
 ### Internals
@@ -438,13 +438,13 @@ struct MapIterator<'a> { iter: Box<NifMapIterator>, env: Env<'a>, exhausted: boo
 |---|---|---|
 | `new(env) → Map<'a>` | Create empty map | `enif_make_new_map` |
 | `size(self) → usize` | Key-value pair count | `enif_get_map_size` |
-| `get(self, impl TermIn) → Option<Term<'a>>` | Look up key | `enif_get_map_value` |
+| `get(self, impl TermIn) → Option<TypedTerm<'a>>` | Look up key | `enif_get_map_value` |
 | `put(self, impl TermIn, impl TermIn) → Map<'a>` | Insert or replace | `enif_make_map_put` |
 | `update(self, impl TermIn, impl TermIn) → Option<Map<'a>>` | Update existing key; `None` if absent | `enif_make_map_update` |
 | `remove(self, impl TermIn) → Option<Map<'a>>` | Remove key; `None` if absent | `enif_make_map_remove` |
 | `iter(self) → MapIterator<'a>` | Forward iterator over key-value pairs | `enif_map_iterator_create` |
 
-`MapIterator` implements `Iterator<Item = (Term<'a>, Term<'a>)>` and `Drop`.
+`MapIterator` implements `Iterator<Item = (TypedTerm<'a>, TypedTerm<'a>)>` and `Drop`.
 
 ### Internals
 
@@ -560,7 +560,7 @@ struct Fun<'a> { term: NifTerm, env: Env<'a> }
 ```
 
 No methods. The NIF API provides no way to inspect or invoke a fun from C.
-`Fun` exists so that `Term::Fun` can carry the value through — the NIF can
+`Fun` exists so that `TypedTerm::Fun` can carry the value through — the NIF can
 receive a fun as an argument and pass it back to Erlang unchanged.
 
 ### Not Exposed
@@ -592,7 +592,7 @@ struct Reference<'a> { term: NifTerm, env: Env<'a> }
 ### Internals
 
 References are unique opaque values. The only operation is creation. Equality
-comparison is provided by `Term`'s `PartialEq` impl (via `enif_is_identical`).
+comparison is provided by `TypedTerm`'s `PartialEq` impl (via `enif_is_identical`).
 
 ### Not Exposed
 

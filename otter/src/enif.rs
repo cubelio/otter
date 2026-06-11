@@ -612,7 +612,7 @@ pub(crate) unsafe fn init() -> Result<(), &'static str> {
                 // Hash
                 hash:               load(b"enif_hash\0")?,
 
-                // Term serialization
+                // TypedTerm serialization
                 term_to_binary:     load(b"enif_term_to_binary\0")?,
                 binary_to_term:     load(b"enif_binary_to_term\0")?,
 
@@ -1593,7 +1593,7 @@ pub(crate) unsafe fn hash(hash_type: NifHash, term: NifTerm, salt: u64) -> u64 {
     unsafe { (funcs().hash)(hash_type, term, salt) }
 }
 
-// -- Term serialization ---------------------------------------------------
+// -- TypedTerm serialization ---------------------------------------------------
 
 /// Serializes a term into the Erlang external term format, allocating the result binary. NIF 2.11 (OTP 19.0). Wraps `enif_term_to_binary`.
 pub(crate) unsafe fn term_to_binary(

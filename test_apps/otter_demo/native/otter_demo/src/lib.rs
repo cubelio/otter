@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock};
 
 use otter::env::{Env, OwnedEnv};
 use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
-use otter::term::Term;
+use otter::term::TypedTerm;
 use otter::types::{Atom, Binary, BinaryBuilder, Float, Integer, List, Map, Pid, Reference, Tuple};
 
 otter::declare_atoms![
@@ -39,31 +39,31 @@ fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
 }
 
 // --- echo/1 -------------------------------------------------------------
-// Term in, Term out — zero-cost passthrough.
+// TypedTerm in, TypedTerm out — zero-cost passthrough.
 
 #[otter::nif]
-fn echo<'a>(_env: Env<'a>, val: Term<'a>) -> Term<'a> {
+fn echo<'a>(_env: Env<'a>, val: TypedTerm<'a>) -> TypedTerm<'a> {
     val
 }
 
 // --- type_of/1 ----------------------------------------------------------
-// Pattern match on Term to inspect the Erlang type.
+// Pattern match on TypedTerm to inspect the Erlang type.
 
 #[otter::nif]
-fn type_of(_env: Env, val: Term) -> Atom {
+fn type_of(_env: Env, val: TypedTerm) -> Atom {
     match val {
-        Term::Atom(_)      => otter::atom![atom],
-        Term::Integer(_)   => otter::atom![integer],
-        Term::Float(_)     => otter::atom![float],
-        Term::Binary(_)    => otter::atom![binary],
-        Term::Bitstring(_) => otter::atom![bitstring],
-        Term::List(_)      => otter::atom![list],
-        Term::Tuple(_)     => otter::atom![tuple],
-        Term::Map(_)       => otter::atom![map],
-        Term::Pid(_)       => otter::atom![pid],
-        Term::Port(_)      => otter::atom![port],
-        Term::Fun(_)       => otter::atom![fun],
-        Term::Reference(_) => otter::atom![reference],
+        TypedTerm::Atom(_)      => otter::atom![atom],
+        TypedTerm::Integer(_)   => otter::atom![integer],
+        TypedTerm::Float(_)     => otter::atom![float],
+        TypedTerm::Binary(_)    => otter::atom![binary],
+        TypedTerm::Bitstring(_) => otter::atom![bitstring],
+        TypedTerm::List(_)      => otter::atom![list],
+        TypedTerm::Tuple(_)     => otter::atom![tuple],
+        TypedTerm::Map(_)       => otter::atom![map],
+        TypedTerm::Pid(_)       => otter::atom![pid],
+        TypedTerm::Port(_)      => otter::atom![port],
+        TypedTerm::Fun(_)       => otter::atom![fun],
+        TypedTerm::Reference(_) => otter::atom![reference],
     }
 }
 
@@ -87,7 +87,7 @@ fn reverse_binary<'a>(env: Env<'a>, bin: Binary<'a>) -> Binary<'a> {
 fn sum_list<'a>(env: Env<'a>, list: List<'a>) -> Integer<'a> {
     let sum: i64 = list.iter()
         .filter_map(|raw| match raw.resolve() {
-            Term::Integer(i) => Some(i64::try_from(i).unwrap()),
+            TypedTerm::Integer(i) => Some(i64::try_from(i).unwrap()),
             _ => None,
         })
         .sum();
@@ -98,17 +98,17 @@ fn sum_list<'a>(env: Env<'a>, list: List<'a>) -> Integer<'a> {
 // Test PartialEq between two terms of the same type.
 
 #[otter::nif]
-fn test_eq<'a>(_env: Env<'a>, a: Term<'a>, b: Term<'a>) -> Atom {
+fn test_eq<'a>(_env: Env<'a>, a: TypedTerm<'a>, b: TypedTerm<'a>) -> Atom {
     let result = match (a, b) {
-        (Term::Atom(a), Term::Atom(b)) => a == b,
-        (Term::Integer(a), Term::Integer(b)) => a == b,
-        (Term::Float(a), Term::Float(b)) => a == b,
-        (Term::Binary(a), Term::Binary(b)) => a == b,
-        (Term::List(a), Term::List(b)) => a == b,
-        (Term::Tuple(a), Term::Tuple(b)) => a == b,
-        (Term::Map(a), Term::Map(b)) => a == b,
-        (Term::Pid(a), Term::Pid(b)) => a == b,
-        (Term::Reference(a), Term::Reference(b)) => a == b,
+        (TypedTerm::Atom(a), TypedTerm::Atom(b)) => a == b,
+        (TypedTerm::Integer(a), TypedTerm::Integer(b)) => a == b,
+        (TypedTerm::Float(a), TypedTerm::Float(b)) => a == b,
+        (TypedTerm::Binary(a), TypedTerm::Binary(b)) => a == b,
+        (TypedTerm::List(a), TypedTerm::List(b)) => a == b,
+        (TypedTerm::Tuple(a), TypedTerm::Tuple(b)) => a == b,
+        (TypedTerm::Map(a), TypedTerm::Map(b)) => a == b,
+        (TypedTerm::Pid(a), TypedTerm::Pid(b)) => a == b,
+        (TypedTerm::Reference(a), TypedTerm::Reference(b)) => a == b,
         _ => false,
     };
     // true/false are always pre-existing in the atom table
@@ -120,18 +120,18 @@ fn test_eq<'a>(_env: Env<'a>, a: Term<'a>, b: Term<'a>) -> Atom {
 // Returns less, equal, or greater.
 
 #[otter::nif]
-fn test_ord<'a>(_env: Env<'a>, a: Term<'a>, b: Term<'a>) -> Atom {
+fn test_ord<'a>(_env: Env<'a>, a: TypedTerm<'a>, b: TypedTerm<'a>) -> Atom {
     use std::cmp::Ordering;
     let ord = match (a, b) {
-        (Term::Atom(a), Term::Atom(b)) => a.cmp(&b),
-        (Term::Integer(a), Term::Integer(b)) => a.cmp(&b),
-        (Term::Float(a), Term::Float(b)) => a.cmp(&b),
-        (Term::Binary(a), Term::Binary(b)) => a.cmp(&b),
-        (Term::List(a), Term::List(b)) => a.cmp(&b),
-        (Term::Tuple(a), Term::Tuple(b)) => a.cmp(&b),
-        (Term::Map(a), Term::Map(b)) => a.cmp(&b),
-        (Term::Pid(a), Term::Pid(b)) => a.cmp(&b),
-        (Term::Reference(a), Term::Reference(b)) => a.cmp(&b),
+        (TypedTerm::Atom(a), TypedTerm::Atom(b)) => a.cmp(&b),
+        (TypedTerm::Integer(a), TypedTerm::Integer(b)) => a.cmp(&b),
+        (TypedTerm::Float(a), TypedTerm::Float(b)) => a.cmp(&b),
+        (TypedTerm::Binary(a), TypedTerm::Binary(b)) => a.cmp(&b),
+        (TypedTerm::List(a), TypedTerm::List(b)) => a.cmp(&b),
+        (TypedTerm::Tuple(a), TypedTerm::Tuple(b)) => a.cmp(&b),
+        (TypedTerm::Map(a), TypedTerm::Map(b)) => a.cmp(&b),
+        (TypedTerm::Pid(a), TypedTerm::Pid(b)) => a.cmp(&b),
+        (TypedTerm::Reference(a), TypedTerm::Reference(b)) => a.cmp(&b),
         _ => Ordering::Equal,
     };
     match ord {
@@ -145,20 +145,20 @@ fn test_ord<'a>(_env: Env<'a>, a: Term<'a>, b: Term<'a>) -> Atom {
 // Test Debug formatting — returns the Debug string as a binary.
 
 #[otter::nif]
-fn test_debug<'a>(env: Env<'a>, val: Term<'a>) -> Binary<'a> {
+fn test_debug<'a>(env: Env<'a>, val: TypedTerm<'a>) -> Binary<'a> {
     let s = match val {
-        Term::Atom(v) => format!("{:?}", v),
-        Term::Integer(v) => format!("{:?}", v),
-        Term::Float(v) => format!("{:?}", v),
-        Term::Binary(v) => format!("{:?}", v),
-        Term::Bitstring(v) => format!("{:?}", v),
-        Term::List(v) => format!("{:?}", v),
-        Term::Tuple(v) => format!("{:?}", v),
-        Term::Map(v) => format!("{:?}", v),
-        Term::Pid(v) => format!("{:?}", v),
-        Term::Port(v) => format!("{:?}", v),
-        Term::Fun(v) => format!("{:?}", v),
-        Term::Reference(v) => format!("{:?}", v),
+        TypedTerm::Atom(v) => format!("{:?}", v),
+        TypedTerm::Integer(v) => format!("{:?}", v),
+        TypedTerm::Float(v) => format!("{:?}", v),
+        TypedTerm::Binary(v) => format!("{:?}", v),
+        TypedTerm::Bitstring(v) => format!("{:?}", v),
+        TypedTerm::List(v) => format!("{:?}", v),
+        TypedTerm::Tuple(v) => format!("{:?}", v),
+        TypedTerm::Map(v) => format!("{:?}", v),
+        TypedTerm::Pid(v) => format!("{:?}", v),
+        TypedTerm::Port(v) => format!("{:?}", v),
+        TypedTerm::Fun(v) => format!("{:?}", v),
+        TypedTerm::Reference(v) => format!("{:?}", v),
     };
     Binary::from_bytes(env, s.as_bytes())
 }
@@ -167,10 +167,10 @@ fn test_debug<'a>(env: Env<'a>, val: Term<'a>) -> Binary<'a> {
 // Test TryFrom<Integer> for i64. Returns the value or the atom 'overflow'.
 
 #[otter::nif]
-fn test_try_from<'a>(env: Env<'a>, val: Integer<'a>) -> Term<'a> {
+fn test_try_from<'a>(env: Env<'a>, val: Integer<'a>) -> TypedTerm<'a> {
     match i64::try_from(val) {
-        Ok(v) => Term::Integer(Integer::from_i64(env, v)),
-        Err(_) => Term::Atom(otter::atom![overflow]),
+        Ok(v) => TypedTerm::Integer(Integer::from_i64(env, v)),
+        Err(_) => TypedTerm::Atom(otter::atom![overflow]),
     }
 }
 
@@ -225,10 +225,10 @@ fn test_from_str<'a>(env: Env<'a>, bin: Binary<'a>) -> List<'a> {
 // Test List::reverse.
 
 #[otter::nif]
-fn reverse_list<'a>(_env: Env<'a>, list: List<'a>) -> Term<'a> {
+fn reverse_list<'a>(_env: Env<'a>, list: List<'a>) -> TypedTerm<'a> {
     match list.reverse() {
-        Some(rev) => Term::List(rev),
-        None => Term::Atom(otter::atom![error]),
+        Some(rev) => TypedTerm::List(rev),
+        None => TypedTerm::Atom(otter::atom![error]),
     }
 }
 
@@ -236,7 +236,7 @@ fn reverse_list<'a>(_env: Env<'a>, list: List<'a>) -> Term<'a> {
 // Return the tail of an iterated list (tests ListIterator::tail).
 
 #[otter::nif]
-fn list_tail<'a>(_env: Env<'a>, list: List<'a>) -> Term<'a> {
+fn list_tail<'a>(_env: Env<'a>, list: List<'a>) -> TypedTerm<'a> {
     let mut iter = list.iter();
     while iter.next().is_some() {}
     iter.tail().unwrap()
@@ -272,14 +272,14 @@ fn hm_put<'a>(_env: Env<'a>, key: Binary<'a>, value: Binary<'a>, hm: ResourceArc
 // --- hm_get/2 -----------------------------------------------------------
 
 #[otter::nif]
-fn hm_get<'a>(env: Env<'a>, key: Binary<'a>, hm: ResourceArc<HashMapResource>) -> Term<'a> {
+fn hm_get<'a>(env: Env<'a>, key: Binary<'a>, hm: ResourceArc<HashMapResource>) -> TypedTerm<'a> {
     match hm.map.lock().unwrap().get(key.as_bytes()) {
         Some(val) => {
-            let ok: Term = otter::atom![ok].into();
-            let bin: Term = Binary::from_bytes(env, val).into();
-            Term::Tuple(Tuple::from_terms(env, [ok, bin]))
+            let ok: TypedTerm = otter::atom![ok].into();
+            let bin: TypedTerm = Binary::from_bytes(env, val).into();
+            TypedTerm::Tuple(Tuple::from_terms(env, [ok, bin]))
         }
-        None => Term::Atom(otter::atom![error]),
+        None => TypedTerm::Atom(otter::atom![error]),
     }
 }
 
@@ -298,7 +298,7 @@ fn test_map(env: Env) -> Atom {
 
     // get
     match m.get(k1).unwrap() {
-        Term::Integer(i) => assert_eq!(i64::try_from(i).unwrap(), 1),
+        TypedTerm::Integer(i) => assert_eq!(i64::try_from(i).unwrap(), 1),
         _ => panic!("expected integer"),
     }
     assert!(m.get(Atom::new(env, "missing").unwrap()).is_none());
@@ -307,7 +307,7 @@ fn test_map(env: Env) -> Atom {
     let v2 = Integer::from_i64(env, 2);
     let m = m.update(k1, v2).unwrap();
     match m.get(k1).unwrap() {
-        Term::Integer(i) => assert_eq!(i64::try_from(i).unwrap(), 2),
+        TypedTerm::Integer(i) => assert_eq!(i64::try_from(i).unwrap(), 2),
         _ => panic!("expected integer"),
     }
 
@@ -333,8 +333,8 @@ fn test_map(env: Env) -> Atom {
 
 #[otter::nif]
 fn test_tuple(env: Env) -> Atom {
-    let a = Term::Atom(Atom::new(env, "hello").unwrap());
-    let b = Term::Integer(Integer::from_i64(env, 42));
+    let a = TypedTerm::Atom(Atom::new(env, "hello").unwrap());
+    let b = TypedTerm::Integer(Integer::from_i64(env, 42));
     let t = Tuple::from_terms(env, [a, b]);
 
     assert_eq!(t.len(), 2);
@@ -342,7 +342,7 @@ fn test_tuple(env: Env) -> Atom {
     assert!(t.element(0) == a);
     assert!(t.element(1) == b);
 
-    let empty = Tuple::from_terms(env, std::iter::empty::<Term>());
+    let empty = Tuple::from_terms(env, std::iter::empty::<TypedTerm>());
     assert_eq!(empty.len(), 0);
     assert!(empty.is_empty());
 
@@ -414,7 +414,7 @@ fn send_from_thread(env: Env) -> Atom {
     std::thread::spawn(move || {
         let mut owned = OwnedEnv::new();
         owned.send(&pid, |_env| {
-            Term::Atom(otter::atom![from_thread])
+            TypedTerm::Atom(otter::atom![from_thread])
         });
     });
     otter::atom![ok]
@@ -462,7 +462,7 @@ fn panicking_resource_new(_env: Env) -> ResourceArc<PanickingResource> {
     ResourceArc::from(PanickingResource)
 }
 
-fn on_load(env: Env, _load_info: Term) -> bool {
+fn on_load(env: Env, _load_info: TypedTerm) -> bool {
     otter::init_atoms!(env);
     otter::resource::register_resource_type::<HashMapResource>(env, "hashmap");
     otter::resource::register_resource_type::<PanickingResource>(env, "panicking");

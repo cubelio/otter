@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::sys::{NifEnv, NifMonitor, NifPid, NifResourceType, NifResourceTypeInit};
-use crate::term::{RawTerm, Term};
+use crate::term::{RawTerm, TypedTerm};
 use crate::types::Pid;
 
 // ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ impl Monitor {
     /// Convert this monitor to a term.
     ///
     /// Wraps `enif_make_monitor_term`.
-    pub fn to_term<'a>(self, env: Env<'a>) -> Term<'a> {
+    pub fn to_term<'a>(self, env: Env<'a>) -> TypedTerm<'a> {
         let raw = unsafe { crate::wrapper::monitor::make_monitor_term(env.as_ptr(), &self.0) };
         RawTerm::new(env, raw).resolve()
     }
@@ -360,10 +360,10 @@ impl<'a, T: Resource> Decoder<'a> for ResourceArc<T> {
     ///
     /// Returns `WrongType` if the term is not a resource of type `T`, or if
     /// the resource type has not been registered.
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
+    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError> {
         // Resources appear as Reference terms from enif_term_type's perspective.
         let (raw_term, env) = match term {
-            Term::Reference(r) => (r.term, r.env),
+            TypedTerm::Reference(r) => (r.term, r.env),
             _ => return Err(CodecError::WrongType),
         };
 
@@ -406,9 +406,9 @@ impl<'a, T: Resource> Decoder<'a> for ResourceArc<T> {
 /// Wraps `enif_dynamic_resource_call`.
 pub unsafe fn dynamic_resource_call(
     env: Env<'_>,
-    mod_name: Term<'_>,
-    name: Term<'_>,
-    rsrc: Term<'_>,
+    mod_name: TypedTerm<'_>,
+    name: TypedTerm<'_>,
+    rsrc: TypedTerm<'_>,
     call_data: *mut c_void,
 ) -> i32 {
     unsafe {
