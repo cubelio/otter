@@ -502,6 +502,24 @@ mod __otter_atoms {
 
 `StaticAtom::get()` is a single `AtomicUsize` load with `Relaxed` ordering. In debug builds, it panics if called before `init`.
 
+### Notes
+
+A few rules follow from what the macros expand to:
+
+- **Initialize in `on_load`.** Call `init_atoms!(env)` before any NIF runs — atoms are eager, with no lazy fallback. Calling it more than once is harmless; it re-interns the same names.
+- **One `declare_atoms!` per module.** The generated `__otter_atoms` submodule has a fixed name. For separate groups, put each `declare_atoms!` in its own child module.
+- **`atom![…]` and `init_atoms!` resolve `__otter_atoms` relative to the current scope.** Use them in the module that declared the atoms, or `use super::__otter_atoms;` from a descendant. They will not find atoms declared in a sibling module.
+- **Non-identifier names need `ident = "name"`.** For hyphens, leading digits, reserved words, non-ASCII — pick a valid identifier and map it to the string you want:
+
+  ```rust
+  otter::declare_atoms![ok, content_type = "content-type"];
+  let ct = otter::atom![content_type];  // the atom "content-type"
+  ```
+
+- **Duplicates.** Two entries with the same identifier are a compile error. Two different identifiers mapped to the same string (`ok` and `okay = "ok"`) are fine — both intern the same BEAM atom and compare equal.
+- **Atom name length.** Erlang atoms cap at 255 characters; over-length names fail at `init_atoms!`, not mid-NIF.
+- **Thread- and env-safe.** `atom![…]` is safe from any scheduler thread, including dirty NIFs. The returned `Atom` is valid in any environment, including an `OwnedEnv`.
+
 ---
 
 ## Encoder and Decoder
