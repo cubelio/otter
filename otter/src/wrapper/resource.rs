@@ -16,7 +16,7 @@ pub(crate) unsafe fn init_resource_type(
 }
 
 /// Allocate a resource object of `size` bytes.
-/// The memory is zeroed. The caller must initialise it before calling `make_resource`.
+/// The memory is zeroed. The caller must initialize it before calling `make_resource`.
 pub(crate) unsafe fn alloc_resource(
     resource_type: *mut NifResourceType,
     size: usize,

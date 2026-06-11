@@ -60,7 +60,7 @@ pub trait Encoder {
 /// the encoded reason; the `Ok`/`Err` discrimination happens through normal
 /// trait dispatch on the user's return type (no name matching anywhere).
 ///
-/// This is the *only* implicit raise behaviour in the codec — there is no
+/// This is the *only* implicit raise behavior in the codec — there is no
 /// "looks like a Result" inference. A user type that wants Result-shaped
 /// raise semantics must write its own `Encoder` impl.
 impl<T: Encoder, E: Encoder> Encoder for Result<T, E> {

@@ -34,7 +34,7 @@ pub enum EnvKind {
 
 /// The NIF call environment. Carries a unique per-call lifetime `'a`.
 ///
-/// The lifetime is synthesised in the generated `extern "C"` NIF wrapper by
+/// The lifetime is synthesized in the generated `extern "C"` NIF wrapper by
 /// borrowing a stack-allocated `()`. This means `'a` is strictly scoped to
 /// one NIF call: the compiler rejects any attempt to store a `Term<'a>` past
 /// the point where the NIF returns.

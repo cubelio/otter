@@ -236,8 +236,8 @@ union NifMapIteratorUnion {
 
 /// `ErlNifMapIterator` — map iteration cursor. All fields are internal to the BEAM.
 ///
-/// Initialised by `enif_map_iterator_create`; destroyed by `enif_map_iterator_destroy`.
-/// Must not be moved after initialisation.
+/// Initialized by `enif_map_iterator_create`; destroyed by `enif_map_iterator_destroy`.
+/// Must not be moved after initialization.
 /// NIF 2.6 (OTP R17).
 #[repr(C)]
 pub struct NifMapIterator {

@@ -162,7 +162,7 @@ init() ->
 my_function(_Arg) -> exit(nif_not_loaded).
 ```
 
-This is standard Erlang. Every Erlang programmer who has written a NIF before will recognise it immediately.
+This is standard Erlang. Every Erlang programmer who has written a NIF before will recognize it immediately.
 
 ---
 

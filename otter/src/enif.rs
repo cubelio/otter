@@ -387,11 +387,11 @@ static FUNCS: OnceLock<EnifFunctions> = OnceLock::new();
 pub(crate) fn funcs() -> &'static EnifFunctions {
     FUNCS
         .get()
-        .expect("otter::enif: not initialised — init() was not called")
+        .expect("otter::enif: not initialized — init() was not called")
 }
 
 // ---------------------------------------------------------------------------
-// Initialisation — Unix (dlsym)
+// Initialization — Unix (dlsym)
 // ---------------------------------------------------------------------------
 
 /// Load all `enif_*` function pointers via `dlsym` and store them globally.
@@ -400,7 +400,7 @@ pub(crate) fn funcs() -> &'static EnifFunctions {
 /// other function in this module is used.
 ///
 /// Returns `Ok(())` on success, or `Err(name)` with the first symbol that
-/// could not be resolved. A failed load leaves `FUNCS` uninitialised so
+/// could not be resolved. A failed load leaves `FUNCS` uninitialized so
 /// that `funcs()` will panic if called — but the caller should propagate
 /// the error to the BEAM (return `false` from the NIF load callback) so
 /// the VM stays alive.
@@ -410,7 +410,7 @@ pub(crate) fn funcs() -> &'static EnifFunctions {
 /// Must be called from the BEAM's NIF loading context.
 #[cfg(unix)]
 pub(crate) unsafe fn init() -> Result<(), &'static str> {
-    // Fast path: already initialised.
+    // Fast path: already initialized.
     if FUNCS.get().is_some() {
         return Ok(());
     }
@@ -612,7 +612,7 @@ pub(crate) unsafe fn init() -> Result<(), &'static str> {
                 // Hash
                 hash:               load(b"enif_hash\0")?,
 
-                // Term serialisation
+                // Term serialization
                 term_to_binary:     load(b"enif_term_to_binary\0")?,
                 binary_to_term:     load(b"enif_binary_to_term\0")?,
 
@@ -1593,7 +1593,7 @@ pub(crate) unsafe fn hash(hash_type: NifHash, term: NifTerm, salt: u64) -> u64 {
     unsafe { (funcs().hash)(hash_type, term, salt) }
 }
 
-// -- Term serialisation ---------------------------------------------------
+// -- Term serialization ---------------------------------------------------
 
 /// Serializes a term into the Erlang external term format, allocating the result binary. NIF 2.11 (OTP 19.0). Wraps `enif_term_to_binary`.
 pub(crate) unsafe fn term_to_binary(

@@ -61,7 +61,7 @@ The interesting impls:
 - Every otter term type (`Integer`, `Binary`, `Atom`, `Term`, `RawTerm`, etc.) implements `Encoder`. `Encoder::encode` returns a `RawTerm<'a>` tied to the call's env.
 - `Result<T: Encoder, E: Encoder>` implements `Encoder`: `Ok(v)` encodes `v` and returns the term, `Err(e)` encodes `e`, calls `enif_raise_exception` with the encoded term, and returns the resulting exception term. The BEAM treats this as a class-`error` raise of the encoded reason.
 
-Because the dispatch is by type (not by token-stream string matching on `Result`), a user type that happens to be named `Result` does not silently inherit the raise-on-`Err` behaviour — it gets whatever `Encoder` impl it has, or a compile error if none.
+Because the dispatch is by type (not by token-stream string matching on `Result`), a user type that happens to be named `Result` does not silently inherit the raise-on-`Err` behavior — it gets whatever `Encoder` impl it has, or a compile error if none.
 
 If the user's return type does not implement `Encoder`, the macro inserts an explicit bound assertion that surfaces the failure as "the trait `otter::Encoder` is not implemented for `<your type>`" rather than as a `method not found` error deep in the wrapper.
 

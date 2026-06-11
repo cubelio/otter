@@ -6,9 +6,13 @@ Otter is a Rust library for writing Erlang NIFs. It maps the NIF C ABI directly 
 
 ## Why
 
-Rustler targets Elixir and Mix. It does not support Erlang. Otter is built for Erlang from the ground up — if an Erlang programmer wouldn't recognise a concept, it doesn't belong.
+There is already an established library that builds Erlang NIFs from Rust, `rustler`. As a regular user of `rustler`, I ran up against many points of friction. The design and documentation lean toward Elixir over Erlang. The API surface made several opinionated decisions, like how to convert terms and when to raise an exception. It prefers syntactic sugar to explicitness.
 
-Concrete differences from rustler: no serde, no Elixir types, no linker-based registration magic, no `NifUntaggedEnum`, no `Error` enum. Lists are cons cells. Registration is explicit. See [RUSTLER.md](docs/RUSTLER.md) for a detailed comparison.
+I built `otter` to be on the opposite end of the spectrum. Everything is explicit and as close to the original NIF C API as possible. The design philosophy was to expose the full capabilities of the NIF API in the most idiomatic Rust way without any opinionated decisions hidden in the scaffolding. If a NIF programmer wouldn't recognize a concept, it doesn't belong.
+
+See [docs/RUSTLER.md](docs/RUSTLER.md) for a detailed comparison.
+
+*Note on Elixir.* For now, `otter` ships no Elixir-specific tooling. Getting the Erlang-facing library right is the current priority; once the surface stabilizes, we will revisit building Elixir tooling on top of the `otter` framework or as an opt-in feature.
 
 ## Quick start
 

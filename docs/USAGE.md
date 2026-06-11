@@ -2,7 +2,7 @@
 
 ## Overview
 
-Otter is a Rust library for writing Erlang NIFs. It maps the NIF C ABI directly into Rust types — no abstractions that an Erlang programmer wouldn't recognise.
+Otter is a Rust library for writing Erlang NIFs. It maps the NIF C ABI directly into Rust types — no abstractions that an Erlang programmer wouldn't recognize.
 
 Three crates work together:
 
@@ -522,7 +522,7 @@ pub trait Decoder<'a>: Sized {
 
 `Encoder::encode` converts a value back into a `RawTerm` tied to the target env's lifetime. For types that already hold a NIF term (like `Integer`, `Binary`), this copies the term into the target environment via `enif_make_copy`.
 
-`Result<T, E>` implements `Encoder` when both `T` and `E` do: `Ok(v)` encodes `v`, `Err(e)` encodes `e` and raises it via `enif_raise_exception`. This is how `Result`-returning NIFs work — through normal trait dispatch on the return type, not through any macro-level special case. A user type happening to be called `Result` does not inherit this behaviour.
+`Result<T, E>` implements `Encoder` when both `T` and `E` do: `Ok(v)` encodes `v`, `Err(e)` encodes `e` and raises it via `enif_raise_exception`. This is how `Result`-returning NIFs work — through normal trait dispatch on the return type, not through any macro-level special case. A user type happening to be called `Result` does not inherit this behavior.
 
 **CodecError variants:**
 

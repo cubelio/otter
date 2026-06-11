@@ -106,7 +106,7 @@ Both `enif` and `wrapper` are `pub(crate)` — entirely internal. Wrapper submod
 
 ### `Env<'a>`
 
-The central lifetime safety mechanism. Each NIF call gets an `Env<'a>` with a unique per-call lifetime synthesised from a stack borrow. `PhantomData<*mut &'a u8>` makes `Env` invariant over `'a`, preventing any `Term<'a>` from being stored past the call's lifetime. There is no runtime check — this is enforced entirely by the type system.
+The central lifetime safety mechanism. Each NIF call gets an `Env<'a>` with a unique per-call lifetime synthesized from a stack borrow. `PhantomData<*mut &'a u8>` makes `Env` invariant over `'a`, preventing any `Term<'a>` from being stored past the call's lifetime. There is no runtime check — this is enforced entirely by the type system.
 
 ```rust
 pub struct Env<'a> {

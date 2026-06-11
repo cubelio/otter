@@ -13,7 +13,7 @@ fn add(a: i64, b: i64) -> i64 {
     a + b
 }
 
-rustler::init!("Elixir.MyModule");
+rustler::init!("my_module");
 ```
 
 **Otter:**
@@ -31,10 +31,10 @@ otter::init!("my_module", [add]);
 ```
 
 Key differences:
-- `Env` is explicit. Rustler hides it; otter passes it as the first argument.
+- `Env` is required. Rustler's macro detects `Env` and `Term` by matching the *unqualified identifier string* of the argument type (see `rustler_codegen/src/nif.rs`), so an alias like `use rustler::Env as MyEnv` silently changes the macro's behavior. Otter requires `Env` as the first positional argument and routes all other arguments through `Decoder` — no name-based dispatch.
 - Arguments are BEAM types (`Integer`), not Rust primitives. Rustler auto-converts `i64`; otter gives you the BEAM term and you extract when ready.
 - NIFs are listed explicitly in `init!`. Rustler collects them via linker magic (`inventory` crate).
-- Module name is the Erlang module name, not an Elixir module name.
+- Module name is the bare Erlang module name. Rustler's `init!` accepts both styles (`"Elixir.MyModule"` and `"my_module"`); otter uses bare names.
 
 ---
 
@@ -299,13 +299,10 @@ pub struct MyResource { /* ... */ }
 #[rustler::resource_impl]
 impl rustler::Resource for MyResource {}
 
-// In init
-fn load(env: Env, _info: Term) -> bool {
-    rustler::resource!(MyResource, env);
-    true
-}
-
-rustler::init!("Elixir.MyMod", load = load);
+// Registration is automatic — `#[rustler::resource_impl]` submits the
+// registration to `inventory`, and `rustler::init!` emits a load
+// callback that calls `ResourceRegistration::register_all_collected`.
+rustler::init!("my_module");
 ```
 
 **Otter:**
@@ -424,12 +421,23 @@ Same attribute, same values (`"DirtyCpu"`, `"DirtyIo"`).
 
 ## Build System
 
-**Rustler (Mix):**
-```elixir
-# mix.exs
-defp deps do
-  [{:rustler, "~> 0.30"}]
-end
+**Rustler (Erlang):** rustler ships no build integration for rebar3, so most Erlang users hand-roll a `pre_hooks` shell invocation or a Makefile that drives `cargo build` and copies the artifact into `priv/`. A minimal pre-hook approach:
+
+```erlang
+%% rebar.config
+{pre_hooks, [
+    {compile, "cargo build --release --manifest-path native/my_nifs/Cargo.toml"},
+    {compile, "mkdir -p priv && cp native/my_nifs/target/release/libmy_nifs.so priv/"}
+]}.
+```
+
+```toml
+# native/my_nifs/Cargo.toml
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.37"
 ```
 
 **Otter (rebar3):**

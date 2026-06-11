@@ -109,7 +109,7 @@ pub trait Resource: Sized + Send + Sync + 'static {
 }
 
 // ---------------------------------------------------------------------------
-// C-level callbacks (one instantiation per type T via monomorphisation)
+// C-level callbacks (one instantiation per type T via monomorphization)
 // ---------------------------------------------------------------------------
 
 /// Absorb a panic that escaped a resource callback.

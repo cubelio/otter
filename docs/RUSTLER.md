@@ -6,7 +6,7 @@ Otter was designed after studying rustler closely. This document describes the r
 
 ## What rustler is
 
-Rustler is a library for writing Erlang NIFs in Rust. It was designed primarily for Elixir and the Mix build system. The rustler maintainers have explicitly stated they do not support Erlang.
+Rustler is a library for writing Erlang NIFs in Rust. The library is callable from both Erlang and Elixir; rustler's own README states that "Elixir is favored as of now," operationalized through the `rustler_mix` build tool, the `mix rustler.new` getting-started flow, Elixir-flavored examples in the documentation, and Elixir-specific derive macros (`NifStruct`, `NifException`).
 
 Repository: https://github.com/rusterlium/rustler
 
@@ -16,7 +16,7 @@ Repository: https://github.com/rusterlium/rustler
 
 ### The lifetime safety mechanism
 
-Rustler's core insight — using `PhantomData<*mut &'a u8>` to make `Env<'a>` invariant over `'a`, synthesising a unique per-call lifetime from a stack borrow — is correct and elegant. Otter preserves this mechanism unchanged. It is the right way to prevent `Term` values from escaping a NIF call at compile time with zero runtime cost.
+Rustler's core insight — using `PhantomData<*mut &'a u8>` to make `Env<'a>` invariant over `'a`, synthesizing a unique per-call lifetime from a stack borrow — is correct and elegant. Otter preserves this mechanism unchanged. It is the right way to prevent `Term` values from escaping a NIF call at compile time with zero runtime cost.
 
 ### The `OwnedEnv` / `SavedTerm` pattern
 
@@ -38,9 +38,11 @@ Every NIF wrapper must catch panics via `std::panic::catch_unwind`. A panicking 
 
 ## What otter changes
 
-### Erlang-first, not Elixir-first
+The unifying axis: rustler maps BEAM concepts onto Rust shapes. Otter mirrors the NIF C API as it is. Each subsection below makes this concrete.
 
-Rustler targets Elixir and Mix. Otter targets Erlang and rebar3. This affects naming conventions, the build tooling, and which abstractions are included.
+### Erlang conventions throughout
+
+Rustler's examples, getting-started flow, and derives default to Elixir conventions (`init!("Elixir.MyMod")` in examples, `NifStruct` producing `__struct__`-keyed maps, Mix-native onramp). Otter's surface uses Erlang conventions throughout. The two libraries' technical capabilities overlap; the difference is which conventions are first-class.
 
 ### Three term resolution levels
 
@@ -58,27 +60,59 @@ Rustler exposes lists with an iterator interface. Otter exposes `List<'a>` as a 
 
 ### No `Error` enum at the NIF boundary
 
-Rustler has an `Error` enum with variants that do different things (`Atom` returns a bare atom, `Term` returns `{error, term}`, `RaiseAtom` raises an exception). Otter has no `Error` enum at the NIF boundary. Raising is done via `Env::raise(term)` and `Env::raise_badarg()`, which are direct wrappers of `enif_raise_exception` and `enif_make_badarg`. The NIF C API exposes only these two mechanisms; otter reflects that honestly.
+Rustler has an `Error` enum with five variants: `BadArg`, `Atom(&str)` and `Term(Box<dyn Encoder>)` (which *return* — the latter as `{error, term}`), and `RaiseAtom(&str)` and `RaiseTerm(Box<dyn Encoder>)` (which *raise*). The same return type encodes two different control-flow behaviors; which one happens depends on which variant you picked.
+
+The NIF C API exposes exactly two exception mechanisms: `enif_make_badarg` and `enif_raise_exception`. Otter exposes those as `Env::raise_badarg()` and `Env::raise(term)`. `Ok(value)` returns. `Err(reason)` always raises (via `enif_raise_exception`). One mechanism per behavior.
 
 ### Explicit NIF registration
 
-Rustler uses the `inventory` crate, which exploits linker sections (`.init_array` / `.ctors`) to automatically collect NIFs at link time. Users annotate functions with `#[rustler::nif]` and never maintain a list. Otter requires the user to list every NIF explicitly in `init!`. This is consistent with how Erlang declares NIFs and makes registration visible and auditable.
+Rustler uses the `inventory` crate to collect NIFs. Each `#[rustler::nif]` expands into an `inventory::submit!` that writes a `Nif` record into a linker section (`.init_array` / `.ctors`); at NIF load time, `inventory::iter::<Nif>()` walks that section to discover what was registered. The source code never names the list — registration is whatever survived linking.
+
+Reconstructing compile-time-known facts by walking pre-linked memory regions at runtime is a code smell. There is no compile-time check that all NIFs are registered, no greppable list of what the module exports, and the mechanism depends on the linker preserving inserted symbols across optimization modes and link types.
+
+Otter requires the user to list every NIF explicitly in `init!`. Registration is visible, auditable, and verified at compile time — the way Erlang itself declares NIFs.
 
 ### No `static mut` resource registry
 
 Rustler's resource type registry uses a `static mut OnceLock<HashMap<TypeId, usize>>` with suppressed lint warnings. Otter uses a safe alternative.
 
-### Inverted NIF version defaults
+### Minimum NIF version follows from API usage
 
-Rustler defaults to NIF 2.15 (OTP 22) and users opt up for newer APIs. Otter defaults to the latest known version and users opt down for older OTP compatibility. Most users want the latest; they should not need to think about versioning.
+Rustler defaults to NIF 2.15 (OTP 22) and exposes Cargo features to opt up to 2.16 or 2.17. Otter requires NIF 2.17 (OTP 26) because the library calls 2.17 APIs (`enif_select_x`, `enif_set_option`, and others) as part of its core surface, with an optional `nif_2_18` feature for 2.18 additions. The version floor in each library follows from which APIs it calls.
+
+---
+
+## What otter adds
+
+Capabilities in otter that have no equivalent in rustler's current public surface.
+
+### `Bitstring` as a distinct type
+
+Erlang distinguishes byte-aligned binaries from arbitrary-length bitstrings. Otter exposes `Bitstring<'a>` as a separate decodable type from `Binary<'a>`. Rustler's surface only goes through `enif_inspect_binary`; non-byte-aligned bitstrings are not first-class.
+
+### `Port` and `Fun` decode
+
+Otter exposes `Port<'a>` and `Fun<'a>` as decodable term types. Rustler's public surface includes neither — a NIF receiving a port or fun argument keeps it as a generic `Term<'a>` and operates on it opaquely.
+
+### `enif_select` and `enif_select_x`
+
+Otter wraps `enif_select` and `enif_select_x` for integrating async file descriptors with the BEAM scheduler. Rustler does not expose a safe wrapper.
+
+### `enif_set_option`
+
+Otter wraps `enif_set_option` for tuning per-NIF options such as `delay_halt`. Rustler does not expose this.
+
+### Atoms initialized at NIF load
+
+Otter's `declare_atoms!` declares atoms statically; `init_atoms!(env)` in the load callback creates them all once and writes the terms to atomics. Rustler's `atoms!` macro caches lazily via `OnceLock::get_or_init` — first call creates them, subsequent calls return the cached value. Both avoid NIF calls in steady state and the retrieval cost is comparable. The difference is structural: otter pushes initialization to load time, rustler defers it to first call.
+
+### `rebar3_otter` build plugin
+
+Otter ships a first-party rebar3 plugin that orchestrates `cargo build` on `rebar3 compile` and places the resulting `.so` where `erlang:load_nif` will find it. Rustler ships `rustler_mix` for the Mix side (which additionally generates the Elixir module stubs from the Rust crate's NIF list, keeping shim and Rust in sync); for Erlang users, rustler ships no build integration and the build glue is hand-rolled.
 
 ---
 
 ## What otter deliberately excludes
-
-### Build tooling for Elixir/Mix
-
-`rustler_mix` is entirely Elixir/Mix-specific. Otter provides `rebar3_otter` instead.
 
 ### Elixir-specific derives
 
@@ -92,6 +126,3 @@ Try-each structural dispatch has no idiomatic Erlang equivalent. Users needing t
 
 Rustler optionally integrates with serde's `Serialize`/`Deserialize` traits. Otter does not. The serde data model does not map cleanly to Erlang terms (no atoms, no records, strings vs binaries). Users implement `Encoder`/`Decoder` directly.
 
-### Inventory/linker magic
-
-The `inventory` crate is not a dependency. Registration is explicit.
