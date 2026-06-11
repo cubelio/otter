@@ -48,7 +48,7 @@ Rustler's examples, getting-started flow, and derives default to Elixir conventi
 
 Rustler exposes a single `TypedTerm<'a>` type — a thin wrapper around `NIF_TERM` that defers all type information. Otter exposes three levels:
 
-- `RawTerm<'a>` — zero work, bare machine word
+- `Term<'a>` — zero work, bare machine word
 - `TypedTerm<'a>` — typed enum, one `enif_term_type` call
 - Concrete types (`Integer<'a>`, `Bitstring<'a>`, etc.) — type known, data still lazy
 

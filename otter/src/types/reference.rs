@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{RawTerm, TypedTerm};
+use crate::term::{Term, TypedTerm};
 
 /// An Erlang reference.
 #[derive(Clone, Copy)]
@@ -48,9 +48,9 @@ impl std::fmt::Debug for Reference<'_> {
 }
 
 impl<'b> Encoder for Reference<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        RawTerm::new(env, term)
+        Term::new(env, term)
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{RawTerm, TypedTerm, TermIn};
+use crate::term::{Term, TypedTerm, TermIn};
 
 /// An Erlang list term.
 ///
@@ -19,22 +19,22 @@ pub struct List<'a> {
 pub enum Node<'a> {
     /// The empty list `[]`.
     Nil,
-    /// A cons cell `[Head | Tail]`. Both are unresolved [`RawTerm`]s.
-    Cell(RawTerm<'a>, RawTerm<'a>),
+    /// A cons cell `[Head | Tail]`. Both are unresolved [`Term`]s.
+    Cell(Term<'a>, Term<'a>),
 }
 
 impl<'a> List<'a> {
     /// Decompose this list into nil or a cons cell.
     ///
     /// One `enif_get_list_cell` call. Returns [`Node::Nil`] for `[]`,
-    /// or [`Node::Cell`] with head and tail as [`RawTerm`]s.
+    /// or [`Node::Cell`] with head and tail as [`Term`]s.
     pub fn node(self) -> Node<'a> {
         let mut head: NifTerm = 0;
         let mut tail: NifTerm = 0;
         if unsafe {
             crate::wrapper::list::get_list_cell(self.env.as_ptr(), self.term, &mut head, &mut tail)
         } {
-            Node::Cell(RawTerm::new(self.env, head), RawTerm::new(self.env, tail))
+            Node::Cell(Term::new(self.env, head), Term::new(self.env, tail))
         } else {
             Node::Nil
         }
@@ -135,7 +135,7 @@ impl<'a> List<'a> {
     /// Return an iterator over the heads of this list.
     ///
     /// Each call to `next()` is one `enif_get_list_cell` call, yielding the
-    /// head as an unresolved [`RawTerm`]. Iteration stops when the tail is
+    /// head as an unresolved [`Term`]. Iteration stops when the tail is
     /// not a cons cell.
     ///
     /// After iteration, call [`ListIterator::tail`] to get the terminal
@@ -155,7 +155,7 @@ impl<'a> List<'a> {
 
 /// Iterator over the head elements of a [`List`].
 ///
-/// Yields [`RawTerm`] heads. After `next()` returns `None`, call [`tail`]
+/// Yields [`Term`] heads. After `next()` returns `None`, call [`tail`]
 /// to inspect the terminal value: `[]` (nil) for proper lists, or the
 /// improper tail term.
 ///
@@ -167,9 +167,9 @@ pub struct ListIterator<'a> {
 }
 
 impl<'a> Iterator for ListIterator<'a> {
-    type Item = RawTerm<'a>;
+    type Item = Term<'a>;
 
-    fn next(&mut self) -> Option<RawTerm<'a>> {
+    fn next(&mut self) -> Option<Term<'a>> {
         if self.tail.is_some() {
             return None;
         }
@@ -179,10 +179,10 @@ impl<'a> Iterator for ListIterator<'a> {
             crate::wrapper::list::get_list_cell(self.env.as_ptr(), self.current, &mut head, &mut tail)
         } {
             self.current = tail;
-            Some(RawTerm::new(self.env, head))
+            Some(Term::new(self.env, head))
         } else {
             // Not a cons cell — this is the terminal.
-            self.tail = Some(RawTerm::new(self.env, self.current).resolve());
+            self.tail = Some(Term::new(self.env, self.current).resolve());
             None
         }
     }
@@ -191,7 +191,7 @@ impl<'a> Iterator for ListIterator<'a> {
 impl std::iter::FusedIterator for ListIterator<'_> {}
 
 impl<'a> IntoIterator for List<'a> {
-    type Item = RawTerm<'a>;
+    type Item = Term<'a>;
     type IntoIter = ListIterator<'a>;
 
     fn into_iter(self) -> ListIterator<'a> {
@@ -240,9 +240,9 @@ impl std::fmt::Debug for List<'_> {
 }
 
 impl<'b> Encoder for List<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        RawTerm::new(env, term)
+        Term::new(env, term)
     }
 }
 

@@ -7,9 +7,9 @@ Initial release.
 ### otter (core library)
 
 - All 12 Erlang term types: Atom, Integer, Float, Binary, Bitstring, List, Tuple, Map, Pid, Port, Reference, Fun
-- Three-level term resolution: RawTerm (zero work) → TypedTerm (one `enif_term_type` call) → concrete-type extraction
+- Three-level term resolution: Term (zero work) → TypedTerm (one `enif_term_type` call) → concrete-type extraction
 - Compile-time lifetime safety via invariant `Env<'a>` constructed from a stack borrow
-- `Encoder`/`Decoder` traits for all types and `ResourceArc`; `Encoder::encode` returns `RawTerm<'a>` to avoid an extra `enif_term_type` call on every encoded return
+- `Encoder`/`Decoder` traits for all types and `ResourceArc`; `Encoder::encode` returns `Term<'a>` to avoid an extra `enif_term_type` call on every encoded return
 - `impl Encoder for Result<T: Encoder, E: Encoder>`: `Ok` encodes normally, `Err` encodes and raises via `enif_raise_exception` — auto-raise dispatched by trait, not macro magic
 - `BinaryBuilder` with `io::Write`, `Extend`, `Deref`/`DerefMut`, and `Drop`-on-leak release
 - `List` as cons cell with `Node::{Nil, Cell}`, `ListIterator` (with `FusedIterator` and `IntoIterator`), `len`, `reverse`, `try_string`, `from_str`
@@ -18,7 +18,7 @@ Initial release.
 - `OwnedEnv::send` for building and sending terms from non-scheduler threads; closure-based, lifetime-bound
 - Pre-declared atoms via `declare_atoms!` / `init_atoms!` / `atom!` macros — single atomic load per retrieval, no NIF call
 - `time` (monotonic, offset, unit conversion), `system` (thread type), and `select` / `select_x` (I/O event multiplexing) modules
-- `TermIn` sealed trait for polymorphic term arguments (`Atom`, `Integer`, `TypedTerm`, `RawTerm`, etc., and `&T` where `T: TermIn`)
+- `TermIn` sealed trait for polymorphic term arguments (`Atom`, `Integer`, `TypedTerm`, `Term`, etc., and `&T` where `T: TermIn`)
 - Minimum NIF version 2.17 (OTP 26); optional `nif_2_18` feature for OTP 29
 - Unix-only by construction (`compile_error!` on non-Unix targets)
 

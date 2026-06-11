@@ -10,9 +10,9 @@ help: the trait `Encoder` is not implemented for `NotEncodable`
 10 | struct NotEncodable;
    | ^^^^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `Encoder`:
-             RawTerm<'b>
              ResourceArc<T>
              Result<T, E>
+             Term<'b>
              TypedTerm<'b>
              otter::types::Atom
              otter::types::Binary<'b>

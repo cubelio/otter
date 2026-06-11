@@ -5,7 +5,7 @@
 //! subsequent step.
 
 use crate::env::Env;
-use crate::term::{RawTerm, TypedTerm};
+use crate::term::{Term, TypedTerm};
 
 /// Error returned by term type conversion operations.
 ///
@@ -45,11 +45,11 @@ impl std::error::Error for CodecError {}
 /// and by `ResourceArc<T>`. Native Rust types do not implement this trait —
 /// conversions are always explicit via type methods.
 ///
-/// Returns a [`RawTerm<'a>`] tied to the target env's lifetime. Callers that
+/// Returns a [`Term<'a>`] tied to the target env's lifetime. Callers that
 /// want the typed enum can call `.resolve()`; the NIF wrapper macro calls
 /// `.as_raw()` directly and avoids the dispatch.
 pub trait Encoder {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a>;
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a>;
 }
 
 /// Encode a `Result` as either a returned term or a raised exception.
@@ -64,7 +64,7 @@ pub trait Encoder {
 /// "looks like a Result" inference. A user type that wants Result-shaped
 /// raise semantics must write its own `Encoder` impl.
 impl<T: Encoder, E: Encoder> Encoder for Result<T, E> {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         match self {
             Ok(v)  => v.encode(env),
             Err(e) => env.raise(e.encode(env)),

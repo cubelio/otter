@@ -56,7 +56,7 @@ impl Parse for NifAttrs {
 // decoded from `argv` through `Decoder`. The macro does not classify by
 // name — a wrong-type slot 0 surfaces as a normal type error at the user's
 // call site (the env is passed straight through to the user function), and
-// `TypedTerm` / `RawTerm` / any decodable type go through `Decoder::decode`
+// `TypedTerm` / `Term` / any decodable type go through `Decoder::decode`
 // uniformly.
 
 fn arg_ident(arg: &FnArg) -> Result<syn::Ident> {

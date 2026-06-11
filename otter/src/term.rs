@@ -1,4 +1,4 @@
-//! `RawTerm<'a>` and `TypedTerm<'a>`.
+//! `Term<'a>` and `TypedTerm<'a>`.
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
@@ -9,7 +9,7 @@ use crate::types::{
 use crate::wrapper;
 
 // ---------------------------------------------------------------------------
-// RawTerm
+// Term
 // ---------------------------------------------------------------------------
 
 /// Level 1: the bare `ERL_NIF_TERM` machine word plus its environment.
@@ -18,20 +18,20 @@ use crate::wrapper;
 /// way to hold a received term. Call `resolve()` to pay the cost of one
 /// `enif_term_type` call and produce a typed `TypedTerm<'a>`.
 ///
-/// `RawTerm` is a received type. You cannot construct one from scratch —
+/// `Term` is a received type. You cannot construct one from scratch —
 /// all term construction goes through concrete types (`Atom::new`, `Map::new`,
 /// etc.), which always produce a known type.
 #[derive(Clone, Copy)]
-pub struct RawTerm<'a> {
+pub struct Term<'a> {
     pub(crate) term: NifTerm,
     pub(crate) env: Env<'a>,
 }
 
-impl<'a> RawTerm<'a> {
+impl<'a> Term<'a> {
     /// Wrap a raw term pointer. Used internally by NIF argument unpacking.
     #[inline]
-    pub(crate) fn new(env: Env<'a>, term: NifTerm) -> RawTerm<'a> {
-        RawTerm { term, env }
+    pub(crate) fn new(env: Env<'a>, term: NifTerm) -> Term<'a> {
+        Term { term, env }
     }
 
     /// The environment this term belongs to.
@@ -145,21 +145,21 @@ impl<'a> TypedTerm<'a> {
     }
 }
 
-impl<'a> PartialEq for RawTerm<'a> {
+impl<'a> PartialEq for Term<'a> {
     fn eq(&self, other: &Self) -> bool {
         unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
     }
 }
 
-impl<'a> Eq for RawTerm<'a> {}
+impl<'a> Eq for Term<'a> {}
 
-impl<'a> PartialOrd for RawTerm<'a> {
+impl<'a> PartialOrd for Term<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a> Ord for RawTerm<'a> {
+impl<'a> Ord for Term<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
         c.cmp(&0)
@@ -206,8 +206,8 @@ impl<'a> TypedTerm<'a> {
     }
 }
 
-impl<'a> From<RawTerm<'a>> for TypedTerm<'a> {
-    fn from(raw: RawTerm<'a>) -> TypedTerm<'a> {
+impl<'a> From<Term<'a>> for TypedTerm<'a> {
+    fn from(raw: Term<'a>) -> TypedTerm<'a> {
         raw.resolve()
     }
 }
@@ -250,9 +250,9 @@ impl<'a> From<Tuple<'a>> for TypedTerm<'a> {
 }
 
 impl<'b> Encoder for TypedTerm<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.as_raw()) };
-        RawTerm::new(env, term)
+        Term::new(env, term)
     }
 }
 
@@ -262,10 +262,10 @@ impl<'a> Decoder<'a> for TypedTerm<'a> {
     }
 }
 
-impl<'b> Encoder for RawTerm<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+impl<'b> Encoder for Term<'b> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        RawTerm::new(env, term)
+        Term::new(env, term)
     }
 }
 
@@ -281,7 +281,7 @@ mod sealed {
 /// functions.
 ///
 /// All otter term types implement this: [`Atom`], [`Binary`], [`Integer`],
-/// [`List`], [`TypedTerm`], [`RawTerm`], etc. This trait is sealed — it cannot
+/// [`List`], [`TypedTerm`], [`Term`], etc. This trait is sealed — it cannot
 /// be implemented outside the crate.
 pub trait TermIn: sealed::Sealed {
     /// Extract the underlying NIF term value.
@@ -301,7 +301,7 @@ impl sealed::Sealed for Pid {}
 impl sealed::Sealed for Port {}
 impl sealed::Sealed for Reference<'_> {}
 impl sealed::Sealed for Tuple<'_> {}
-impl sealed::Sealed for RawTerm<'_> {}
+impl sealed::Sealed for Term<'_> {}
 impl sealed::Sealed for TypedTerm<'_> {}
 impl<T: sealed::Sealed> sealed::Sealed for &T {}
 
@@ -341,7 +341,7 @@ impl TermIn for Reference<'_> {
 impl TermIn for Tuple<'_> {
     fn as_c_arg(&self) -> NifTerm { self.term }
 }
-impl TermIn for RawTerm<'_> {
+impl TermIn for Term<'_> {
     fn as_c_arg(&self) -> NifTerm { self.term }
 }
 impl TermIn for TypedTerm<'_> {
@@ -377,7 +377,7 @@ impl<'a> Env<'a> {
         let raw = unsafe {
             wrapper::term::make_unique_integer(self.as_ptr(), properties)
         };
-        RawTerm::new(self, raw).resolve()
+        Term::new(self, raw).resolve()
     }
 
     /// Hash a term using the specified algorithm.
@@ -403,10 +403,10 @@ impl<'a> Env<'a> {
     /// The returned value must be returned from the NIF function via
     /// `.as_raw()`. It is **not** a valid term — do not inspect or resolve it.
     /// Wraps `enif_raise_exception`.
-    pub fn raise(self, reason: impl TermIn) -> RawTerm<'a> {
+    pub fn raise(self, reason: impl TermIn) -> Term<'a> {
         let raw =
             unsafe { wrapper::exception::raise_exception(self.as_ptr(), reason.as_c_arg()) };
-        RawTerm::new(self, raw)
+        Term::new(self, raw)
     }
 
     /// Raise a `badarg` error.
@@ -414,9 +414,9 @@ impl<'a> Env<'a> {
     /// The returned value must be returned from the NIF function via
     /// `.as_raw()`. It is **not** a valid term — do not inspect or resolve it.
     /// Wraps `enif_make_badarg`.
-    pub fn raise_badarg(self) -> RawTerm<'a> {
+    pub fn raise_badarg(self) -> Term<'a> {
         let raw = unsafe { wrapper::exception::make_badarg(self.as_ptr()) };
-        RawTerm::new(self, raw)
+        Term::new(self, raw)
     }
 
     /// Reschedule the current NIF to run `fp` with the given arguments.
@@ -456,7 +456,7 @@ impl<'a> Env<'a> {
                 argv,
             )
         };
-        RawTerm::new(self, raw).resolve()
+        Term::new(self, raw).resolve()
     }
 
     /// Set the halt delay in milliseconds. Must be called from the load callback.

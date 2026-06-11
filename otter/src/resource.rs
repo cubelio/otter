@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::sys::{NifEnv, NifMonitor, NifPid, NifResourceType, NifResourceTypeInit};
-use crate::term::{RawTerm, TypedTerm};
+use crate::term::{Term, TypedTerm};
 use crate::types::Pid;
 
 // ---------------------------------------------------------------------------
@@ -44,7 +44,7 @@ impl Monitor {
     /// Wraps `enif_make_monitor_term`.
     pub fn to_term<'a>(self, env: Env<'a>) -> TypedTerm<'a> {
         let raw = unsafe { crate::wrapper::monitor::make_monitor_term(env.as_ptr(), &self.0) };
-        RawTerm::new(env, raw).resolve()
+        Term::new(env, raw).resolve()
     }
 }
 
@@ -347,11 +347,11 @@ impl<T: Resource> Encoder for ResourceArc<T> {
     ///
     /// The resulting term holds an Erlang-side reference to the resource.
     /// The BEAM will release that reference when the term is garbage collected.
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let raw_term = unsafe {
             crate::wrapper::resource::make_resource(env.as_ptr(), self.raw)
         };
-        RawTerm::new(env, raw_term)
+        Term::new(env, raw_term)
     }
 }
 

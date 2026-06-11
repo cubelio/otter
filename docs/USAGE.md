@@ -71,12 +71,12 @@ Terms are resolved lazily. Each step costs one NIF call, and you only pay for wh
 
 ```
 NifTerm          bare machine word, no metadata
-  -> RawTerm     + Env and lifetime, zero work
+  -> Term     + Env and lifetime, zero work
     -> TypedTerm      + type tag (one enif_term_type call)
       -> data    extraction methods on concrete types
 ```
 
-`RawTerm` is what you receive from the BEAM. Call `.resolve()` to get a `TypedTerm` (typed enum). Call methods like `i64::try_from(integer)` or `.as_bytes()` to extract actual data. Each step is explicit.
+`Term` is what you receive from the BEAM. Call `.resolve()` to get a `TypedTerm` (typed enum). Call methods like `i64::try_from(integer)` or `.as_bytes()` to extract actual data. Each step is explicit.
 
 ### Env and Lifetimes
 
@@ -113,7 +113,7 @@ fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
 | `TypedTerm<'a>` | Wraps argv[i] + `enif_term_type` | 1 NIF call |
 | `T: Decoder` | Wraps + resolves + decodes, badarg on failure | 2+ NIF calls |
 
-`RawTerm<'a>` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `TypedTerm`.
+`Term<'a>` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `TypedTerm`.
 
 **Return type:**
 
@@ -123,7 +123,7 @@ The user's return type must implement `Encoder`. The macro emits a single `Encod
 |---|---|
 | `T: Encoder` (any otter term type) | `.encode(env).as_raw()` — one NIF call to build the term, plus the BEAM-bound machine word |
 | `Result<T, E>` where `T: Encoder, E: Encoder` | `Ok(v)` encodes `v` and returns; `Err(e)` encodes `e` and raises it as a class-`error` exception |
-| `TypedTerm<'a>` / `RawTerm<'a>` | Same path — both implement `Encoder`. The encode is essentially a passthrough |
+| `TypedTerm<'a>` / `Term<'a>` | Same path — both implement `Encoder`. The encode is essentially a passthrough |
 
 **Attributes:**
 
@@ -292,7 +292,7 @@ let sum: i64 = list.iter()
     .sum();
 ```
 
-`iter()` yields heads as `RawTerm` — one `enif_get_list_cell` per step. After iteration, call `tail()` to inspect the terminal value:
+`iter()` yields heads as `Term` — one `enif_get_list_cell` per step. After iteration, call `tail()` to inspect the terminal value:
 
 ```rust
 let mut iter = list.iter();
@@ -313,7 +313,7 @@ use otter::types::Node;
 match list.node() {
     Node::Nil => { /* empty list [] */ }
     Node::Cell(head, tail) => {
-        // head and tail are RawTerm — resolve when needed
+        // head and tail are Term — resolve when needed
     }
 }
 ```
@@ -528,7 +528,7 @@ All otter types implement `Encoder` and `Decoder`. These traits are what the `#[
 
 ```rust
 pub trait Encoder {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a>;
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a>;
 }
 
 pub trait Decoder<'a>: Sized {
@@ -538,7 +538,7 @@ pub trait Decoder<'a>: Sized {
 
 `Decoder::decode` is called on resolved `TypedTerm` values. If the term doesn't match the expected type, it returns `CodecError::WrongType`. The generated wrapper converts this to a `badarg` exception.
 
-`Encoder::encode` converts a value back into a `RawTerm` tied to the target env's lifetime. For types that already hold a NIF term (like `Integer`, `Binary`), this copies the term into the target environment via `enif_make_copy`.
+`Encoder::encode` converts a value back into a `Term` tied to the target env's lifetime. For types that already hold a NIF term (like `Integer`, `Binary`), this copies the term into the target environment via `enif_make_copy`.
 
 `Result<T, E>` implements `Encoder` when both `T` and `E` do: `Ok(v)` encodes `v`, `Err(e)` encodes `e` and raises it via `enif_raise_exception`. This is how `Result`-returning NIFs work — through normal trait dispatch on the return type, not through any macro-level special case. A user type happening to be called `Result` does not inherit this behavior.
 

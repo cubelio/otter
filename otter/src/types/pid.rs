@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifPid, NifTerm};
-use crate::term::{RawTerm, TypedTerm};
+use crate::term::{Term, TypedTerm};
 
 /// An Erlang process identifier.
 ///
@@ -81,9 +81,9 @@ impl std::fmt::Debug for Pid {
 }
 
 impl Encoder for Pid {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         // Pids are tagged immediates — valid in any environment.
-        RawTerm::new(env, self.term)
+        Term::new(env, self.term)
     }
 }
 

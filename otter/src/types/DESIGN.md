@@ -1,8 +1,8 @@
 # Types
 
 Every Erlang term that crosses the NIF boundary is represented by one of the
-types in this directory. The two-level resolution model (`RawTerm` → `TypedTerm`)
-lets callers choose how much work to pay for: zero cost with `RawTerm`, one
+types in this directory. The two-level resolution model (`Term` → `TypedTerm`)
+lets callers choose how much work to pay for: zero cost with `Term`, one
 `enif_term_type` call with `TypedTerm`, or full decoding with `Decoder`.
 
 
@@ -11,7 +11,7 @@ lets callers choose how much work to pay for: zero cost with `RawTerm`, one
 ```
 NifTerm (u64 machine word)
   │
-  ├─ RawTerm<'a>     zero cost, no type check
+  ├─ Term<'a>     zero cost, no type check
   │    │
   │    └─ .resolve()  one enif_term_type call
   │         │
@@ -39,14 +39,14 @@ All other types' `Encoder` impls call `enif_make_copy` to copy the term into
 the destination environment.
 
 All concrete types implement `From<T> for TypedTerm<'a>`, enabling `let t: TypedTerm = atom.into()`.
-`RawTerm` converts to `TypedTerm` via `From` (calls `resolve()`).
+`Term` converts to `TypedTerm` via `From` (calls `resolve()`).
 
 
 ## Codec Traits
 
 ```rust
 pub trait Encoder {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a>;
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a>;
 }
 
 pub trait Decoder<'a>: Sized {
@@ -318,7 +318,7 @@ struct List<'a> { term: NifTerm, env: Env<'a> }
 
 enum Node<'a> {
     Nil,
-    Cell(RawTerm<'a>, RawTerm<'a>),  // head, tail — unresolved
+    Cell(Term<'a>, Term<'a>),  // head, tail — unresolved
 }
 ```
 
@@ -333,18 +333,18 @@ enum Node<'a> {
 | `from_str(env, &str) → List<'a>` | Construct string (list of codepoints) from UTF-8 | `enif_make_string_len` |
 | `cons(env, impl TermIn, impl TermIn) → List<'a>` | Construct cons cell `[head \| tail]` | `enif_make_list_cell` |
 
-**ListIterator** — yields `RawTerm<'a>` heads, one `enif_get_list_cell` per step:
+**ListIterator** — yields `Term<'a>` heads, one `enif_get_list_cell` per step:
 
 | Method | Does |
 |---|---|
-| `next() → Option<RawTerm<'a>>` | Yield next head; `None` when a non-cell tail is reached |
+| `next() → Option<Term<'a>>` | Yield next head; `None` when a non-cell tail is reached |
 | `tail() → Option<TypedTerm<'a>>` | Terminal value after iteration: `[]` for proper lists, improper tail otherwise |
 
 ### Internals
 
 Lists in Erlang are cons cells, and otter mirrors this directly. `node`
-returns `RawTerm`s for head and tail — the caller chooses whether to resolve
-them. `iter()` builds on this: it yields heads as `RawTerm`s and stops when
+returns `Term`s for head and tail — the caller chooses whether to resolve
+them. `iter()` builds on this: it yields heads as `Term`s and stops when
 the tail is not a cons cell. After exhaustion, `tail()` returns the terminal
 value — `[]` (nil) for proper lists, or the improper tail term. This means
 every list walk, proper or improper, is fully observable.

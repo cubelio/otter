@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{RawTerm, TypedTerm};
+use crate::term::{Term, TypedTerm};
 
 /// An Erlang float. Always IEEE 754 double precision.
 ///
@@ -57,9 +57,9 @@ impl std::fmt::Debug for Float<'_> {
 }
 
 impl<'b> Encoder for Float<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        RawTerm::new(env, term)
+        Term::new(env, term)
     }
 }
 

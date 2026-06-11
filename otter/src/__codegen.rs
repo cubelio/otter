@@ -12,7 +12,7 @@ pub use crate::sys::{
     NIF_FUNC_DIRTY_IO, NIF_MAJOR_VERSION, NIF_MIN_ERTS_VERSION, NIF_MINOR_VERSION,
     NIF_VM_VARIANT,
 };
-pub use crate::term::{RawTerm, TypedTerm};
+pub use crate::term::{Term, TypedTerm};
 pub use crate::types::Atom;
 
 /// Value for `NifEntry.options` indicating `sizeof_resource_type_init` is set.
@@ -52,8 +52,8 @@ pub unsafe fn new_env<'a>(
     unsafe { Env::new(marker, env, kind) }
 }
 
-/// Wrap a raw `NifTerm` into a [`RawTerm`].
+/// Wrap a raw `NifTerm` into a [`Term`].
 #[inline]
-pub fn new_raw_term<'a>(env: Env<'a>, term: NifTerm) -> RawTerm<'a> {
-    RawTerm::new(env, term)
+pub fn new_raw_term<'a>(env: Env<'a>, term: NifTerm) -> Term<'a> {
+    Term::new(env, term)
 }

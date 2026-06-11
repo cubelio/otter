@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifMapIterator, NifMapIteratorEntry, NifTerm};
-use crate::term::{RawTerm, TypedTerm, TermIn};
+use crate::term::{Term, TypedTerm, TermIn};
 
 /// An Erlang map. Immutable — all mutations return a new map.
 #[derive(Clone, Copy)]
@@ -26,7 +26,7 @@ impl<'a> Map<'a> {
     pub fn get(self, key: impl TermIn) -> Option<TypedTerm<'a>> {
         let raw =
             unsafe { crate::wrapper::map::get_map_value(self.env.as_ptr(), self.term, key.as_c_arg()) }?;
-        Some(RawTerm::new(self.env, raw).resolve())
+        Some(Term::new(self.env, raw).resolve())
     }
 
     /// Return a new map with `key` set to `value` (insert or replace).
@@ -118,8 +118,8 @@ impl<'a> Iterator for MapIterator<'a> {
                 unsafe {
                     crate::wrapper::map::map_iterator_next(self.env.as_ptr(), &mut *self.iter);
                 }
-                let key = RawTerm::new(self.env, k).resolve();
-                let val = RawTerm::new(self.env, v).resolve();
+                let key = Term::new(self.env, k).resolve();
+                let val = Term::new(self.env, v).resolve();
                 Some((key, val))
             }
         }
@@ -162,9 +162,9 @@ impl std::fmt::Debug for Map<'_> {
 }
 
 impl<'b> Encoder for Map<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        RawTerm::new(env, term)
+        Term::new(env, term)
     }
 }
 

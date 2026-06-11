@@ -58,7 +58,7 @@ One rule: **the user's return value must implement `Encoder`.** The macro emits 
 
 The interesting impls:
 
-- Every otter term type (`Integer`, `Binary`, `Atom`, `TypedTerm`, `RawTerm`, etc.) implements `Encoder`. `Encoder::encode` returns a `RawTerm<'a>` tied to the call's env.
+- Every otter term type (`Integer`, `Binary`, `Atom`, `TypedTerm`, `Term`, etc.) implements `Encoder`. `Encoder::encode` returns a `Term<'a>` tied to the call's env.
 - `Result<T: Encoder, E: Encoder>` implements `Encoder`: `Ok(v)` encodes `v` and returns the term, `Err(e)` encodes `e`, calls `enif_raise_exception` with the encoded term, and returns the resulting exception term. The BEAM treats this as a class-`error` raise of the encoded reason.
 
 Because the dispatch is by type (not by token-stream string matching on `Result`), a user type that happens to be named `Result` does not silently inherit the raise-on-`Err` behavior — it gets whatever `Encoder` impl it has, or a compile error if none.
@@ -88,8 +88,8 @@ unsafe extern "C" fn add_nif(
     fn assert_encoder<T: Encoder>(t: T) -> T { t }
 
     let result = std::panic::catch_unwind(|| {
-        let a = Integer::decode(RawTerm::new(env, argv[0]).resolve())?;
-        let b = Integer::decode(RawTerm::new(env, argv[1]).resolve())?;
+        let a = Integer::decode(Term::new(env, argv[0]).resolve())?;
+        let b = Integer::decode(Term::new(env, argv[1]).resolve())?;
         Ok::<_, CodecError>(assert_encoder(add(env, a, b)))
     });
 

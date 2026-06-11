@@ -2,7 +2,7 @@ use std::str::Utf8Error;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{RawTerm, TypedTerm};
+use crate::term::{Term, TypedTerm};
 
 /// A byte-aligned binary (`enif_is_binary` returned true).
 ///
@@ -380,15 +380,15 @@ impl Binary<'_> {
         if consumed == 0 {
             None
         } else {
-            Some(crate::term::RawTerm::new(env, term).resolve())
+            Some(crate::term::Term::new(env, term).resolve())
         }
     }
 }
 
 impl<'b> Encoder for Binary<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        RawTerm::new(env, term)
+        Term::new(env, term)
     }
 }
 
@@ -402,9 +402,9 @@ impl<'a> Decoder<'a> for Binary<'a> {
 }
 
 impl<'b> Encoder for Bitstring<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        RawTerm::new(env, term)
+        Term::new(env, term)
     }
 }
 

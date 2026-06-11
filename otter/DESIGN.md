@@ -16,7 +16,7 @@ otter/src/
 ├── enif.rs     Complete enif_* function pointer table, dlsym loading, ~200 pub(crate) shims
 ├── wrapper/    Rust-idiomatic wrappers over enif shims (pub for codegen)
 ├── env.rs      Env<'a>, EnvKind, OwnedEnv
-├── term.rs     RawTerm, TypedTerm enum, Env methods (raise, hash, schedule, etc.)
+├── term.rs     Term, TypedTerm enum, Env methods (raise, hash, schedule, etc.)
 ├── codec.rs    Encoder + Decoder traits, CodecError
 ├── types/      One file per concrete term type
 ├── resource/   Resource trait, ResourceArc<T>, Monitor, dynamic_resource_call
@@ -150,7 +150,7 @@ impl OwnedEnv {
 
 ### Three levels of resolution
 
-**Level 1 — `RawTerm<'a>`:** The bare machine word plus its `Env`. Zero work done. The fastest possible representation. A received type — you cannot construct one from scratch.
+**Level 1 — `Term<'a>`:** The bare machine word plus its `Env`. Zero work done. The fastest possible representation. A received type — you cannot construct one from scratch.
 
 **Level 2 — `TypedTerm<'a>` enum:** One `enif_term_type` call has been made. The correct variant is known. Data is still on the BEAM heap.
 
@@ -165,9 +165,9 @@ pub enum TypedTerm<'a> {
 
 12 variants for 11 type tags — `Bitstring` maps to both `Binary` and `Bitstring` depending on `enif_is_binary`.
 
-`TypedTerm` and `RawTerm` implement `PartialEq`/`Eq` (via `enif_is_identical`) and `PartialOrd`/`Ord` (via `enif_compare`).
+`TypedTerm` and `Term` implement `PartialEq`/`Eq` (via `enif_is_identical`) and `PartialOrd`/`Ord` (via `enif_compare`).
 
-All concrete types implement `From<T> for TypedTerm<'a>`, so `let t: TypedTerm = atom.into()` works. `RawTerm` converts via `From` as well (calls `resolve()`).
+All concrete types implement `From<T> for TypedTerm<'a>`, so `let t: TypedTerm = atom.into()` works. `Term` converts via `From` as well (calls `resolve()`).
 
 **Level 3 — concrete types:** Type is known. Data is still on the BEAM heap. Accessor methods pull data out on demand.
 
@@ -183,7 +183,7 @@ Construction is always free. Extraction is on demand. Every concrete type is `Ni
 
 ### `TermIn` — universal term input
 
-Functions that accept a term as input use `impl TermIn` instead of `TypedTerm<'a>`. This sealed trait is implemented for all otter term types (`Atom`, `Binary`, `Integer`, `List`, `TypedTerm`, `RawTerm`, etc.) and for `&T` where `T: TermIn`. It extracts the underlying `NifTerm` without allocating or copying.
+Functions that accept a term as input use `impl TermIn` instead of `TypedTerm<'a>`. This sealed trait is implemented for all otter term types (`Atom`, `Binary`, `Integer`, `List`, `TypedTerm`, `Term`, etc.) and for `&T` where `T: TermIn`. It extracts the underlying `NifTerm` without allocating or copying.
 
 This means you can pass concrete types directly — no `.encode(env)` needed:
 
@@ -247,7 +247,7 @@ impl Debug                         // BinaryBuilder { len, capacity }
 
 // List (cons cell)
 fn node(self) -> Node<'a>           // decompose: Nil or Cell(head, tail)
-fn iter(self) -> ListIterator<'a>   // yields RawTerm heads; .tail() for terminal
+fn iter(self) -> ListIterator<'a>   // yields Term heads; .tail() for terminal
 fn len(self) -> Option<usize>       // O(n), None for improper lists
 fn reverse(self) -> Option<List<'a>>
 fn try_string(self) -> Result<String, CodecError>
@@ -310,7 +310,7 @@ impl<'a> Env<'a> {
 pub enum CodecError { WrongType, IntegerOverflow, InvalidCodepoint }
 
 pub trait Encoder {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a>;
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a>;
 }
 
 pub trait Decoder<'a>: Sized {

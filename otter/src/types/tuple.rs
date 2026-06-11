@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{RawTerm, TypedTerm, TermIn};
+use crate::term::{Term, TypedTerm, TermIn};
 
 /// An Erlang tuple.
 #[derive(Clone, Copy)]
@@ -31,7 +31,7 @@ impl<'a> Tuple<'a> {
         let (ptr, _arity) =
             unsafe { crate::wrapper::tuple::get_tuple(self.env.as_ptr(), self.term) }.unwrap();
         let raw = unsafe { *ptr.add(i) };
-        RawTerm::new(self.env, raw).resolve()
+        Term::new(self.env, raw).resolve()
     }
 
     /// Construct a tuple from any iterable of term-like values.
@@ -74,9 +74,9 @@ impl std::fmt::Debug for Tuple<'_> {
 }
 
 impl<'b> Encoder for Tuple<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a> {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let term = unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) };
-        RawTerm::new(env, term)
+        Term::new(env, term)
     }
 }
 

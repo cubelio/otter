@@ -51,7 +51,7 @@ fn example(term: TypedTerm) -> TypedTerm {
 **Otter:**
 ```rust
 // Three resolution levels, each at a different cost:
-//   RawTerm  — bare machine word, zero work
+//   Term  — bare machine word, zero work
 //   TypedTerm     — typed enum (one enif_term_type call)
 //   data     — extraction methods on concrete types
 //
@@ -65,7 +65,7 @@ fn example(_env: Env, val: TypedTerm) -> TypedTerm {  // TypedTerm = typed enum
 }
 ```
 
-You choose the resolution level: `TypedTerm` when you need to branch on type, concrete types when you need the data. (`RawTerm` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `TypedTerm`.)
+You choose the resolution level: `TypedTerm` when you need to branch on type, concrete types when you need the data. (`Term` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `TypedTerm`.)
 
 ---
 
@@ -158,7 +158,7 @@ for item in iter {
 ```rust
 use otter::types::List;
 
-// Iterator — yields RawTerm heads, one enif_get_list_cell per step
+// Iterator — yields Term heads, one enif_get_list_cell per step
 for head in list.iter() {
     let h: TypedTerm = head.resolve();
     // process h...
@@ -176,7 +176,7 @@ let list = List::from_terms(env, &[t1, t2, t3]);
 let cell = List::cons(env, head, tail);
 ```
 
-Lists are cons cells — `iter()` wraps `enif_get_list_cell` and exposes the terminal tail. For low-level decomposition, `node()` gives direct `Nil` / `Cell(RawTerm, RawTerm)` access.
+Lists are cons cells — `iter()` wraps `enif_get_list_cell` and exposes the terminal tail. For low-level decomposition, `node()` gives direct `Nil` / `Cell(Term, Term)` access.
 
 ---
 
