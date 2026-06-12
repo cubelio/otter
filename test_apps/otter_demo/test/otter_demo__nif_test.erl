@@ -131,6 +131,13 @@ smoke_test_() ->
     ?_assertEqual(+0.0, otter_demo__nif:double_float(+0.0)),
     ?_assertEqual(-4.0, otter_demo__nif:double_float(-2.0)),
 
+    %% make_double on a non-finite value raises badarg; the pending exception
+    %% is surfaced through Raised and the VM survives a follow-up call.
+    ?_test(begin
+      ?assertError(badarg, otter_demo__nif:nan_float()),
+      ?assertEqual(6.28, otter_demo__nif:double_float(3.14))
+    end),
+
     %% Pid — must capture self() inside the thunk
     ?_test(begin
       Self = self(),

@@ -17,7 +17,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
          test_binary_traits/0, test_from_str/1, reverse_list/1, list_tail/1]).
 -export([atom_name/1]).
 -export([hm_new/0, hm_put/3, hm_get/2]).
--export([test_map/0, test_tuple/0, double_float/1, test_pid/0, new_ref/0]).
+-export([test_map/0, test_tuple/0, double_float/1, nan_float/0, test_pid/0, new_ref/0]).
 -export([divide/2, dirty_cpu_thread_type/0, send_from_thread/0]).
 -export([panicking_resource_new/0]).
 
@@ -123,6 +123,9 @@ test_tuple() -> exit(nif_not_loaded).
 -spec double_float(float()) -> float().
 double_float(_V) -> exit(nif_not_loaded).
 
+-spec nan_float() -> no_return().
+nan_float() -> exit(nif_not_loaded).
+
 -spec test_pid() -> pid().
 test_pid() -> exit(nif_not_loaded).
 
@@ -134,8 +137,8 @@ new_ref() -> exit(nif_not_loaded).
 
 -doc """
 Integer division. Raises `error:division_by_zero` when `B` is `0`. The Rust
-side returns `Result<Integer, Atom>` and the otter macro maps the `Err`
-arm to an `enif_raise_exception` of the encoded atom.
+side returns `Result<Integer, Raised>`; the `Raised` is produced by
+`env.raise_exception(division_by_zero)` and propagated out with `?`.
 """.
 -spec divide(integer(), integer()) -> integer().
 divide(_A, _B) -> exit(nif_not_loaded).
