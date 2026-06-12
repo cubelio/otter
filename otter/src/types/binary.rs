@@ -1,7 +1,7 @@
 use std::str::Utf8Error;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifTerm, NifTermType};
+use crate::sys::{NifBinary, NifTerm, NifTermType};
 use crate::term::{Term, TypedTerm, AsNifTerm};
 
 /// A byte-aligned binary (`enif_is_binary` returned true).
@@ -54,11 +54,10 @@ impl<'a> Binary<'a> {
     /// Zero-copy — the slice points directly into the BEAM heap. Valid for
     /// the lifetime `'a` of the environment.
     pub fn as_bytes(self) -> &'a [u8] {
-        unsafe {
-            let mut bin: crate::sys::NifBinary = std::mem::zeroed();
-            crate::wrapper::binary::inspect_binary(self.env.as_ptr(), self.term, &mut bin);
-            std::slice::from_raw_parts(bin.data, bin.size)
-        }
+        let mut bin: NifBinary = unsafe { std::mem::zeroed() };
+        // A Binary is always a valid binary, so inspect cannot fail here.
+        self.env.inspect_binary(self, &mut bin);
+        unsafe { std::slice::from_raw_parts(bin.data, bin.size) }
     }
 
     /// Number of bytes in the binary.
@@ -96,17 +95,14 @@ impl<'a> Binary<'a> {
             "sub-binary out of bounds: pos({}) + len({}) > {}",
             pos, len, self.len()
         );
-        let term = unsafe {
-            crate::wrapper::binary::make_sub_binary(self.env.as_ptr(), self.term, pos, len)
-        };
-        Binary { term, env: self.env }
+        self.env.make_sub_binary(self, pos, len)
     }
 
     /// Allocate a new binary on the BEAM heap and copy `data` into it.
     pub fn from_bytes(env: Env<'a>, data: &[u8]) -> Binary<'a> {
         let mut term: NifTerm = 0;
         unsafe {
-            let ptr = crate::wrapper::binary::make_new_binary(env.as_ptr(), data.len(), &mut term);
+            let ptr = env.make_new_binary(data.len(), &mut term);
             std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
         }
         Binary { term, env }
@@ -214,7 +210,7 @@ impl BinaryBuilder {
     /// Panics if the allocation fails.
     pub fn with_capacity(capacity: usize) -> BinaryBuilder {
         let mut bin: crate::sys::NifBinary = unsafe { std::mem::zeroed() };
-        let ok = unsafe { crate::wrapper::binary::alloc_binary(capacity, &mut bin) };
+        let ok = unsafe { crate::enif::alloc_binary(capacity, &mut bin) != 0 };
         assert!(ok, "enif_alloc_binary failed");
         BinaryBuilder { bin, len: 0, released: false }
     }
@@ -283,7 +279,7 @@ impl BinaryBuilder {
             return;
         }
         let new_cap = required.max(self.bin.size.checked_mul(2).unwrap_or(required));
-        let ok = unsafe { crate::wrapper::binary::realloc_binary(&mut self.bin, new_cap) };
+        let ok = unsafe { crate::enif::realloc_binary(&mut self.bin, new_cap) != 0 };
         assert!(ok, "enif_realloc_binary failed");
     }
 
@@ -293,12 +289,11 @@ impl BinaryBuilder {
     /// ownership to the BEAM.
     pub fn finish<'a>(mut self, env: Env<'a>) -> Binary<'a> {
         if self.len < self.bin.size {
-            let ok = unsafe { crate::wrapper::binary::realloc_binary(&mut self.bin, self.len) };
+            let ok = unsafe { crate::enif::realloc_binary(&mut self.bin, self.len) != 0 };
             assert!(ok, "enif_realloc_binary failed on shrink");
         }
         self.released = true;
-        let term = unsafe { crate::wrapper::binary::make_binary(env.as_ptr(), &mut self.bin) };
-        Binary { term, env }
+        env.make_binary(&mut self.bin)
     }
 }
 
@@ -322,7 +317,7 @@ impl std::io::Write for BinaryBuilder {
 impl Drop for BinaryBuilder {
     fn drop(&mut self) {
         if !self.released {
-            unsafe { crate::wrapper::binary::release_binary(&mut self.bin) };
+            unsafe { crate::enif::release_binary(&mut self.bin) };
         }
     }
 }
@@ -386,23 +381,7 @@ impl Binary<'_> {
     ///
     /// Wraps `enif_binary_to_term`.
     pub fn to_term<'a>(&self, env: Env<'a>, safe: bool) -> Option<TypedTerm<'a>> {
-        let bytes = self.as_bytes();
-        let opts = if safe { crate::sys::NIF_BIN2TERM_SAFE } else { 0 };
-        let mut term: NifTerm = 0;
-        let consumed = unsafe {
-            crate::wrapper::binary::binary_to_term(
-                env.as_ptr(),
-                bytes.as_ptr(),
-                bytes.len(),
-                &mut term,
-                opts,
-            )
-        };
-        if consumed == 0 {
-            None
-        } else {
-            Some(crate::term::Term::new(env, term).resolve())
-        }
+        env.binary_to_term(self.as_bytes(), safe)
     }
 }
 
@@ -422,6 +401,61 @@ impl<'a> Env<'a> {
     /// Sub-byte bitstrings return `false`.
     pub fn is_binary(self, term: impl AsNifTerm<'a>) -> bool {
         unsafe { crate::enif::is_binary(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+
+    /// Inspect a binary term, filling `bin` (`enif_inspect_binary`).
+    /// Returns `false` if `term` is not a byte-aligned binary.
+    pub fn inspect_binary(self, term: impl AsNifTerm<'a>, bin: &mut NifBinary) -> bool {
+        unsafe { crate::enif::inspect_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
+    }
+
+    /// Convert an allocated `NifBinary` into a binary term (`enif_make_binary`).
+    /// After this call the BEAM owns the binary; `bin` must not be used again.
+    pub fn make_binary(self, bin: &mut NifBinary) -> Binary<'a> {
+        let term = unsafe { crate::enif::make_binary(self.as_ptr(), bin) };
+        Binary { term, env: self }
+    }
+
+    /// Allocate `size` bytes of writable binary data on the heap, writing the
+    /// term to `term_out` and returning a pointer to the bytes
+    /// (`enif_make_new_binary`).
+    ///
+    /// # Safety
+    ///
+    /// All `size` bytes must be initialized before `term_out` is observed by
+    /// Erlang.
+    pub unsafe fn make_new_binary(self, size: usize, term_out: &mut NifTerm) -> *mut u8 {
+        unsafe { crate::enif::make_new_binary(self.as_ptr(), size, term_out) }
+    }
+
+    /// Create a zero-copy sub-binary of `term` spanning `pos..pos+len`
+    /// (`enif_make_sub_binary`). The caller is responsible for bounds.
+    pub fn make_sub_binary(self, term: impl AsNifTerm<'a>, pos: usize, len: usize) -> Binary<'a> {
+        let t = unsafe { crate::enif::make_sub_binary(self.as_ptr(), term.as_nif_term(), pos, len) };
+        Binary { term: t, env: self }
+    }
+
+    /// Serialize a term to the external binary format, filling `bin`
+    /// (`enif_term_to_binary`). Returns `false` on failure. `bin` is allocated
+    /// via enif_alloc_binary; pass it to `make_binary` or release it.
+    pub fn term_to_binary(self, term: impl AsNifTerm<'a>, bin: &mut NifBinary) -> bool {
+        unsafe { crate::enif::term_to_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
+    }
+
+    /// Deserialize a term from the external binary format
+    /// (`enif_binary_to_term`). If `safe`, encoded atoms not already in the
+    /// atom table are rejected. `None` on decode failure.
+    pub fn binary_to_term(self, data: &[u8], safe: bool) -> Option<TypedTerm<'a>> {
+        let opts = if safe { crate::sys::NIF_BIN2TERM_SAFE } else { 0 };
+        let mut term: NifTerm = 0;
+        let consumed = unsafe {
+            crate::enif::binary_to_term(self.as_ptr(), data.as_ptr(), data.len(), &mut term, opts)
+        };
+        if consumed == 0 {
+            None
+        } else {
+            Some(Term::new(self, term).resolve())
+        }
     }
 }
 

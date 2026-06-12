@@ -190,11 +190,9 @@ impl<'a> TypedTerm<'a> {
     /// Wraps `enif_term_to_binary`.
     pub fn to_binary(self, env: Env<'a>) -> Option<Binary<'a>> {
         let mut bin: crate::sys::NifBinary = unsafe { std::mem::zeroed() };
-        if unsafe { crate::wrapper::binary::term_to_binary(env.as_ptr(), self.as_raw(), &mut bin) }
-        {
-            // term_to_binary allocates via alloc_binary; we need to make it into a term.
-            let term = unsafe { crate::wrapper::binary::make_binary(env.as_ptr(), &mut bin) };
-            Some(Binary { term, env })
+        if env.term_to_binary(self, &mut bin) {
+            // term_to_binary allocates via alloc_binary; make_binary takes ownership.
+            Some(env.make_binary(&mut bin))
         } else {
             None
         }
