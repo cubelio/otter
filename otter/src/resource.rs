@@ -267,7 +267,7 @@ pub fn register_resource_type_named<T: Resource>(env: Env<'_>, name: &str) {
 
     let mut tried = NifResourceFlags::CREATE;
     let type_ptr = unsafe {
-        crate::wrapper::resource::init_resource_type(
+        crate::enif::init_resource_type(
             env.as_ptr(),
             cname.as_ptr(),
             &init,
@@ -276,8 +276,10 @@ pub fn register_resource_type_named<T: Resource>(env: Env<'_>, name: &str) {
         )
     };
 
-    let type_ptr =
-        type_ptr.expect("enif_init_resource_type failed — ensure env is from the load callback");
+    assert!(
+        !type_ptr.is_null(),
+        "enif_init_resource_type failed — ensure env is from the load callback"
+    );
 
     T::resource_type_handle()
         .set(ResourceTypeHandle(type_ptr))
@@ -381,7 +383,7 @@ impl<T: Resource> From<T> for ResourceArc<T> {
     fn from(val: T) -> ResourceArc<T> {
         // Allocate enough for T at its required alignment.
         let alloc_size = std::mem::size_of::<T>() + std::mem::align_of::<T>() - 1;
-        let raw = unsafe { crate::wrapper::resource::alloc_resource(Self::type_ptr(), alloc_size) };
+        let raw = unsafe { crate::enif::alloc_resource(Self::type_ptr(), alloc_size) };
         assert!(!raw.is_null(), "enif_alloc_resource returned null");
         let inner = align_ptr::<T>(raw);
         unsafe { std::ptr::write(inner, val) };
@@ -391,7 +393,7 @@ impl<T: Resource> From<T> for ResourceArc<T> {
 
 impl<T: Resource> Clone for ResourceArc<T> {
     fn clone(&self) -> ResourceArc<T> {
-        unsafe { crate::wrapper::resource::keep_resource(self.raw) };
+        unsafe { crate::enif::keep_resource(self.raw) };
         ResourceArc { raw: self.raw, inner: self.inner }
     }
 }
@@ -400,7 +402,7 @@ impl<T: Resource> Drop for ResourceArc<T> {
     fn drop(&mut self) {
         // Decrement ref count. When it hits zero, the BEAM calls
         // destructor_callback which reads and drops the T value.
-        unsafe { crate::wrapper::resource::release_resource(self.raw) };
+        unsafe { crate::enif::release_resource(self.raw) };
     }
 }
 
@@ -423,7 +425,7 @@ impl<T: Resource> Encoder for ResourceArc<T> {
     /// The BEAM will release that reference when the term is garbage collected.
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let raw_term = unsafe {
-            crate::wrapper::resource::make_resource(env.as_ptr(), self.raw)
+            crate::enif::make_resource(env.as_ptr(), self.raw)
         };
         Term::new(env, raw_term)
     }
@@ -444,14 +446,14 @@ impl<'a, T: Resource> Decoder<'a> for ResourceArc<T> {
             .0;
 
         let mut obj: *mut c_void = std::ptr::null_mut();
-        if !unsafe {
-            crate::wrapper::resource::get_resource(term.env.as_ptr(), term.term, type_ptr, &mut obj)
+        if unsafe {
+            crate::enif::get_resource(term.env.as_ptr(), term.term, type_ptr, &mut obj) == 0
         } {
             return Err(CodecError::WrongType);
         }
 
         // We are creating a new Rust-side reference; increment the ref count.
-        unsafe { crate::wrapper::resource::keep_resource(obj) };
+        unsafe { crate::enif::keep_resource(obj) };
 
         let inner = align_ptr::<T>(obj);
         Ok(ResourceArc { raw: obj, inner })
@@ -483,7 +485,7 @@ pub unsafe fn dynamic_resource_call(
     call_data: *mut c_void,
 ) -> i32 {
     unsafe {
-        crate::wrapper::resource::dynamic_resource_call(
+        crate::enif::dynamic_resource_call(
             env.as_ptr(),
             mod_name.as_raw(),
             name.as_raw(),
