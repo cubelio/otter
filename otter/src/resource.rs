@@ -43,14 +43,22 @@ impl Monitor {
     ///
     /// Wraps `enif_make_monitor_term`.
     pub fn to_term<'a>(self, env: Env<'a>) -> TypedTerm<'a> {
-        let raw = unsafe { crate::wrapper::monitor::make_monitor_term(env.as_ptr(), &self.0) };
-        Term::new(env, raw).resolve()
+        env.make_monitor_term(&self.0)
+    }
+}
+
+impl<'a> Env<'a> {
+    /// Create a term from a monitor handle (`enif_make_monitor_term`).
+    pub fn make_monitor_term(self, mon: &NifMonitor) -> TypedTerm<'a> {
+        let raw = unsafe { crate::enif::make_monitor_term(self.as_ptr(), mon) };
+        Term::new(self, raw).resolve()
     }
 }
 
 impl PartialEq for Monitor {
     fn eq(&self, other: &Self) -> bool {
-        crate::wrapper::monitor::compare_monitors(&self.0, &other.0) == 0
+        // enif_compare_monitors is env-less.
+        unsafe { crate::enif::compare_monitors(&self.0, &other.0) == 0 }
     }
 }
 
@@ -343,7 +351,7 @@ impl<T: Resource> ResourceArc<T> {
         let nif_pid = NifPid { pid: pid.term };
         let mut mon = NifMonitor([0u8; 32]);
         let rc = unsafe {
-            crate::wrapper::monitor::monitor_process(env_ptr, self.raw, &nif_pid, &mut mon)
+            crate::enif::monitor_process(env_ptr, self.raw, &nif_pid, &mut mon)
         };
         if rc == 0 { Some(Monitor(mon)) } else { None }
     }
@@ -357,7 +365,7 @@ impl<T: Resource> ResourceArc<T> {
     pub fn demonitor(&self, env: Option<Env<'_>>, mon: &Monitor) -> bool {
         let env_ptr = env.map(|e| e.as_ptr()).unwrap_or(std::ptr::null_mut());
         unsafe {
-            crate::wrapper::monitor::demonitor_process(env_ptr, self.raw, &mon.0) == 0
+            crate::enif::demonitor_process(env_ptr, self.raw, &mon.0) == 0
         }
     }
 }
