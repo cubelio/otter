@@ -431,6 +431,24 @@ fn send_from_thread(env: Env) -> Atom {
     otter::atom![ok]
 }
 
+// --- send_to/2 ----------------------------------------------------------
+// In-NIF send: copy a term from the caller env into a pid's mailbox.
+
+#[otter::nif]
+fn send_to<'a>(env: Env<'a>, to: Pid, msg: TypedTerm<'a>) -> Atom {
+    env.send(&to, msg);
+    otter::atom![ok]
+}
+
+// --- cpu_time/0 ---------------------------------------------------------
+// enif_cpu_time returns an erlang:timestamp()-format tuple, or raises badarg
+// if the OS cannot provide it.
+
+#[otter::nif]
+fn cpu_time<'a>(env: Env<'a>) -> Result<TypedTerm<'a>, Raised<'a>> {
+    env.cpu_time()
+}
+
 // --- HashMap resource ---------------------------------------------------
 
 struct HashMapResource {
@@ -510,5 +528,7 @@ otter::init!("otter_demo__nif", [
     divide,
     dirty_cpu_thread_type,
     send_from_thread,
+    send_to,
+    cpu_time,
     panicking_resource_new,
 ], load = on_load);

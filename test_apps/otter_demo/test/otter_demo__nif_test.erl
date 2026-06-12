@@ -165,6 +165,19 @@ smoke_test_() ->
       end
     end),
 
+    %% In-NIF send — copy a term into our own mailbox and receive it.
+    ?_test(begin
+      ?assertEqual(ok, otter_demo__nif:send_to(self(), {hello, 42})),
+      receive
+        {hello, 42} -> ok
+      after 5000 ->
+        ?assert(false)
+      end
+    end),
+
+    %% cpu_time returns an erlang:timestamp()-format 3-tuple.
+    ?_assertMatch({_, _, _}, otter_demo__nif:cpu_time()),
+
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.
     %% The destructor wrapper in otter catches the panic via catch_unwind;

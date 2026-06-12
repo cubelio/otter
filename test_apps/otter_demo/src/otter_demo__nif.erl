@@ -19,6 +19,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([hm_new/0, hm_put/3, hm_get/2]).
 -export([test_map/0, test_tuple/0, double_float/1, nan_float/0, test_pid/0, new_ref/0]).
 -export([divide/2, dirty_cpu_thread_type/0, send_from_thread/0]).
+-export([send_to/2, cpu_time/0]).
 -export([panicking_resource_new/0]).
 
 %%------------------------------------------------------------------------------
@@ -148,6 +149,12 @@ dirty_cpu_thread_type() -> exit(nif_not_loaded).
 
 -spec send_from_thread() -> ok.
 send_from_thread() -> exit(nif_not_loaded).
+
+-spec send_to(pid(), term()) -> ok.
+send_to(_To, _Msg) -> exit(nif_not_loaded).
+
+-spec cpu_time() -> erlang:timestamp().
+cpu_time() -> exit(nif_not_loaded).
 
 %%------------------------------------------------------------------------------
 %% S1 regression — panicking resource destructor
