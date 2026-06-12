@@ -4,12 +4,12 @@
 //! and reference counted by the VM. A `ResourceArc<T>` is the Rust-side
 //! handle; the corresponding Erlang-side value is a reference term.
 
-use std::ffi::c_void;
+use std::ffi::{c_int, c_void};
 use std::sync::OnceLock;
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
-use crate::sys::{NifEnv, NifMonitor, NifPid, NifResourceType, NifResourceTypeInit};
+use crate::sys::{NifEnv, NifEvent, NifMonitor, NifPid, NifResourceType, NifResourceTypeInit};
 use crate::term::{Term, TypedTerm};
 use crate::types::Pid;
 
@@ -106,6 +106,22 @@ pub trait Resource: Sized + Send + Sync + 'static {
     /// Called when a process monitored via [`ResourceArc::monitor`] exits.
     /// The default is a no-op.
     fn down<'a>(&'a self, _env: Env<'a>, _pid: Pid, _monitor: Monitor) {}
+
+    /// Called when the BEAM stops monitoring an event that was selected on
+    /// this resource via [`select`](crate::select::select) — either an
+    /// explicit `ERL_NIF_SELECT_STOP`/`CANCEL`, or VM cleanup of a
+    /// still-selected event when the resource is garbage collected. The
+    /// default is a no-op.
+    ///
+    /// `is_direct_call` is `true` when the callback runs synchronously inside
+    /// the `select`/`select_x` call, `false` when it runs later from a
+    /// scheduler thread.
+    ///
+    /// A `stop` callback is registered unconditionally for every resource
+    /// type (the BEAM requires one for any resource passed to `enif_select`),
+    /// so leaving this as the default no-op is harmless for resources that are
+    /// never selected.
+    fn stop(&self, _env: Env<'_>, _event: NifEvent, _is_direct_call: bool) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +175,24 @@ unsafe extern "C" fn down_callback<T: Resource>(
         unsafe { (*inner).down(env, pid, monitor) };
     }));
     absorb_callback_panic("down", result);
+}
+
+unsafe extern "C" fn stop_callback<T: Resource>(
+    env: *mut NifEnv,
+    obj: *mut c_void,
+    event: NifEvent,
+    is_direct_call: c_int,
+) {
+    let inner = align_ptr::<T>(obj) as *const T;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let marker = ();
+        // SAFETY: env is valid for the duration of this callback.
+        let env = unsafe { Env::new(&marker, env, EnvKind::Callback) };
+        // SAFETY: obj points at a live, initialized T; stop runs before the
+        // destructor, so the value is not yet dropped.
+        unsafe { (*inner).stop(env, event, is_direct_call != 0) };
+    }));
+    absorb_callback_panic("stop", result);
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +251,7 @@ pub fn register_resource_type_named<T: Resource>(env: Env<'_>, name: &str) {
 
     let init = NifResourceTypeInit {
         dtor:     Some(destructor_callback::<T>),
-        stop:     None,
+        stop:     Some(stop_callback::<T>),
         down:     Some(down_callback::<T>),
         members:  3,
         dyncall:  None,
