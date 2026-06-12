@@ -74,7 +74,8 @@ impl Atom {
 /// A pre-declared atom that is initialized once at NIF load time and
 /// retrieved thereafter as a single atomic load.
 ///
-/// Use via the [`declare_atoms!`], [`init_atoms!`], and [`atom!`] macros.
+/// Use via the [`declare_atoms!`](crate::declare_atoms),
+/// [`init_atoms!`](crate::init_atoms), and [`atom!`](crate::atom) macros.
 ///
 /// ```ignore
 /// otter::declare_atoms![ok, error, not_found];

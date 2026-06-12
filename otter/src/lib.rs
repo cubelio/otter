@@ -89,7 +89,7 @@ macro_rules! __declare_atoms_inner {
     };
 }
 
-/// Initialize all atoms declared with [`declare_atoms!`].
+/// Initialize all atoms declared with [`declare_atoms!`](crate::declare_atoms).
 ///
 /// Must be called from the NIF `on_load` callback.
 ///
