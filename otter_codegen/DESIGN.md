@@ -33,12 +33,12 @@ fn add(_env: Env, a: Integer, b: Integer) -> Integer { a + b }
 
 // Use the env when raising custom exceptions or constructing terms.
 #[otter::nif]
-fn divide(env: Env, a: Integer, b: Integer) -> TypedTerm {
-    match i64::try_from(b) {
-        Ok(0)  => env.raise(otter::atom![division_by_zero].encode(env)),
-        Ok(_)  => (a / b).encode(env),
-        Err(_) => env.raise_badarg(),
+fn divide(env: Env, a: Integer, b: Integer) -> Result<Integer, Raised> {
+    let bv = i64::try_from(b).unwrap();
+    if bv == 0 {
+        return env.raise_exception(otter::atom![division_by_zero]);
     }
+    Ok(Integer::from_i64(env, i64::try_from(a).unwrap() / bv))
 }
 
 // TypedTerm is a Decoder (no-op resolve), so it flows through the same path.
@@ -61,9 +61,9 @@ One rule: **the user's return value must implement `Encoder`.** The macro emits 
 The interesting impls:
 
 - Every otter term type (`Integer`, `Binary`, `Atom`, `TypedTerm`, `Term`, etc.) implements `Encoder`. `Encoder::encode` returns a `Term<'a>` tied to the call's env.
-- `Result<T: Encoder, E: Encoder>` implements `Encoder`: `Ok(v)` encodes `v` and returns the term, `Err(e)` encodes `e`, calls `enif_raise_exception` with the encoded term, and returns the resulting exception term. The BEAM treats this as a class-`error` raise of the encoded reason.
+- `Result<T: Encoder, Raised>` implements `Encoder`: `Ok(v)` encodes `v`; `Err(Raised)` returns the marker word of an *already-pending* exception — the BEAM raises it on return and it is never re-raised. A NIF that can raise returns `Result<T, Raised>` and produces the `Raised` via `env.raise_exception(reason)` / `env.make_badarg()`. See `otter/DESIGN.md` "the `Raised` witness".
 
-Because the dispatch is by type (not by token-stream string matching on `Result`), a user type that happens to be named `Result` does not silently inherit the raise-on-`Err` behavior — it gets whatever `Encoder` impl it has, or a compile error if none.
+Because the dispatch is by type (not by token-stream string matching on `Result`), a user type that happens to be named `Result` does not silently inherit this behavior — it gets whatever `Encoder` impl it has, or a compile error if none.
 
 If the user's return type does not implement `Encoder`, the macro inserts an explicit bound assertion that surfaces the failure as "the trait `otter::Encoder` is not implemented for `<your type>`" rather than as a `method not found` error deep in the wrapper.
 
@@ -83,9 +83,11 @@ unsafe extern "C" fn add_nif(
     argv: *const NIF_TERM,
 ) -> NIF_TERM {
     let lifetime = ();
-    let env = Env::new(&lifetime, nif_env);
+    let env = Env::new(&lifetime, nif_env, EnvKind::ProcessBound);
 
-    if argc != 2 { return env.raise_badarg().as_raw(); }
+    // raise_badarg / raise are __codegen helpers that set the pending exception
+    // and return the marker word to hand back from the NIF.
+    if argc != 2 { return raise_badarg(env); }
 
     fn assert_encoder<T: Encoder>(t: T) -> T { t }
 
@@ -96,9 +98,9 @@ unsafe extern "C" fn add_nif(
     });
 
     match result {
-        Ok(Ok(val))  => val.encode(env).as_raw(),
-        Ok(Err(_))   => env.raise_badarg().as_raw(),
-        Err(_panic)  => env.raise(Atom::intern(env, "nif_panicked").unwrap().encode(env)).as_raw(),
+        Ok(Ok(val))  => val.encode(env).as_raw(),   // success (incl. Result<_, Raised>)
+        Ok(Err(_))   => raise_badarg(env),           // an argument failed to decode
+        Err(_panic)  => raise(env, nif_panicked),    // panic caught at the FFI boundary
     }
 }
 ```

@@ -12,14 +12,15 @@
 
 ```
 otter/src/
-├── sys/        Raw C ABI types mirroring erl_nif.h
-├── enif.rs     Complete enif_* function pointer table, dlsym loading, ~200 pub(crate) shims
-├── wrapper/    Rust-idiomatic wrappers over enif shims (pub for codegen)
+├── sys.rs      Raw C ABI types mirroring erl_nif.h
+├── enif.rs     Complete 1:1 enif_* shims + dlsym loading. The sole funcs()/unsafe
+│               consumer; pub under the `raw` feature, else pub(crate).
 ├── env.rs      Env<'a>, EnvKind, OwnedEnv
-├── term.rs     Term, TypedTerm enum, Env methods (raise, hash, schedule, etc.)
+├── term.rs     Term, TypedTerm, Raised, and the general-purpose Env methods
 ├── codec.rs    Encoder + Decoder traits, CodecError
-├── types/      One file per concrete term type
-├── resource/   Resource trait, ResourceArc<T>, Monitor, dynamic_resource_call
+├── types/      One file per concrete term type — its methods plus the Env methods
+│               that build/inspect that type (env.make_tuple, env.is_binary, …)
+├── resource.rs Resource trait, ResourceArc<T>, Monitor, dynamic_resource_call
 ├── time.rs     BEAM monotonic time, time offset, unit conversion
 ├── system.rs   Thread type introspection, system info
 └── select.rs   I/O event multiplexing (enif_select)
@@ -67,38 +68,23 @@ Complete `enif_*` API surface in a single `pub(crate)` module. Three responsibil
 
 2. **Dynamic symbol loading** — `enif::init()` resolves all function pointers via `libc::dlsym(RTLD_DEFAULT, ...)` at NIF load time. Guarded by `OnceLock` against double-initialization. Returns `Err(symbol_name)` on first failure.
 
-3. **Wrapper functions** — ~200 `pub(crate)` functions that call through the function pointer table. The `enif_` prefix is dropped (e.g. `enif::is_atom()`, `enif::make_atom()`). Each function's doc comment notes the NIF version and OTP release where the C function was introduced.
+3. **Shim functions** — one `unsafe fn` per `enif_*`, calling through the pointer table with the `enif_` prefix dropped (e.g. `enif::is_atom()`, `enif::make_atom()`). Each doc comment notes the NIF version and OTP release where the C function was introduced.
 
-Minimum required version: NIF 2.17 (OTP 26). C macros that delegate to real enif functions (e.g. `enif_make_tuple3`, `enif_select_read`) are exposed as plain Rust functions. Variadic functions like `set_option` store raw pointers and are transmuted per use.
+`enif` is the **sole** consumer of `funcs()` and the only place FFI `unsafe` lives; everything above it audits as safe. The module is `pub` under the `raw` feature (the complete escape hatch) and `pub(crate)` otherwise — it is always compiled, the feature only controls visibility. Symbol loading is exposed as a single public `otter::init()` at the crate root, which delegates to `enif::init()`.
+
+Minimum required version: NIF 2.17 (OTP 26). C macros that delegate to real enif functions (e.g. `enif_make_tuple3`, `enif_select_read`) are exposed as plain Rust functions. Variadic functions (`make_tuple`, `make_list`, `set_option`) are bound as variadic `fn` pointers and called directly; only the `printf` family stays type-erased (`*mut c_void`), since its `va_list` variants are unrepresentable on stable Rust.
 
 ---
 
-## Layer 2: Wrappers (`wrapper/`)
+## Layer 2: The safe layer (env-as-receiver)
 
-Rust-idiomatic wrappers over the `enif` shims. Each submodule covers one category of `enif_*` functions, adding `Option` returns, buffer management, and type conversions. All submodules and their functions are `pub(crate)` — not part of the public otter API.
+Above `enif` is the entire Erlang-facing surface, and it audits as safe — `enif` is the only place `funcs()`/`unsafe` FFI is reached.
 
-Both `enif` and `wrapper` are `pub(crate)` — entirely internal. Wrapper submodules access the function pointer table via `crate::enif::funcs()`. Symbol loading is exposed as a single public function `otter::init()` at the crate root, which delegates to `enif::init()`.
+The organising principle is **env-as-receiver**: an operation takes its environment explicitly. When the env *is* the subject it is the receiver — `env.make_tuple(&[…])`, `env.is_binary(term)`, `env.get_map_value(map, key)` — under the audit rule *every `enif_foo(env, …)` becomes `env.foo(…)`*. Env-less operations on a clear subject are value-type methods instead (`Term`'s `Ord`/`Eq` via `enif_compare`/`enif_is_identical`, the `BinaryBuilder` buffer ops). Term inputs are taken as `impl AsNifTerm<'a>` (see Layer 4), so a term from another env is rejected at compile time.
 
-| Module | Covers |
-|---|---|
-| `atom.rs` | `enif_make_new_atom_len`, `enif_make_existing_atom_len`, `enif_get_atom`, `enif_get_atom_length` |
-| `binary.rs` | `enif_alloc_binary`, `enif_release_binary`, `enif_make_binary`, `enif_inspect_binary`, `enif_make_new_binary`, `enif_make_sub_binary`, `enif_term_to_binary`, `enif_binary_to_term` |
-| `check.rs` | `enif_is_binary` |
-| `env.rs` | `enif_alloc_env`, `enif_free_env`, `enif_clear_env`, `enif_send` |
-| `exception.rs` | `enif_raise_exception`, `enif_make_badarg` |
-| `list.rs` | `enif_get_list_cell`, `enif_get_list_length`, `enif_make_list_from_array`, `enif_make_list_cell` |
-| `map.rs` | `enif_make_new_map`, `enif_get_map_size`, `enif_get_map_value`, `enif_make_map_put/update/remove`, `enif_map_iterator_*` |
-| `monitor.rs` | `enif_monitor_process`, `enif_demonitor_process`, `enif_compare_monitors`, `enif_make_monitor_term` |
-| `number.rs` | `enif_get_long/ulong`, `enif_make_long/ulong`, `enif_get_double`, `enif_make_double` |
-| `pid.rs` | `enif_self`, `enif_get_local_pid`, `enif_is_process_alive`, `enif_is_current_process_alive`, `enif_whereis_pid` |
-| `port.rs` | `enif_port_command`, `enif_whereis_port` |
-| `resource.rs` | `enif_init_resource_type`, `enif_alloc/release/keep/make/get_resource`, `enif_dynamic_resource_call` |
-| `schedule.rs` | `enif_schedule_nif` |
-| `select.rs` | `enif_select`, `enif_select_x` |
-| `system.rs` | `enif_system_info`, `enif_thread_type`, `enif_set_option` (typed wrappers per option variant) |
-| `term.rs` | `enif_term_type`, `enif_compare`, `enif_is_identical`, `enif_make_copy`, `enif_consume_timeslice`, `enif_make_ref`, `enif_make_unique_integer`, `enif_hash` |
-| `time.rs` | `enif_monotonic_time`, `enif_time_offset`, `enif_convert_time_unit` |
-| `tuple.rs` | `enif_make_tuple_from_array`, `enif_get_tuple` |
+These methods are not gathered in one module — each lives next to its subject. The predicate and builder Env methods for a type sit on that type's file in `types/` (`env.make_binary` in `types/binary.rs`, `env.make_tuple` in `types/tuple.rs`); the general ones (`raise_exception`, `make_copy`, `term_type`, `schedule_nif`, `cpu_time`, …) sit on `term.rs`. The per-type constructors (`Atom::intern`, `Binary::from_bytes`, `Map::new`, …) remain and delegate to the matching Env method.
+
+The optional sync/thread/IO-queue tier and the deliberately-unsafe set (`enif_alloc`/`dlsym`/`fprintf`/…) have **no** safe wrapper — they are reachable only through the `raw`-feature `enif` surface.
 
 ---
 
@@ -137,6 +123,8 @@ pub struct OwnedEnv {
 impl OwnedEnv {
     pub fn new() -> OwnedEnv;
     pub fn send<F>(&mut self, pid: &Pid, f: F) -> bool
+    where F: FnOnce(Env<'_>) -> TypedTerm<'_>;
+    pub fn port_command<F>(&mut self, port: &Port, f: F) -> bool   // same closure shape
     where F: FnOnce(Env<'_>) -> TypedTerm<'_>;
     pub fn clear(&mut self);
 }
@@ -201,7 +189,7 @@ env.raise_exception(some_atom)
 
 ```rust
 // Atom
-fn new(env, name: &str) -> Option<Atom>       // create/intern
+fn intern(env, name: &str) -> Option<Atom>    // create/intern
 fn try_existing(env, name: &str) -> Option<Atom>  // look up without creating
 fn name(self, env) -> String
 
@@ -219,7 +207,7 @@ fn from_u64(env, val) -> Integer<'a>
 
 // Float
 impl From<Float> for f64           // infallible extraction
-fn from_f64(env, val) -> Float<'a>
+fn from_f64(env, val) -> Result<Float<'a>, Raised<'a>>  // Err(Raised) if not finite
 
 // Binary
 fn as_bytes(self) -> &'a [u8]     // zero-copy into BEAM heap
@@ -275,10 +263,11 @@ fn iter(self) -> MapIterator<'a>
 fn self_(env) -> Pid
 fn is_alive(self, env) -> bool
 fn whereis(env, name: Atom) -> Option<Pid>
+// (in-NIF send: env.send(to, msg) -> bool)
 
 // Port
 fn whereis(env, name: Atom) -> Option<Port>
-fn command(self, env, msg) -> bool
+fn command(self, caller_env, msg_env, msg) -> bool
 
 // Reference
 fn new(env) -> Reference<'a>
@@ -287,7 +276,9 @@ fn new(env) -> Reference<'a>
 fn to_binary(self, env) -> Option<Binary<'a>>  // serialize to external format
 ```
 
-### Env methods (defined in `term.rs`)
+### Env methods
+
+The env-as-receiver methods are spread across the type files (the per-type predicates and builders — `env.is_binary`, `env.make_tuple`, `env.get_map_value`, …) and `term.rs` (the general ones below):
 
 ```rust
 impl<'a> Env<'a> {
@@ -295,6 +286,7 @@ impl<'a> Env<'a> {
     fn make_unique_integer(self, properties) -> TypedTerm<'a>
     fn hash(self, algorithm, term, salt) -> u64
     fn is_current_process_alive(self) -> bool
+    fn cpu_time(self) -> Result<TypedTerm<'a>, Raised<'a>>   // Err(Raised) if OS can't
     fn raise_exception<T>(self, reason: impl AsNifTerm<'a>) -> Result<T, Raised<'a>>
     fn make_badarg<T>(self) -> Result<T, Raised<'a>>
     fn check_raised(self, term: NifTerm) -> Result<Term<'a>, Raised<'a>>
@@ -304,6 +296,12 @@ impl<'a> Env<'a> {
     unsafe fn set_option_on_unload_thread(self, callback) -> bool
 }
 ```
+
+### Exceptions: the `Raised` witness
+
+`enif_make_badarg` / `enif_raise_exception` — and builders like `enif_make_double` on bad input — raise *on the spot*: they set a pending exception on the env that the BEAM raises when the NIF returns, and until then any further env operation is UB.
+
+`Raised<'a>` is an opaque witness that this has happened. It has a private field and is only produced by an operation that actually raised (`raise_exception`, `make_badarg`, or `check_raised` after a raising call), so holding one proves the env is already pending. A NIF returns `Result<T, Raised<'a>>`; the `Encoder` for that returns the marker word directly on `Err` — it never *re-*raises — so exit is sound by construction and double-raising is impossible. `raise_exception`/`make_badarg` are generic over the success type, so the idiom `return env.make_badarg()` fits `return`, `let`-`else`, and `.or_else(|_| env.make_badarg())?` positions alike.
 
 ---
 
@@ -396,6 +394,5 @@ Requires a `ResourceArc<T>` — the BEAM ties I/O event lifecycle to resource ob
 - **`NifUntaggedEnum`** — structural dispatch belongs in user code.
 - **Convenience wrappers** — no built-in `IoData`, no pre-assembled type hierarchies.
 - **Thread spawning** — not a core NIF concept. Use `OwnedEnv::send` for messaging from OS threads spawned via standard Rust threading.
-- **Type predicates** (`enif_is_atom`, `enif_is_list`, etc.) — `TypedTerm` enum + pattern matching is strictly better.
 - **Raw memory allocation** (`enif_alloc`/`enif_free`) — use Rust's allocator.
 - **NIF threading primitives** (`enif_mutex_*`, `enif_cond_*`, etc.) — use `std::sync`.

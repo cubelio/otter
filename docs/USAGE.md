@@ -587,7 +587,7 @@ pub trait Decoder<'a>: Sized {
 
 `Encoder::encode` converts a value back into a `Term` tied to the target env's lifetime. For types that already hold a NIF term (like `Integer`, `Binary`), the impl compares the source and target env pointers: same-env is a zero-copy passthrough; cross-env falls back to `enif_make_copy`. The macro return path is always same-env, so the common case is free.
 
-`Result<T, E>` implements `Encoder` when both `T` and `E` do: `Ok(v)` encodes `v`, `Err(e)` encodes `e` and raises it via `enif_raise_exception`. This is how `Result`-returning NIFs work — through normal trait dispatch on the return type, not through any macro-level special case. A user type happening to be called `Result` does not inherit this behavior.
+`Result<T, Raised>` implements `Encoder`: `Ok(v)` encodes `v`; `Err(Raised)` returns the already-pending exception's marker word (the BEAM raises it on return — never re-raised). This is how `Result`-returning NIFs raise — through normal trait dispatch on the return type, not any macro-level special case. See [Raising exceptions](#raising-exceptions-raised-and-resultt-raised). A user type happening to be called `Result` does not inherit this behavior.
 
 **CodecError variants:**
 

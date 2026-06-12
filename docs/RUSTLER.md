@@ -24,7 +24,7 @@ Using `Arc<NIF_ENV>` and `Weak<NIF_ENV>` as a generation token to safely detect 
 
 ### The layered architecture
 
-The `sys/` → `wrapper/` → public API layering, with unsafety concentrated in the lower layers and a safe public surface, is sound. Otter follows the same pattern.
+Layering that concentrates unsafety in the lower layers behind a safe public surface is sound. Otter follows the same shape: `sys.rs` (raw types) → `enif.rs` (the 1:1 shims — the sole `unsafe`/`funcs()` floor) → the safe env-as-receiver layer.
 
 ### Panic catching at the C boundary
 
