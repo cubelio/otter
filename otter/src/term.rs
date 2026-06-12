@@ -377,7 +377,40 @@ impl<'a, T: AsNifTerm<'a> + ?Sized> AsNifTerm<'a> for &T {
 }
 
 // ---------------------------------------------------------------------------
-// Env::raise / Env::raise_badarg
+// Raised — proof that an exception is pending on the environment
+// ---------------------------------------------------------------------------
+
+/// Proof that an exception has been raised on the environment.
+///
+/// A `Raised` can only be produced by an operation that actually raises — see
+/// [`Env::raise_exception`], [`Env::make_badarg`], [`Env::check_raised`], or a
+/// fallible builder such as [`Env::make_double`]. Because it can only exist
+/// *after* a raise, holding one means the environment is in a pending-exception
+/// state in which no further environment operation is valid.
+///
+/// The intended use is to propagate it straight out of the NIF with `?`: the
+/// generated wrapper returns it directly and the BEAM raises the pending
+/// exception. Do **not** perform further work on the env while holding one.
+pub struct Raised<'a> {
+    marker: Term<'a>,
+}
+
+impl<'a> Raised<'a> {
+    #[inline]
+    pub(crate) fn new(marker: Term<'a>) -> Raised<'a> {
+        Raised { marker }
+    }
+
+    /// The machine word to return from the NIF. With the exception already
+    /// pending, returning it triggers the raise.
+    #[inline]
+    pub(crate) fn raw(&self) -> NifTerm {
+        self.marker.as_raw()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Env: type/copy/raise operations
 // ---------------------------------------------------------------------------
 
 impl<'a> Env<'a> {
@@ -437,23 +470,36 @@ impl<'a> Env<'a> {
 
     /// Raise an exception with the given reason term.
     ///
-    /// The returned value must be returned from the NIF function via
-    /// `.as_raw()`. It is **not** a valid term — do not inspect or resolve it.
-    /// Wraps `enif_raise_exception`.
-    pub fn raise(self, reason: impl AsNifTerm<'a>) -> Term<'a> {
-        let raw =
-            unsafe { crate::enif::raise_exception(self.as_ptr(), reason.as_nif_term()) };
-        Term::new(self, raw)
+    /// Always returns `Err(Raised)`; the idiom is `env.raise_exception(reason)?`,
+    /// which raises and exits the NIF. Wraps `enif_raise_exception`.
+    pub fn raise_exception(self, reason: impl AsNifTerm<'a>) -> Result<(), Raised<'a>> {
+        let marker = unsafe { crate::enif::raise_exception(self.as_ptr(), reason.as_nif_term()) };
+        Err(Raised::new(Term::new(self, marker)))
     }
 
     /// Raise a `badarg` error.
     ///
-    /// The returned value must be returned from the NIF function via
-    /// `.as_raw()`. It is **not** a valid term — do not inspect or resolve it.
-    /// Wraps `enif_make_badarg`.
-    pub fn raise_badarg(self) -> Term<'a> {
-        let raw = unsafe { crate::enif::make_badarg(self.as_ptr()) };
-        Term::new(self, raw)
+    /// Always returns `Err(Raised)`; the idiom is `env.make_badarg()?`. Wraps
+    /// `enif_make_badarg`.
+    pub fn make_badarg(self) -> Result<(), Raised<'a>> {
+        let marker = unsafe { crate::enif::make_badarg(self.as_ptr()) };
+        Err(Raised::new(Term::new(self, marker)))
+    }
+
+    /// Convert the raw result of a possibly-raising operation into a `Result`.
+    ///
+    /// If the environment has a pending exception, returns `Err(Raised)` — the
+    /// exception is already set, so the only valid next step is to propagate it
+    /// (with `?`). Otherwise returns `Ok` wrapping `term`.
+    ///
+    /// This is how to safely call a `raw`-surface enif function that may raise:
+    /// pass its returned term straight through `check_raised`.
+    pub fn check_raised(self, term: NifTerm) -> Result<Term<'a>, Raised<'a>> {
+        if unsafe { crate::enif::has_pending_exception(self.as_ptr(), std::ptr::null_mut()) } != 0 {
+            Err(Raised::new(Term::new(self, term)))
+        } else {
+            Ok(Term::new(self, term))
+        }
     }
 
     /// Reschedule the current NIF to run `fp` with the given arguments.
@@ -462,8 +508,9 @@ impl<'a> Env<'a> {
     /// `sys::NIF_DIRTY_JOB_NORMAL`, `sys::NIF_DIRTY_JOB_CPU_BOUND`, or
     /// `sys::NIF_DIRTY_JOB_IO_BOUND`.
     ///
-    /// The return value of this function must be returned directly from
-    /// the NIF.
+    /// The success value must be returned directly from the NIF. If
+    /// `fun_name` cannot be converted to an atom the BEAM raises `badarg`,
+    /// surfaced here as `Err(Raised)`.
     ///
     /// # Safety
     ///
@@ -482,7 +529,7 @@ impl<'a> Env<'a> {
         ) -> crate::sys::NifTerm,
         argc: i32,
         argv: *const crate::sys::NifTerm,
-    ) -> TypedTerm<'a> {
+    ) -> Result<TypedTerm<'a>, Raised<'a>> {
         let raw = unsafe {
             crate::enif::schedule_nif(
                 self.as_ptr(),
@@ -493,7 +540,8 @@ impl<'a> Env<'a> {
                 argv,
             )
         };
-        Term::new(self, raw).resolve()
+        // Guard the resolve(): term_type on a raised env would itself be UB.
+        Ok(self.check_raised(raw)?.resolve())
     }
 
     /// Enable delayed halt: the VM waits for currently-running NIF calls to

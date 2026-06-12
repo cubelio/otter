@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifTerm, NifTermType};
-use crate::term::{Term, AsNifTerm};
+use crate::term::{Term, AsNifTerm, Raised};
 
 /// An Erlang float. Always IEEE 754 double precision.
 ///
@@ -14,16 +14,22 @@ pub struct Float<'a> {
 
 impl<'a> Float<'a> {
     /// Construct a float term from an `f64`.
-    pub fn from_f64(env: Env<'a>, val: f64) -> Float<'a> {
+    ///
+    /// Returns `Err(Raised)` if `val` is not finite: `enif_make_double` raises
+    /// `badarg` for NaN and infinities.
+    pub fn from_f64(env: Env<'a>, val: f64) -> Result<Float<'a>, Raised<'a>> {
         env.make_double(val)
     }
 }
 
 impl<'a> Env<'a> {
     /// Construct a float term from an `f64` (`enif_make_double`).
-    pub fn make_double(self, val: f64) -> Float<'a> {
+    ///
+    /// Returns `Err(Raised)` if `val` is not finite (NaN or infinity), which
+    /// the BEAM rejects with `badarg`.
+    pub fn make_double(self, val: f64) -> Result<Float<'a>, Raised<'a>> {
         let term = unsafe { crate::enif::make_double(self.as_ptr(), val) };
-        Float { term, env: self }
+        Ok(Float { term: self.check_raised(term)?.as_raw(), env: self })
     }
 
     /// Extract an `f64` from a float term (`enif_get_double`).
