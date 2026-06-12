@@ -534,8 +534,28 @@ mod __otter_atoms {
 A few rules follow from what the macros expand to:
 
 - **Initialize in `on_load`.** Call `init_atoms!(env)` before any NIF runs. Forgetting it panics on the first `atom![…]` call (release builds too — the check is unconditional). Calling it more than once is harmless; it re-interns the same names.
-- **One `declare_atoms!` per module.** The generated `__otter_atoms` submodule has a fixed name. For separate groups, put each `declare_atoms!` in its own child module.
-- **`atom![…]` and `init_atoms!` resolve `__otter_atoms` relative to the current scope.** Use them in the module that declared the atoms, or `use super::__otter_atoms;` from a descendant. They will not find atoms declared in a sibling module.
+- **One `declare_atoms!` per crate, in the module that hosts your `on_load` callback.** The generated `__otter_atoms` submodule has a fixed name, so a second `declare_atoms!` in the same module would collide. The atom system is a deliberately small convenience — declare all your literal atoms in one place; use `ident = "name"` to disambiguate when two atom *strings* would otherwise produce the same identifier.
+- **`atom![…]` and `init_atoms!` resolve `__otter_atoms` by ordinary name lookup, so it must be in scope.** In the module that invoked `declare_atoms!`, it's already in scope. To use the atoms from a sibling or descendant module, bring the module in with a `use` statement:
+
+  ```rust
+  // lib.rs — declares atoms here, hosts on_load:
+  otter::declare_atoms![ok, error, not_found];
+
+  fn on_load(env: Env, _info: Term) -> bool {
+      otter::init_atoms!(env);
+      true
+  }
+  mod handlers;
+
+  // handlers.rs — uses the atoms from a sibling module:
+  use crate::__otter_atoms;     // bring the generated module into scope
+
+  pub fn handle() -> otter::types::Atom {
+      otter::atom![ok]          // resolves to __otter_atoms::ok.get()
+  }
+  ```
+
+  The `__` prefix marks `__otter_atoms` as framework-generated, but the module is `pub` and the `use` line is ordinary Rust — bring it in wherever you need `atom![…]`.
 - **Non-identifier names need `ident = "name"`.** For hyphens, leading digits, reserved words, non-ASCII — pick a valid identifier and map it to the string you want:
 
   ```rust
