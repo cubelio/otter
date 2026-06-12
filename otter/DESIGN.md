@@ -192,7 +192,7 @@ This means you can pass concrete types directly — no `.encode(env)` needed:
 ```rust
 map.put(atom_key, integer_val)
 List::from_terms(env, [int1, int2, int3])
-env.raise(some_atom)
+env.raise_exception(some_atom)
 ```
 
 `AsNifTerm` is sealed — it cannot be implemented outside the crate.
@@ -295,9 +295,10 @@ impl<'a> Env<'a> {
     fn make_unique_integer(self, properties) -> TypedTerm<'a>
     fn hash(self, algorithm, term, salt) -> u64
     fn is_current_process_alive(self) -> bool
-    fn raise(self, reason: impl AsNifTerm<'a>) -> Term<'a>
-    fn raise_badarg(self) -> Term<'a>
-    unsafe fn schedule_nif(self, name, flags, fp, argc, argv) -> TypedTerm<'a>
+    fn raise_exception<T>(self, reason: impl AsNifTerm<'a>) -> Result<T, Raised<'a>>
+    fn make_badarg<T>(self) -> Result<T, Raised<'a>>
+    fn check_raised(self, term: NifTerm) -> Result<Term<'a>, Raised<'a>>
+    unsafe fn schedule_nif(self, name, flags, fp, argc, argv) -> Result<TypedTerm<'a>, Raised<'a>>
     fn set_option_delay_halt(self) -> bool
     unsafe fn set_option_on_halt(self, callback) -> bool
     unsafe fn set_option_on_unload_thread(self, callback) -> bool

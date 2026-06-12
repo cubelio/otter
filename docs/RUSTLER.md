@@ -62,7 +62,7 @@ Rustler exposes lists with an iterator interface. Otter exposes `List<'a>` as a 
 
 Rustler has an `Error` enum with five variants: `BadArg`, `Atom(&str)` and `TypedTerm(Box<dyn Encoder>)` (which *return* — the latter as `{error, term}`), and `RaiseAtom(&str)` and `RaiseTerm(Box<dyn Encoder>)` (which *raise*). The same return type encodes two different control-flow behaviors; which one happens depends on which variant you picked.
 
-The NIF C API exposes exactly two exception mechanisms: `enif_make_badarg` and `enif_raise_exception`. Otter exposes those as `Env::raise_badarg()` and `Env::raise(term)` for direct use. The idiomatic shape is a `Result<T, E>` return type where both `T: Encoder` and `E: Encoder`: `Ok(value)` encodes and returns, `Err(reason)` encodes the reason and raises it via `enif_raise_exception`. One behavior per shape, no enum dispatch.
+The NIF C API exposes exactly two exception mechanisms: `enif_make_badarg` and `enif_raise_exception`. Both *raise* — they set a pending exception on the env, which the BEAM raises on return. Otter exposes them as `Env::make_badarg()` and `Env::raise_exception(reason)`, each returning `Result<T, Raised>` (always `Err`, generic over the success type). A NIF's idiomatic shape is `Result<T, Raised>`: `Ok(value)` returns; `Err(Raised)` carries the already-pending exception straight out. Because a `Raised` can only exist *after* a real raise, exit never re-raises — so there is no double-raise and no enum dispatch.
 
 ### Explicit NIF registration
 

@@ -400,7 +400,7 @@ fn new_ref<'a>(env: Env<'a>) -> Reference<'a> {
 fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
     let b_val = i64::try_from(b).unwrap();
     if b_val == 0 {
-        env.raise_exception(otter::atom![division_by_zero])?;
+        return env.raise_exception(otter::atom![division_by_zero]);
     }
     Ok(Integer::from_i64(env, i64::try_from(a).unwrap() / b_val))
 }

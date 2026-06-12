@@ -86,7 +86,7 @@ You choose the resolution level: `TypedTerm` when you need to branch on type, co
 | `rustler::Atom` | `Atom` | `declare_atoms![name]` + `atom![name]` (or `Atom::intern` for runtime strings; see [Atom-table safety](USAGE.md#atom-table-safety)) |
 | `rustler::Binary` | `Binary<'a>` | `Binary::from_bytes(env, &[u8])` |
 | `rustler::TypedTerm` | `TypedTerm<'a>` | Typed enum, not opaque |
-| `rustler::Error` | *(none)* | Use `env.raise()` or `env.raise_badarg()` directly |
+| `rustler::Error` | *(none)* | `Result<T, Raised>`; raise via `env.raise_exception()` / `env.make_badarg()` |
 | `rustler::ResourceArc<T>` | `ResourceArc<T>` | Same concept, different registration |
 
 ---
@@ -190,7 +190,7 @@ let tuple = (1, "hello", atoms::ok()).encode(env);
 
 **Otter:**
 ```rust
-let TypedTerm::Tuple(tup) = term else { return env.raise_badarg() };
+let TypedTerm::Tuple(tup) = term else { return env.make_badarg() };
 let a = tup.element(0);  // -> TypedTerm
 let b = tup.element(1);
 let c = tup.element(2);
@@ -217,7 +217,7 @@ let term = map.encode(env);
 
 **Otter:**
 ```rust
-let TypedTerm::Map(map) = term else { return env.raise_badarg() };
+let TypedTerm::Map(map) = term else { return env.make_badarg() };
 
 // Lookup
 let val: Option<TypedTerm> = map.get(key_term);
@@ -281,15 +281,13 @@ fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a
 }
 ```
 
-`Result<T, E>` where both `T: Encoder` and `E: Encoder`. `Ok` returns normally, `Err` always raises. One behavior, no ambiguity.
-
-For direct control:
+A NIF returns `Result<T, Raised>`. `Ok` returns normally; `Err(Raised)` carries an already-pending exception straight out — it is never re-raised, so there is no double-raise. Produce the `Raised` and propagate it:
 ```rust
-env.raise_badarg()              // enif_make_badarg
-env.raise(reason)               // enif_raise_exception — accepts impl AsNifTerm<'a>
+return env.make_badarg();           // enif_make_badarg
+return env.raise_exception(reason); // enif_raise_exception — any AsNifTerm<'a>
 ```
 
-These are the only two exception mechanisms in the NIF C API. Otter exposes exactly those.
+These are the only two exception mechanisms in the NIF C API. Otter exposes exactly those, both generic over the success type so they fit `return`, `let`-`else`, and `.or_else` positions.
 
 ---
 
@@ -480,7 +478,7 @@ otter = { git = "https://github.com/cubelio/otter.git" }
 | `atoms!` macro | `declare_atoms!` + `atom!` — pre-declared atoms with zero-cost retrieval |
 | `ListIterator` | Lists are cons cells, not iterators |
 | Automatic NIF registration | Explicit `init!` — visible, auditable |
-| `Error` enum | `env.raise()` and `env.raise_badarg()` — the actual NIF API |
+| `Error` enum | `Result<T, Raised>` + `env.raise_exception()` / `env.make_badarg()` — the actual NIF API |
 | Rust primitive args (`i64`, `String`) | BEAM types — you decide when to extract |
 
 ---
@@ -491,7 +489,7 @@ otter = { git = "https://github.com/cubelio/otter.git" }
 2. Add `env: Env` as first argument to every NIF that needs it
 3. Replace Rust primitive arguments with BEAM types (`i64` -> `Integer`, `String` -> `Binary`, etc.)
 4. Add explicit lifetime `<'a>` when multiple arguments carry lifetimes
-5. Replace `rustler::Error` returns with `Result<T, E>` where both implement `Encoder`, or use `env.raise()` / `env.raise_badarg()` directly
+5. Replace `rustler::Error` returns with `Result<T, Raised>`; raise via `env.raise_exception(reason)` / `env.make_badarg()`
 6. Replace `atoms! {}` blocks with `declare_atoms!` / `init_atoms!` / `atom!`. Reserve `Atom::intern(env, "name")` for runtime strings — and never call it on untrusted input ([Atom-table safety](USAGE.md#atom-table-safety))
 7. Replace `Vec<T>` list handling with `list.iter()` iterator
 8. Replace `resource!` macro with `OnceLock<ResourceTypeHandle>` + `Resource` trait impl + `register_resource_type` in load callback

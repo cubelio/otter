@@ -470,18 +470,21 @@ impl<'a> Env<'a> {
 
     /// Raise an exception with the given reason term.
     ///
-    /// Always returns `Err(Raised)`; the idiom is `env.raise_exception(reason)?`,
-    /// which raises and exits the NIF. Wraps `enif_raise_exception`.
-    pub fn raise_exception(self, reason: impl AsNifTerm<'a>) -> Result<(), Raised<'a>> {
+    /// Always returns `Err(Raised)`, generic over the success type so it fits
+    /// any position — the idiom is `return env.raise_exception(reason)` (the
+    /// success type is inferred from the NIF's return type). Wraps
+    /// `enif_raise_exception`.
+    pub fn raise_exception<T>(self, reason: impl AsNifTerm<'a>) -> Result<T, Raised<'a>> {
         let marker = unsafe { crate::enif::raise_exception(self.as_ptr(), reason.as_nif_term()) };
         Err(Raised::new(Term::new(self, marker)))
     }
 
     /// Raise a `badarg` error.
     ///
-    /// Always returns `Err(Raised)`; the idiom is `env.make_badarg()?`. Wraps
-    /// `enif_make_badarg`.
-    pub fn make_badarg(self) -> Result<(), Raised<'a>> {
+    /// Always returns `Err(Raised)`, generic over the success type so it fits
+    /// any position: `return env.make_badarg()`, a `let`-`else` arm, or
+    /// `decode(t).or_else(|_| env.make_badarg())?`. Wraps `enif_make_badarg`.
+    pub fn make_badarg<T>(self) -> Result<T, Raised<'a>> {
         let marker = unsafe { crate::enif::make_badarg(self.as_ptr()) };
         Err(Raised::new(Term::new(self, marker)))
     }
