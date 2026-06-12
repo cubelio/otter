@@ -468,6 +468,16 @@ impl<'a> Env<'a> {
         unsafe { crate::enif::is_current_process_alive(self.as_ptr()) != 0 }
     }
 
+    /// The current logical CPU's execution time since some arbitrary point in
+    /// the past, in `erlang:timestamp/0` format (`enif_cpu_time`).
+    ///
+    /// Returns `Err(Raised)` (`badarg`) if the OS does not support fetching
+    /// CPU time.
+    pub fn cpu_time(self) -> Result<TypedTerm<'a>, Raised<'a>> {
+        let raw = unsafe { crate::enif::cpu_time(self.as_ptr()) };
+        Ok(self.check_raised(raw)?.resolve())
+    }
+
     /// Raise an exception with the given reason term.
     ///
     /// Always returns `Err(Raised)`, generic over the success type so it fits

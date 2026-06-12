@@ -763,6 +763,20 @@ The closure passed to `send` receives a temporary `Env`. Terms built inside cann
 
 Call `owned.clear()` to reuse the environment for multiple sends without reallocating.
 
+`OwnedEnv::port_command` is the port equivalent of `send`, with the same closure shape.
+
+**From inside a NIF**, you already hold the process env, so send a term directly — no `OwnedEnv` needed:
+
+```rust
+#[otter::nif]
+fn notify<'a>(env: Env<'a>, to: Pid, msg: TypedTerm<'a>) -> Atom {
+    env.send(&to, msg);   // msg is copied into to's mailbox
+    otter::atom![ok]
+}
+```
+
+`Env::send` returns `true` if the target was alive. The matching port operation is the existing `Env::port_command`.
+
 ---
 
 ## Scheduling

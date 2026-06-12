@@ -115,6 +115,19 @@ impl<'a> Env<'a> {
             None
         }
     }
+
+    /// Send `msg` (a term in this env) to process `to` (`enif_send`).
+    ///
+    /// The message is copied into the target's mailbox. Returns `true` if `to`
+    /// was alive. This is the in-NIF send; from a non-scheduler thread build
+    /// the message in an `OwnedEnv` and use `OwnedEnv::send` instead.
+    pub fn send(self, to: &Pid, msg: impl AsNifTerm<'a>) -> bool {
+        let nif_pid = NifPid { pid: to.term };
+        // null msg_env: msg is a term in this (caller) env and is copied.
+        unsafe {
+            crate::enif::send(self.as_ptr(), &nif_pid, std::ptr::null_mut(), msg.as_nif_term()) != 0
+        }
+    }
 }
 
 impl<'a> Decoder<'a> for Pid {
