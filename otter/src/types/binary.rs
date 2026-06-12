@@ -92,7 +92,7 @@ impl<'a> Binary<'a> {
     /// Panics if `pos + len` exceeds the binary length.
     pub fn sub(self, pos: usize, len: usize) -> Binary<'a> {
         assert!(
-            pos + len <= self.len(),
+            pos.checked_add(len).is_some_and(|end| end <= self.len()),
             "sub-binary out of bounds: pos({}) + len({}) > {}",
             pos, len, self.len()
         );
