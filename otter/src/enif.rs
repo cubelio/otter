@@ -1348,12 +1348,6 @@ pub(crate) unsafe fn make_unique_integer(
 
 // -- Pid ------------------------------------------------------------------
 
-/// Extracts the pid term from an `NifPid` struct. Macro equivalent of `enif_make_pid`.
-// Implementation note: enif_make_pid is a C macro that reads pid->pid directly.
-pub(crate) unsafe fn make_pid(_env: *mut NifEnv, pid: *const NifPid) -> NifTerm {
-    unsafe { (*pid).pid }
-}
-
 /// Initializes `*pid` to represent the calling process, returning the pointer on success or NULL if not process-bound. NIF 2.0 (OTP R14B). Wraps `enif_self`.
 pub(crate) unsafe fn self_pid(env: *mut NifEnv, pid: *mut NifPid) -> *mut NifPid {
     unsafe { (funcs().self_pid)(env, pid) }
@@ -1926,12 +1920,6 @@ pub(crate) unsafe fn is_pid_undefined(pid: *const NifPid) -> c_int {
 /// Returns the type of a term as a `NifTermType` enum value. NIF 2.15 (OTP 22.0). Wraps `enif_term_type`.
 pub(crate) unsafe fn term_type(env: *mut NifEnv, term: NifTerm) -> NifTermType {
     unsafe { (funcs().term_type)(env, term) }
-}
-
-/// Compares two pids for ordering: returns 0 if equal, <0 if a < b, >0 if a > b. NIF 2.15 (OTP 22.0). Macro equivalent of `enif_compare_pids`.
-// Implementation note: enif_compare_pids is a C macro that calls enif_compare on the pid terms.
-pub(crate) unsafe fn compare_pids(a: *const NifPid, b: *const NifPid) -> c_int {
-    unsafe { compare((*a).pid, (*b).pid) }
 }
 
 /// Registers for async read notifications with a custom message. NIF 2.15 (OTP 22.0). Macro equivalent of `enif_select_read`.
