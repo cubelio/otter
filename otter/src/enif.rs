@@ -30,34 +30,34 @@ use crate::sys::{
 
 /// `ErlNifMutex` — opaque mutex handle.
 #[repr(C)]
-pub(crate) struct NifMutex {
+pub struct NifMutex {
     _opaque: [u8; 0],
     _marker: std::marker::PhantomData<(*mut u8, std::marker::PhantomPinned)>,
 }
 
 /// `ErlNifCond` — opaque condition variable handle.
 #[repr(C)]
-pub(crate) struct NifCond {
+pub struct NifCond {
     _opaque: [u8; 0],
     _marker: std::marker::PhantomData<(*mut u8, std::marker::PhantomPinned)>,
 }
 
 /// `ErlNifRWLock` — opaque read-write lock handle.
 #[repr(C)]
-pub(crate) struct NifRWLock {
+pub struct NifRWLock {
     _opaque: [u8; 0],
     _marker: std::marker::PhantomData<(*mut u8, std::marker::PhantomPinned)>,
 }
 
 /// `ErlNifTid` — thread identifier. In C this is `struct ErlDrvTid_ *`.
-pub(crate) type NifTid = *mut c_void;
+pub type NifTid = *mut c_void;
 
 /// `ErlNifTSDKey` — thread-specific data key.
-pub(crate) type NifTSDKey = c_int;
+pub type NifTSDKey = c_int;
 
 /// `ErlNifThreadOpts` — thread creation options.
 #[repr(C)]
-pub(crate) struct NifThreadOpts {
+pub struct NifThreadOpts {
     pub suggested_stack_size: c_int,
 }
 
@@ -727,22 +727,22 @@ pub(crate) unsafe fn init() -> Result<(), &'static str> {
 // NIF 2.0: env parameter removed
 
 /// Returns the pointer to the private data set by `load` or `upgrade`. NIF 1.0 (OTP R13B04). Wraps `enif_priv_data`.
-pub(crate) unsafe fn priv_data(env: *mut NifEnv) -> *mut c_void {
+pub unsafe fn priv_data(env: *mut NifEnv) -> *mut c_void {
     unsafe { (funcs().priv_data)(env) }
 }
 
 /// Allocates `size` bytes of memory. Returns `NULL` on failure. NIF 1.0 (OTP R13B04). Wraps `enif_alloc`.
-pub(crate) unsafe fn alloc(size: usize) -> *mut c_void {
+pub unsafe fn alloc(size: usize) -> *mut c_void {
     unsafe { (funcs().alloc)(size) }
 }
 
 /// Frees memory allocated by [`alloc`]. NIF 1.0 (OTP R13B04). Wraps `enif_free`.
-pub(crate) unsafe fn free(ptr: *mut c_void) {
+pub unsafe fn free(ptr: *mut c_void) {
     unsafe { (funcs().free)(ptr) }
 }
 
 /// Reallocates memory to `size` bytes. Returns `NULL` on failure. NIF 1.0 (OTP R13B04). Wraps `enif_realloc`.
-pub(crate) unsafe fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void {
+pub unsafe fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void {
     unsafe { (funcs().realloc)(ptr, size) }
 }
 
@@ -755,129 +755,129 @@ pub(crate) unsafe fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void {
 // NIF 2.6: is_map
 
 /// Returns non-zero if `term` is an atom. NIF 0.1 (OTP R13B03). Wraps `enif_is_atom`.
-pub(crate) unsafe fn is_atom(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_atom(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_atom)(env, term) }
 }
 
 /// Returns non-zero if `term` is a binary. NIF 0.1 (OTP R13B03). Wraps `enif_is_binary`.
-pub(crate) unsafe fn is_binary(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_binary(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_binary)(env, term) }
 }
 
 /// Returns non-zero if `term` is a reference. NIF 0.1 (OTP R13B03). Wraps `enif_is_ref`.
-pub(crate) unsafe fn is_ref(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_ref(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_ref)(env, term) }
 }
 
 /// Returns non-zero if `term` is a fun. NIF 1.0 (OTP R13B04). Wraps `enif_is_fun`.
-pub(crate) unsafe fn is_fun(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_fun(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_fun)(env, term) }
 }
 
 /// Returns non-zero if `term` is a pid. NIF 1.0 (OTP R13B04). Wraps `enif_is_pid`.
-pub(crate) unsafe fn is_pid(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_pid(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_pid)(env, term) }
 }
 
 /// Returns non-zero if `term` is a port. NIF 1.0 (OTP R13B04). Wraps `enif_is_port`.
-pub(crate) unsafe fn is_port(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_port(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_port)(env, term) }
 }
 
 /// Returns non-zero if `term` is a list. NIF 2.0 (OTP R14B). Wraps `enif_is_list`.
-pub(crate) unsafe fn is_list(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_list(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_list)(env, term) }
 }
 
 /// Returns non-zero if `term` is a tuple. NIF 2.0 (OTP R14B). Wraps `enif_is_tuple`.
-pub(crate) unsafe fn is_tuple(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_tuple(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_tuple)(env, term) }
 }
 
 /// Returns non-zero if `term` is an empty list (`[]`). NIF 1.0 (OTP R13B04). Wraps `enif_is_empty_list`.
-pub(crate) unsafe fn is_empty_list(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_empty_list(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_empty_list)(env, term) }
 }
 
 /// Returns non-zero if `term` is a map. NIF 2.6 (OTP 17.0). Wraps `enif_is_map`.
-pub(crate) unsafe fn is_map(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_map(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_map)(env, term) }
 }
 
 /// Returns non-zero if `term` is a number (integer or float). NIF 2.3 (OTP R15A). Wraps `enif_is_number`.
-pub(crate) unsafe fn is_number(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_number(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_number)(env, term) }
 }
 
 /// Returns non-zero if `term` is an exception. NIF 2.2 (OTP R14B03). Wraps `enif_is_exception`.
-pub(crate) unsafe fn is_exception(env: *mut NifEnv, term: NifTerm) -> c_int {
+pub unsafe fn is_exception(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().is_exception)(env, term) }
 }
 
 /// Returns non-zero if `lhs` and `rhs` are identical (Erlang `=:=`). NIF 0.1 (OTP R13B03). Wraps `enif_is_identical`.
-pub(crate) unsafe fn is_identical(lhs: NifTerm, rhs: NifTerm) -> c_int {
+pub unsafe fn is_identical(lhs: NifTerm, rhs: NifTerm) -> c_int {
     unsafe { (funcs().is_identical)(lhs, rhs) }
 }
 
 /// Compares two terms using Erlang term ordering. Returns negative if `lhs` < `rhs`,
 /// zero if equal, positive if `lhs` > `rhs`. NIF 0.1 (OTP R13B03). Wraps `enif_compare`.
-pub(crate) unsafe fn compare(lhs: NifTerm, rhs: NifTerm) -> c_int {
+pub unsafe fn compare(lhs: NifTerm, rhs: NifTerm) -> c_int {
     unsafe { (funcs().compare)(lhs, rhs) }
 }
 
 // -- Binary ---------------------------------------------------------------
 
 /// Initializes `bin` with info about binary `term`. Returns non-zero on success. NIF 0.1 (OTP R13B03). Wraps `enif_inspect_binary`.
-pub(crate) unsafe fn inspect_binary(
+pub unsafe fn inspect_binary(
     env: *mut NifEnv, term: NifTerm, bin: *mut NifBinary,
 ) -> c_int {
     unsafe { (funcs().inspect_binary)(env, term, bin) }
 }
 
 /// Allocates a new binary of `size` bytes. Returns non-zero on success. NIF 0.1 (OTP R13B03). Wraps `enif_alloc_binary`.
-pub(crate) unsafe fn alloc_binary(size: usize, bin: *mut NifBinary) -> c_int {
+pub unsafe fn alloc_binary(size: usize, bin: *mut NifBinary) -> c_int {
     unsafe { (funcs().alloc_binary)(size, bin) }
 }
 
 /// Changes the size of `bin`. Returns non-zero on success. NIF 1.0 (OTP R13B04). Wraps `enif_realloc_binary`.
-pub(crate) unsafe fn realloc_binary(bin: *mut NifBinary, size: usize) -> c_int {
+pub unsafe fn realloc_binary(bin: *mut NifBinary, size: usize) -> c_int {
     unsafe { (funcs().realloc_binary)(bin, size) }
 }
 
 /// Releases a binary obtained from [`alloc_binary`]. NIF 2.0 (OTP R14B). Wraps `enif_release_binary`.
-pub(crate) unsafe fn release_binary(bin: *mut NifBinary) {
+pub unsafe fn release_binary(bin: *mut NifBinary) {
     unsafe { (funcs().release_binary)(bin) }
 }
 
 /// Creates a binary term from `bin`, transferring ownership of the data. NIF 0.1 (OTP R13B03). Wraps `enif_make_binary`.
-pub(crate) unsafe fn make_binary(env: *mut NifEnv, bin: *mut NifBinary) -> NifTerm {
+pub unsafe fn make_binary(env: *mut NifEnv, bin: *mut NifBinary) -> NifTerm {
     unsafe { (funcs().make_binary)(env, bin) }
 }
 
 /// Allocates a binary of `size` bytes, sets `*termp` to the term, and returns a pointer
 /// to the raw data. NIF 1.0 (OTP R13B04). Wraps `enif_make_new_binary`.
-pub(crate) unsafe fn make_new_binary(
+pub unsafe fn make_new_binary(
     env: *mut NifEnv, size: usize, termp: *mut NifTerm,
 ) -> *mut u8 {
     unsafe { (funcs().make_new_binary)(env, size, termp) }
 }
 
 /// Creates a subbinary of `bin_term` starting at byte `pos` with length `size`. NIF 1.0 (OTP R13B04). Wraps `enif_make_sub_binary`.
-pub(crate) unsafe fn make_sub_binary(
+pub unsafe fn make_sub_binary(
     env: *mut NifEnv, bin_term: NifTerm, pos: usize, size: usize,
 ) -> NifTerm {
     unsafe { (funcs().make_sub_binary)(env, bin_term, pos, size) }
 }
 
 /// Copies iolist `term` into a contiguous binary buffer. Returns non-zero on success. NIF 1.0 (OTP R13B04). Wraps `enif_inspect_iolist_as_binary`.
-pub(crate) unsafe fn inspect_iolist_as_binary(
+pub unsafe fn inspect_iolist_as_binary(
     env: *mut NifEnv, term: NifTerm, bin: *mut NifBinary,
 ) -> c_int {
     unsafe { (funcs().inspect_iolist_as_binary)(env, term, bin) }
 }
 
 /// Creates a binary term backed by resource `obj` at `data` for `size` bytes. NIF 2.0 (OTP R14B). Wraps `enif_make_resource_binary`.
-pub(crate) unsafe fn make_resource_binary(
+pub unsafe fn make_resource_binary(
     env: *mut NifEnv, obj: *mut c_void, data: *const c_void, size: usize,
 ) -> NifTerm {
     unsafe { (funcs().make_resource_binary)(env, obj, data, size) }
@@ -886,102 +886,102 @@ pub(crate) unsafe fn make_resource_binary(
 // -- Integer / Float ------------------------------------------------------
 
 /// Gets the `int` value of `term`. Returns non-zero on success. NIF 0.1 (OTP R13B03). Wraps `enif_get_int`.
-pub(crate) unsafe fn get_int(env: *mut NifEnv, term: NifTerm, ip: *mut c_int) -> c_int {
+pub unsafe fn get_int(env: *mut NifEnv, term: NifTerm, ip: *mut c_int) -> c_int {
     unsafe { (funcs().get_int)(env, term, ip) }
 }
 
 /// Gets the `unsigned int` value of `term`. Returns non-zero on success. NIF 1.0 (OTP R13B04). Wraps `enif_get_uint`.
-pub(crate) unsafe fn get_uint(env: *mut NifEnv, term: NifTerm, ip: *mut c_uint) -> c_int {
+pub unsafe fn get_uint(env: *mut NifEnv, term: NifTerm, ip: *mut c_uint) -> c_int {
     unsafe { (funcs().get_uint)(env, term, ip) }
 }
 
 /// Gets the `long` value of `term`. Returns non-zero on success. NIF 1.0 (OTP R13B04). Wraps `enif_get_long`.
-pub(crate) unsafe fn get_long(
+pub unsafe fn get_long(
     env: *mut NifEnv, term: NifTerm, ip: *mut std::ffi::c_long,
 ) -> c_int {
     unsafe { (funcs().get_long)(env, term, ip) }
 }
 
 /// Gets the `unsigned long` value of `term`. Returns non-zero on success. NIF 0.1 (OTP R13B03). Wraps `enif_get_ulong`.
-pub(crate) unsafe fn get_ulong(
+pub unsafe fn get_ulong(
     env: *mut NifEnv, term: NifTerm, ip: *mut std::ffi::c_ulong,
 ) -> c_int {
     unsafe { (funcs().get_ulong)(env, term, ip) }
 }
 
 /// Gets the `double` value of `term`. Returns non-zero on success. NIF 0.1 (OTP R13B03). Wraps `enif_get_double`.
-pub(crate) unsafe fn get_double(env: *mut NifEnv, term: NifTerm, dp: *mut f64) -> c_int {
+pub unsafe fn get_double(env: *mut NifEnv, term: NifTerm, dp: *mut f64) -> c_int {
     unsafe { (funcs().get_double)(env, term, dp) }
 }
 
 /// Creates an integer term from a C `int`. NIF 0.1 (OTP R13B03). Wraps `enif_make_int`.
-pub(crate) unsafe fn make_int(env: *mut NifEnv, i: c_int) -> NifTerm {
+pub unsafe fn make_int(env: *mut NifEnv, i: c_int) -> NifTerm {
     unsafe { (funcs().make_int)(env, i) }
 }
 
 /// Creates an integer term from a C `unsigned int`. NIF 1.0 (OTP R13B04). Wraps `enif_make_uint`.
-pub(crate) unsafe fn make_uint(env: *mut NifEnv, i: c_uint) -> NifTerm {
+pub unsafe fn make_uint(env: *mut NifEnv, i: c_uint) -> NifTerm {
     unsafe { (funcs().make_uint)(env, i) }
 }
 
 /// Creates an integer term from a C `long`. NIF 1.0 (OTP R13B04). Wraps `enif_make_long`.
-pub(crate) unsafe fn make_long(env: *mut NifEnv, i: std::ffi::c_long) -> NifTerm {
+pub unsafe fn make_long(env: *mut NifEnv, i: std::ffi::c_long) -> NifTerm {
     unsafe { (funcs().make_long)(env, i) }
 }
 
 /// Creates an integer term from a C `unsigned long`. NIF 0.1 (OTP R13B03). Wraps `enif_make_ulong`.
-pub(crate) unsafe fn make_ulong(env: *mut NifEnv, i: std::ffi::c_ulong) -> NifTerm {
+pub unsafe fn make_ulong(env: *mut NifEnv, i: std::ffi::c_ulong) -> NifTerm {
     unsafe { (funcs().make_ulong)(env, i) }
 }
 
 /// Creates a floating-point term. The value must be finite. NIF 0.1 (OTP R13B03). Wraps `enif_make_double`.
-pub(crate) unsafe fn make_double(env: *mut NifEnv, d: f64) -> NifTerm {
+pub unsafe fn make_double(env: *mut NifEnv, d: f64) -> NifTerm {
     unsafe { (funcs().make_double)(env, d) }
 }
 
 /// Gets the signed 64-bit integer value of `term`. Returns non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_get_int64`.
-pub(crate) unsafe fn get_i64(env: *mut NifEnv, term: NifTerm, ip: *mut i64) -> c_int {
+pub unsafe fn get_i64(env: *mut NifEnv, term: NifTerm, ip: *mut i64) -> c_int {
     unsafe { (funcs().get_i64)(env, term, ip) }
 }
 
 /// Gets the unsigned 64-bit integer value of `term`. Returns non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_get_uint64`.
-pub(crate) unsafe fn get_u64(env: *mut NifEnv, term: NifTerm, ip: *mut u64) -> c_int {
+pub unsafe fn get_u64(env: *mut NifEnv, term: NifTerm, ip: *mut u64) -> c_int {
     unsafe { (funcs().get_u64)(env, term, ip) }
 }
 
 /// Creates an integer term from a signed 64-bit integer. NIF 2.0 (OTP R14B). Wraps `enif_make_int64`.
-pub(crate) unsafe fn make_i64(env: *mut NifEnv, i: i64) -> NifTerm {
+pub unsafe fn make_i64(env: *mut NifEnv, i: i64) -> NifTerm {
     unsafe { (funcs().make_i64)(env, i) }
 }
 
 /// Creates an integer term from an unsigned 64-bit integer. NIF 2.0 (OTP R14B). Wraps `enif_make_uint64`.
-pub(crate) unsafe fn make_u64(env: *mut NifEnv, i: u64) -> NifTerm {
+pub unsafe fn make_u64(env: *mut NifEnv, i: u64) -> NifTerm {
     unsafe { (funcs().make_u64)(env, i) }
 }
 
 // -- Atom -----------------------------------------------------------------
 
 /// Creates an atom from a null-terminated Latin-1 string. NIF 0.1 (OTP R13B03). Wraps `enif_make_atom`.
-pub(crate) unsafe fn make_atom(env: *mut NifEnv, name: *const c_char) -> NifTerm {
+pub unsafe fn make_atom(env: *mut NifEnv, name: *const c_char) -> NifTerm {
     unsafe { (funcs().make_atom)(env, name) }
 }
 
 /// Looks up an existing atom. Returns non-zero on success. NIF 0.1 (OTP R13B03). Wraps `enif_make_existing_atom`.
-pub(crate) unsafe fn make_existing_atom(
+pub unsafe fn make_existing_atom(
     env: *mut NifEnv, name: *const c_char, atom: *mut NifTerm, encoding: NifCharEncoding,
 ) -> c_int {
     unsafe { (funcs().make_existing_atom)(env, name, atom, encoding) }
 }
 
 /// Creates an atom from a name of `len` bytes in Latin-1. NIF 2.0 (OTP R14B). Wraps `enif_make_atom_len`.
-pub(crate) unsafe fn make_atom_len(
+pub unsafe fn make_atom_len(
     env: *mut NifEnv, name: *const c_char, len: usize,
 ) -> NifTerm {
     unsafe { (funcs().make_atom_len)(env, name, len) }
 }
 
 /// Looks up an existing atom by name and length. Returns non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_make_existing_atom_len`.
-pub(crate) unsafe fn make_existing_atom_len(
+pub unsafe fn make_existing_atom_len(
     env: *mut NifEnv, name: *const c_char, len: usize, atom: *mut NifTerm,
     encoding: NifCharEncoding,
 ) -> c_int {
@@ -990,7 +990,7 @@ pub(crate) unsafe fn make_existing_atom_len(
 
 /// Writes the atom name into `buf`. Returns the number of bytes written (including null
 /// terminator), or 0 on failure. NIF 1.0 (OTP R13B04). Wraps `enif_get_atom`.
-pub(crate) unsafe fn get_atom(
+pub unsafe fn get_atom(
     env: *mut NifEnv, atom: NifTerm, buf: *mut c_char, len: c_uint,
     encoding: NifCharEncoding,
 ) -> c_int {
@@ -998,7 +998,7 @@ pub(crate) unsafe fn get_atom(
 }
 
 /// Gets the length of an atom name in bytes. Returns non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_get_atom_length`.
-pub(crate) unsafe fn get_atom_length(
+pub unsafe fn get_atom_length(
     env: *mut NifEnv, atom: NifTerm, len: *mut c_uint, encoding: NifCharEncoding,
 ) -> c_int {
     unsafe { (funcs().get_atom_length)(env, atom, len, encoding) }
@@ -1007,35 +1007,35 @@ pub(crate) unsafe fn get_atom_length(
 // -- List -----------------------------------------------------------------
 
 /// Sets `head` and `tail` from a list cons cell, returning non-zero on success or 0 if the term is not a non-empty list. NIF 0.1 (OTP R13B03). Wraps `enif_get_list_cell`.
-pub(crate) unsafe fn get_list_cell(
+pub unsafe fn get_list_cell(
     env: *mut NifEnv, term: NifTerm, head: *mut NifTerm, tail: *mut NifTerm,
 ) -> c_int {
     unsafe { (funcs().get_list_cell)(env, term, head, tail) }
 }
 
 /// Sets `*len` to the length of a list, returning non-zero on success or 0 if not a proper list. NIF 2.0 (OTP R14B). Wraps `enif_get_list_length`.
-pub(crate) unsafe fn get_list_length(
+pub unsafe fn get_list_length(
     env: *mut NifEnv, term: NifTerm, len: *mut c_uint,
 ) -> c_int {
     unsafe { (funcs().get_list_length)(env, term, len) }
 }
 
 /// Creates a list cell `[car | cdr]`. NIF 0.1 (OTP R13B03). Wraps `enif_make_list_cell`.
-pub(crate) unsafe fn make_list_cell(
+pub unsafe fn make_list_cell(
     env: *mut NifEnv, car: NifTerm, cdr: NifTerm,
 ) -> NifTerm {
     unsafe { (funcs().make_list_cell)(env, car, cdr) }
 }
 
 /// Creates an ordinary list containing the `cnt` elements from the array. NIF 1.0 (OTP R13B04). Wraps `enif_make_list_from_array`.
-pub(crate) unsafe fn make_list_from_array(
+pub unsafe fn make_list_from_array(
     env: *mut NifEnv, arr: *const NifTerm, cnt: c_uint,
 ) -> NifTerm {
     unsafe { (funcs().make_list_from_array)(env, arr, cnt) }
 }
 
 /// Sets `*list` to the reverse of the input list, returning non-zero on success or 0 if not a list. NIF 2.3 (OTP R15A). Wraps `enif_make_reverse_list`.
-pub(crate) unsafe fn make_reverse_list(
+pub unsafe fn make_reverse_list(
     env: *mut NifEnv, term: NifTerm, list: *mut NifTerm,
 ) -> c_int {
     unsafe { (funcs().make_reverse_list)(env, term, list) }
@@ -1044,19 +1044,19 @@ pub(crate) unsafe fn make_reverse_list(
 // Macro equivalents: enif_make_list1..9 → make_list_from_array
 
 /// Creates an ordinary list term with 1 element. Convenience wrapper around `make_list_from_array`.
-pub(crate) unsafe fn make_list1(env: *mut NifEnv, e1: NifTerm) -> NifTerm {
+pub unsafe fn make_list1(env: *mut NifEnv, e1: NifTerm) -> NifTerm {
     let arr = [e1];
     unsafe { make_list_from_array(env, arr.as_ptr(), 1) }
 }
 
 /// Creates an ordinary list term with 2 elements. Convenience wrapper around `make_list_from_array`.
-pub(crate) unsafe fn make_list2(env: *mut NifEnv, e1: NifTerm, e2: NifTerm) -> NifTerm {
+pub unsafe fn make_list2(env: *mut NifEnv, e1: NifTerm, e2: NifTerm) -> NifTerm {
     let arr = [e1, e2];
     unsafe { make_list_from_array(env, arr.as_ptr(), 2) }
 }
 
 /// Creates an ordinary list term with 3 elements. Convenience wrapper around `make_list_from_array`.
-pub(crate) unsafe fn make_list3(
+pub unsafe fn make_list3(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm,
 ) -> NifTerm {
     let arr = [e1, e2, e3];
@@ -1064,7 +1064,7 @@ pub(crate) unsafe fn make_list3(
 }
 
 /// Creates an ordinary list term with 4 elements. Convenience wrapper around `make_list_from_array`.
-pub(crate) unsafe fn make_list4(
+pub unsafe fn make_list4(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
 ) -> NifTerm {
     let arr = [e1, e2, e3, e4];
@@ -1072,7 +1072,7 @@ pub(crate) unsafe fn make_list4(
 }
 
 /// Creates an ordinary list term with 5 elements. Convenience wrapper around `make_list_from_array`.
-pub(crate) unsafe fn make_list5(
+pub unsafe fn make_list5(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm,
 ) -> NifTerm {
@@ -1081,7 +1081,7 @@ pub(crate) unsafe fn make_list5(
 }
 
 /// Creates an ordinary list term with 6 elements. Convenience wrapper around `make_list_from_array`.
-pub(crate) unsafe fn make_list6(
+pub unsafe fn make_list6(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm,
 ) -> NifTerm {
@@ -1090,7 +1090,7 @@ pub(crate) unsafe fn make_list6(
 }
 
 /// Creates an ordinary list term with 7 elements. Convenience wrapper around `make_list_from_array`.
-pub(crate) unsafe fn make_list7(
+pub unsafe fn make_list7(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm,
 ) -> NifTerm {
@@ -1099,7 +1099,7 @@ pub(crate) unsafe fn make_list7(
 }
 
 /// Creates an ordinary list term with 8 elements. Convenience wrapper around `make_list_from_array`.
-pub(crate) unsafe fn make_list8(
+pub unsafe fn make_list8(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm,
 ) -> NifTerm {
@@ -1108,7 +1108,7 @@ pub(crate) unsafe fn make_list8(
 }
 
 /// Creates an ordinary list term with 9 elements. Convenience wrapper around `make_list_from_array`.
-pub(crate) unsafe fn make_list9(
+pub unsafe fn make_list9(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm, e9: NifTerm,
 ) -> NifTerm {
@@ -1119,14 +1119,14 @@ pub(crate) unsafe fn make_list9(
 // -- Tuple ----------------------------------------------------------------
 
 /// Gets the elements of a tuple as a read-only array, returning non-zero on success or 0 if not a tuple. NIF 0.1 (OTP R13B03). Wraps `enif_get_tuple`.
-pub(crate) unsafe fn get_tuple(
+pub unsafe fn get_tuple(
     env: *mut NifEnv, tpl: NifTerm, arity: *mut c_int, array: *mut *const NifTerm,
 ) -> c_int {
     unsafe { (funcs().get_tuple)(env, tpl, arity, array) }
 }
 
 /// Creates a tuple containing the `cnt` elements from the array. NIF 1.0 (OTP R13B04). Wraps `enif_make_tuple_from_array`.
-pub(crate) unsafe fn make_tuple_from_array(
+pub unsafe fn make_tuple_from_array(
     env: *mut NifEnv, arr: *const NifTerm, cnt: c_uint,
 ) -> NifTerm {
     unsafe { (funcs().make_tuple_from_array)(env, arr, cnt) }
@@ -1135,19 +1135,19 @@ pub(crate) unsafe fn make_tuple_from_array(
 // Macro equivalents: enif_make_tuple1..9 → make_tuple_from_array
 
 /// Creates a tuple term with 1 element. Convenience wrapper around `make_tuple_from_array`.
-pub(crate) unsafe fn make_tuple1(env: *mut NifEnv, e1: NifTerm) -> NifTerm {
+pub unsafe fn make_tuple1(env: *mut NifEnv, e1: NifTerm) -> NifTerm {
     let arr = [e1];
     unsafe { make_tuple_from_array(env, arr.as_ptr(), 1) }
 }
 
 /// Creates a tuple term with 2 elements. Convenience wrapper around `make_tuple_from_array`.
-pub(crate) unsafe fn make_tuple2(env: *mut NifEnv, e1: NifTerm, e2: NifTerm) -> NifTerm {
+pub unsafe fn make_tuple2(env: *mut NifEnv, e1: NifTerm, e2: NifTerm) -> NifTerm {
     let arr = [e1, e2];
     unsafe { make_tuple_from_array(env, arr.as_ptr(), 2) }
 }
 
 /// Creates a tuple term with 3 elements. Convenience wrapper around `make_tuple_from_array`.
-pub(crate) unsafe fn make_tuple3(
+pub unsafe fn make_tuple3(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm,
 ) -> NifTerm {
     let arr = [e1, e2, e3];
@@ -1155,7 +1155,7 @@ pub(crate) unsafe fn make_tuple3(
 }
 
 /// Creates a tuple term with 4 elements. Convenience wrapper around `make_tuple_from_array`.
-pub(crate) unsafe fn make_tuple4(
+pub unsafe fn make_tuple4(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
 ) -> NifTerm {
     let arr = [e1, e2, e3, e4];
@@ -1163,7 +1163,7 @@ pub(crate) unsafe fn make_tuple4(
 }
 
 /// Creates a tuple term with 5 elements. Convenience wrapper around `make_tuple_from_array`.
-pub(crate) unsafe fn make_tuple5(
+pub unsafe fn make_tuple5(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm,
 ) -> NifTerm {
@@ -1172,7 +1172,7 @@ pub(crate) unsafe fn make_tuple5(
 }
 
 /// Creates a tuple term with 6 elements. Convenience wrapper around `make_tuple_from_array`.
-pub(crate) unsafe fn make_tuple6(
+pub unsafe fn make_tuple6(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm,
 ) -> NifTerm {
@@ -1181,7 +1181,7 @@ pub(crate) unsafe fn make_tuple6(
 }
 
 /// Creates a tuple term with 7 elements. Convenience wrapper around `make_tuple_from_array`.
-pub(crate) unsafe fn make_tuple7(
+pub unsafe fn make_tuple7(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm,
 ) -> NifTerm {
@@ -1190,7 +1190,7 @@ pub(crate) unsafe fn make_tuple7(
 }
 
 /// Creates a tuple term with 8 elements. Convenience wrapper around `make_tuple_from_array`.
-pub(crate) unsafe fn make_tuple8(
+pub unsafe fn make_tuple8(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm,
 ) -> NifTerm {
@@ -1199,7 +1199,7 @@ pub(crate) unsafe fn make_tuple8(
 }
 
 /// Creates a tuple term with 9 elements. Convenience wrapper around `make_tuple_from_array`.
-pub(crate) unsafe fn make_tuple9(
+pub unsafe fn make_tuple9(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm, e9: NifTerm,
 ) -> NifTerm {
@@ -1210,21 +1210,21 @@ pub(crate) unsafe fn make_tuple9(
 // -- String ---------------------------------------------------------------
 
 /// Creates a list containing the characters of a NUL-terminated string with the given encoding. NIF 0.1 (OTP R13B03). Wraps `enif_make_string`.
-pub(crate) unsafe fn make_string(
+pub unsafe fn make_string(
     env: *mut NifEnv, string: *const c_char, encoding: NifCharEncoding,
 ) -> NifTerm {
     unsafe { (funcs().make_string)(env, string, encoding) }
 }
 
 /// Creates a list containing the characters of a string with the given length and encoding. NIF 2.0 (OTP R14B). Wraps `enif_make_string_len`.
-pub(crate) unsafe fn make_string_len(
+pub unsafe fn make_string_len(
     env: *mut NifEnv, string: *const c_char, len: usize, encoding: NifCharEncoding,
 ) -> NifTerm {
     unsafe { (funcs().make_string_len)(env, string, len, encoding) }
 }
 
 /// Writes a NUL-terminated string into `buf` from a list of characters with the given encoding. NIF 1.0 (OTP R13B04). Wraps `enif_get_string`.
-pub(crate) unsafe fn get_string(
+pub unsafe fn get_string(
     env: *mut NifEnv, list: NifTerm, buf: *mut c_char, len: c_uint,
     encoding: NifCharEncoding,
 ) -> c_int {
@@ -1234,26 +1234,26 @@ pub(crate) unsafe fn get_string(
 // -- Map ------------------------------------------------------------------
 
 /// Makes an empty map term. NIF 2.6 (OTP 17.0). Wraps `enif_make_new_map`.
-pub(crate) unsafe fn make_new_map(env: *mut NifEnv) -> NifTerm {
+pub unsafe fn make_new_map(env: *mut NifEnv) -> NifTerm {
     unsafe { (funcs().make_new_map)(env) }
 }
 
 /// Sets `*size` to the number of key-value pairs in the map, returning non-zero on success. NIF 2.6 (OTP 17.0). Wraps `enif_get_map_size`.
-pub(crate) unsafe fn get_map_size(
+pub unsafe fn get_map_size(
     env: *mut NifEnv, term: NifTerm, size: *mut usize,
 ) -> c_int {
     unsafe { (funcs().get_map_size)(env, term, size) }
 }
 
 /// Sets `*value` to the value associated with `key` in the map, returning non-zero on success. NIF 2.6 (OTP 17.0). Wraps `enif_get_map_value`.
-pub(crate) unsafe fn get_map_value(
+pub unsafe fn get_map_value(
     env: *mut NifEnv, map: NifTerm, key: NifTerm, value: *mut NifTerm,
 ) -> c_int {
     unsafe { (funcs().get_map_value)(env, map, key, value) }
 }
 
 /// Makes a copy of a map with the key-value pair inserted or replaced, returning non-zero on success. NIF 2.6 (OTP 17.0). Wraps `enif_make_map_put`.
-pub(crate) unsafe fn make_map_put(
+pub unsafe fn make_map_put(
     env: *mut NifEnv, map_in: NifTerm, key: NifTerm, value: NifTerm,
     map_out: *mut NifTerm,
 ) -> c_int {
@@ -1261,7 +1261,7 @@ pub(crate) unsafe fn make_map_put(
 }
 
 /// Makes a copy of a map with an existing key's value replaced, failing if the key does not exist. NIF 2.6 (OTP 17.0). Wraps `enif_make_map_update`.
-pub(crate) unsafe fn make_map_update(
+pub unsafe fn make_map_update(
     env: *mut NifEnv, map_in: NifTerm, key: NifTerm, value: NifTerm,
     map_out: *mut NifTerm,
 ) -> c_int {
@@ -1269,14 +1269,14 @@ pub(crate) unsafe fn make_map_update(
 }
 
 /// Makes a copy of a map with a key-value pair removed. NIF 2.6 (OTP 17.0). Wraps `enif_make_map_remove`.
-pub(crate) unsafe fn make_map_remove(
+pub unsafe fn make_map_remove(
     env: *mut NifEnv, map_in: NifTerm, key: NifTerm, map_out: *mut NifTerm,
 ) -> c_int {
     unsafe { (funcs().make_map_remove)(env, map_in, key, map_out) }
 }
 
 /// Creates an iterator for a map, positioned at first or last entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_create`.
-pub(crate) unsafe fn map_iterator_create(
+pub unsafe fn map_iterator_create(
     env: *mut NifEnv, map: NifTerm, iter: *mut NifMapIterator,
     entry: NifMapIteratorEntry,
 ) -> c_int {
@@ -1284,40 +1284,40 @@ pub(crate) unsafe fn map_iterator_create(
 }
 
 /// Destroys a map iterator created by `map_iterator_create`. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_destroy`.
-pub(crate) unsafe fn map_iterator_destroy(env: *mut NifEnv, iter: *mut NifMapIterator) {
+pub unsafe fn map_iterator_destroy(env: *mut NifEnv, iter: *mut NifMapIterator) {
     unsafe { (funcs().map_iterator_destroy)(env, iter) }
 }
 
 /// Returns non-zero if the map iterator is positioned before the first entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_is_head`.
-pub(crate) unsafe fn map_iterator_is_head(
+pub unsafe fn map_iterator_is_head(
     env: *mut NifEnv, iter: *mut NifMapIterator,
 ) -> c_int {
     unsafe { (funcs().map_iterator_is_head)(env, iter) }
 }
 
 /// Returns non-zero if the map iterator is positioned after the last entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_is_tail`.
-pub(crate) unsafe fn map_iterator_is_tail(
+pub unsafe fn map_iterator_is_tail(
     env: *mut NifEnv, iter: *mut NifMapIterator,
 ) -> c_int {
     unsafe { (funcs().map_iterator_is_tail)(env, iter) }
 }
 
 /// Increments the map iterator to point to the next key-value entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_next`.
-pub(crate) unsafe fn map_iterator_next(
+pub unsafe fn map_iterator_next(
     env: *mut NifEnv, iter: *mut NifMapIterator,
 ) -> c_int {
     unsafe { (funcs().map_iterator_next)(env, iter) }
 }
 
 /// Decrements the map iterator to point to the previous key-value entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_prev`.
-pub(crate) unsafe fn map_iterator_prev(
+pub unsafe fn map_iterator_prev(
     env: *mut NifEnv, iter: *mut NifMapIterator,
 ) -> c_int {
     unsafe { (funcs().map_iterator_prev)(env, iter) }
 }
 
 /// Gets the key and value terms at the current map iterator position. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_get_pair`.
-pub(crate) unsafe fn map_iterator_get_pair(
+pub unsafe fn map_iterator_get_pair(
     env: *mut NifEnv, iter: *mut NifMapIterator, key: *mut NifTerm,
     value: *mut NifTerm,
 ) -> c_int {
@@ -1325,7 +1325,7 @@ pub(crate) unsafe fn map_iterator_get_pair(
 }
 
 /// Makes a map term from parallel arrays of keys and values with `cnt` pairs. NIF 2.14 (OTP 21.0). Wraps `enif_make_map_from_arrays`.
-pub(crate) unsafe fn make_map_from_arrays(
+pub unsafe fn make_map_from_arrays(
     env: *mut NifEnv, keys: *const NifTerm, values: *const NifTerm, cnt: usize,
     map_out: *mut NifTerm,
 ) -> c_int {
@@ -1335,12 +1335,12 @@ pub(crate) unsafe fn make_map_from_arrays(
 // -- Ref / Unique integer -------------------------------------------------
 
 /// Creates a reference like `erlang:make_ref/0`. NIF 0.1 (OTP R13B03). Wraps `enif_make_ref`.
-pub(crate) unsafe fn make_ref(env: *mut NifEnv) -> NifTerm {
+pub unsafe fn make_ref(env: *mut NifEnv) -> NifTerm {
     unsafe { (funcs().make_ref)(env) }
 }
 
 /// Returns a unique integer with the same properties as `erlang:unique_integer/1`. NIF 2.11 (OTP 19.0). Wraps `enif_make_unique_integer`.
-pub(crate) unsafe fn make_unique_integer(
+pub unsafe fn make_unique_integer(
     env: *mut NifEnv, properties: NifUniqueInteger,
 ) -> NifTerm {
     unsafe { (funcs().make_unique_integer)(env, properties) }
@@ -1349,29 +1349,29 @@ pub(crate) unsafe fn make_unique_integer(
 // -- Pid ------------------------------------------------------------------
 
 /// Initializes `*pid` to represent the calling process, returning the pointer on success or NULL if not process-bound. NIF 2.0 (OTP R14B). Wraps `enif_self`.
-pub(crate) unsafe fn self_pid(env: *mut NifEnv, pid: *mut NifPid) -> *mut NifPid {
+pub unsafe fn self_pid(env: *mut NifEnv, pid: *mut NifPid) -> *mut NifPid {
     unsafe { (funcs().self_pid)(env, pid) }
 }
 
 /// Extracts a node-local pid from a term, returning non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_get_local_pid`.
-pub(crate) unsafe fn get_local_pid(
+pub unsafe fn get_local_pid(
     env: *mut NifEnv, term: NifTerm, pid: *mut NifPid,
 ) -> c_int {
     unsafe { (funcs().get_local_pid)(env, term, pid) }
 }
 
 /// Returns non-zero if the process identified by `*pid` is alive. NIF 2.11 (OTP 19.0). Wraps `enif_is_process_alive`.
-pub(crate) unsafe fn is_process_alive(env: *mut NifEnv, pid: *mut NifPid) -> c_int {
+pub unsafe fn is_process_alive(env: *mut NifEnv, pid: *mut NifPid) -> c_int {
     unsafe { (funcs().is_process_alive)(env, pid) }
 }
 
 /// Returns non-zero if the currently executing process is alive. NIF 2.11 (OTP 19.0). Wraps `enif_is_current_process_alive`.
-pub(crate) unsafe fn is_current_process_alive(env: *mut NifEnv) -> c_int {
+pub unsafe fn is_current_process_alive(env: *mut NifEnv) -> c_int {
     unsafe { (funcs().is_current_process_alive)(env) }
 }
 
 /// Looks up a process by its registered name atom, returning non-zero on success. NIF 2.12 (OTP 20.0). Wraps `enif_whereis_pid`.
-pub(crate) unsafe fn whereis_pid(
+pub unsafe fn whereis_pid(
     env: *mut NifEnv, name: NifTerm, pid: *mut NifPid,
 ) -> c_int {
     unsafe { (funcs().whereis_pid)(env, name, pid) }
@@ -1380,26 +1380,26 @@ pub(crate) unsafe fn whereis_pid(
 // -- Port -----------------------------------------------------------------
 
 /// Extracts a node-local port from a term, returning non-zero on success. NIF 2.11 (OTP 19.0). Wraps `enif_get_local_port`.
-pub(crate) unsafe fn get_local_port(
+pub unsafe fn get_local_port(
     env: *mut NifEnv, term: NifTerm, port: *mut NifPort,
 ) -> c_int {
     unsafe { (funcs().get_local_port)(env, term, port) }
 }
 
 /// Returns non-zero if the given port is alive. NIF 2.11 (OTP 19.0). Wraps `enif_is_port_alive`.
-pub(crate) unsafe fn is_port_alive(env: *mut NifEnv, port: *mut NifPort) -> c_int {
+pub unsafe fn is_port_alive(env: *mut NifEnv, port: *mut NifPort) -> c_int {
     unsafe { (funcs().is_port_alive)(env, port) }
 }
 
 /// Looks up a port by its registered name atom, returning non-zero on success. NIF 2.12 (OTP 20.0). Wraps `enif_whereis_port`.
-pub(crate) unsafe fn whereis_port(
+pub unsafe fn whereis_port(
     env: *mut NifEnv, name: NifTerm, port: *mut NifPort,
 ) -> c_int {
     unsafe { (funcs().whereis_port)(env, name, port) }
 }
 
 /// Sends a message to a port asynchronously, like `erlang:port_command/2`. NIF 2.11 (OTP 19.0). Wraps `enif_port_command`.
-pub(crate) unsafe fn port_command(
+pub unsafe fn port_command(
     env: *mut NifEnv, to_port: *const NifPort, msg_env: *mut NifEnv, msg: NifTerm,
 ) -> c_int {
     unsafe { (funcs().port_command)(env, to_port, msg_env, msg) }
@@ -1408,36 +1408,36 @@ pub(crate) unsafe fn port_command(
 // -- Env / send -----------------------------------------------------------
 
 /// Allocates a new process-independent environment for holding terms not bound to any process. NIF 2.0 (OTP R14B). Wraps `enif_alloc_env`.
-pub(crate) unsafe fn alloc_env() -> *mut NifEnv {
+pub unsafe fn alloc_env() -> *mut NifEnv {
     unsafe { (funcs().alloc_env)() }
 }
 
 /// Frees an environment allocated with `alloc_env` and all terms created in it. NIF 2.0 (OTP R14B). Wraps `enif_free_env`.
-pub(crate) unsafe fn free_env(env: *mut NifEnv) {
+pub unsafe fn free_env(env: *mut NifEnv) {
     unsafe { (funcs().free_env)(env) }
 }
 
 /// Frees all terms in an environment and clears it for reuse. NIF 2.0 (OTP R14B). Wraps `enif_clear_env`.
-pub(crate) unsafe fn clear_env(env: *mut NifEnv) {
+pub unsafe fn clear_env(env: *mut NifEnv) {
     unsafe { (funcs().clear_env)(env) }
 }
 
 /// Sends a message to a process; `msg_env` is invalidated on success. NIF 2.0 (OTP R14B). Wraps `enif_send`.
-pub(crate) unsafe fn send(
+pub unsafe fn send(
     env: *mut NifEnv, to_pid: *const NifPid, msg_env: *mut NifEnv, msg: NifTerm,
 ) -> c_int {
     unsafe { (funcs().send)(env, to_pid, msg_env, msg) }
 }
 
 /// Makes a copy of a term into a destination environment. NIF 2.0 (OTP R14B). Wraps `enif_make_copy`.
-pub(crate) unsafe fn make_copy(dst_env: *mut NifEnv, src_term: NifTerm) -> NifTerm {
+pub unsafe fn make_copy(dst_env: *mut NifEnv, src_term: NifTerm) -> NifTerm {
     unsafe { (funcs().make_copy)(dst_env, src_term) }
 }
 
 // -- Resource -------------------------------------------------------------
 
 /// Opens or takes over a resource type for managing resource objects with an optional destructor. NIF 1.0 (OTP R13B04). Wraps `enif_open_resource_type`.
-pub(crate) unsafe fn open_resource_type(
+pub unsafe fn open_resource_type(
     env: *mut NifEnv, module_str: *const c_char, name_str: *const c_char,
     dtor: Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void)>,
     flags: NifResourceFlags, tried: *mut NifResourceFlags,
@@ -1446,7 +1446,7 @@ pub(crate) unsafe fn open_resource_type(
 }
 
 /// Opens or takes over a resource type with extended callbacks (select stop, down). NIF 2.12 (OTP 20.0). Wraps `enif_open_resource_type_x`.
-pub(crate) unsafe fn open_resource_type_x(
+pub unsafe fn open_resource_type_x(
     env: *mut NifEnv, name_str: *const c_char, init: *const NifResourceTypeInit,
     flags: NifResourceFlags, tried: *mut NifResourceFlags,
 ) -> *mut NifResourceType {
@@ -1454,24 +1454,24 @@ pub(crate) unsafe fn open_resource_type_x(
 }
 
 /// Allocates a memory-managed resource object of the given type and size. NIF 1.0 (OTP R13B04). Wraps `enif_alloc_resource`.
-pub(crate) unsafe fn alloc_resource(
+pub unsafe fn alloc_resource(
     rtype: *mut NifResourceType, size: usize,
 ) -> *mut c_void {
     unsafe { (funcs().alloc_resource)(rtype, size) }
 }
 
 /// Removes a reference to a resource object; the resource is destructed when the last reference is removed. NIF 1.0 (OTP R13B04). Wraps `enif_release_resource`.
-pub(crate) unsafe fn release_resource(obj: *mut c_void) {
+pub unsafe fn release_resource(obj: *mut c_void) {
     unsafe { (funcs().release_resource)(obj) }
 }
 
 /// Creates an opaque handle term to a memory-managed resource object. NIF 1.0 (OTP R13B04). Wraps `enif_make_resource`.
-pub(crate) unsafe fn make_resource(env: *mut NifEnv, obj: *mut c_void) -> NifTerm {
+pub unsafe fn make_resource(env: *mut NifEnv, obj: *mut c_void) -> NifTerm {
     unsafe { (funcs().make_resource)(env, obj) }
 }
 
 /// Retrieves a pointer to the resource object referred to by a resource term. NIF 1.0 (OTP R13B04). Wraps `enif_get_resource`.
-pub(crate) unsafe fn get_resource(
+pub unsafe fn get_resource(
     env: *mut NifEnv, term: NifTerm, rtype: *mut NifResourceType,
     objp: *mut *mut c_void,
 ) -> c_int {
@@ -1479,38 +1479,38 @@ pub(crate) unsafe fn get_resource(
 }
 
 /// Gets the byte size of a resource object obtained from `alloc_resource`. NIF 1.0 (OTP R13B04). Wraps `enif_sizeof_resource`.
-pub(crate) unsafe fn sizeof_resource(obj: *mut c_void) -> usize {
+pub unsafe fn sizeof_resource(obj: *mut c_void) -> usize {
     unsafe { (funcs().sizeof_resource)(obj) }
 }
 
 /// Adds a reference to a resource object, which must be balanced with `release_resource`. NIF 2.0 (OTP R14B). Wraps `enif_keep_resource`.
-pub(crate) unsafe fn keep_resource(obj: *mut c_void) {
+pub unsafe fn keep_resource(obj: *mut c_void) {
     unsafe { (funcs().keep_resource)(obj) }
 }
 
 // -- Exception ------------------------------------------------------------
 
 /// Creates a badarg exception to be returned from a NIF, signaling an invalid argument. NIF 0.1 (OTP R13B03). Wraps `enif_make_badarg`.
-pub(crate) unsafe fn make_badarg(env: *mut NifEnv) -> NifTerm {
+pub unsafe fn make_badarg(env: *mut NifEnv) -> NifTerm {
     unsafe { (funcs().make_badarg)(env) }
 }
 
 /// Returns non-zero if a pending exception is associated with the environment; optionally stores the reason in `*reason`. NIF 2.8 (OTP 18.0). Wraps `enif_has_pending_exception`.
-pub(crate) unsafe fn has_pending_exception(
+pub unsafe fn has_pending_exception(
     env: *mut NifEnv, reason: *mut NifTerm,
 ) -> c_int {
     unsafe { (funcs().has_pending_exception)(env, reason) }
 }
 
 /// Creates an error exception with the given reason term to be returned from a NIF. NIF 2.8 (OTP 18.0). Wraps `enif_raise_exception`.
-pub(crate) unsafe fn raise_exception(env: *mut NifEnv, reason: NifTerm) -> NifTerm {
+pub unsafe fn raise_exception(env: *mut NifEnv, reason: NifTerm) -> NifTerm {
     unsafe { (funcs().raise_exception)(env, reason) }
 }
 
 // -- Schedule -------------------------------------------------------------
 
 /// Schedules a NIF function for execution, allowing long-running work to be broken into chunks. NIF 2.7 (OTP 17.3). Wraps `enif_schedule_nif`.
-pub(crate) unsafe fn schedule_nif(
+pub unsafe fn schedule_nif(
     env: *mut NifEnv, fun_name: *const c_char, flags: c_int,
     fp: unsafe extern "C" fn(*mut NifEnv, c_int, *const NifTerm) -> NifTerm,
     argc: c_int, argv: *const NifTerm,
@@ -1521,21 +1521,21 @@ pub(crate) unsafe fn schedule_nif(
 // -- Monitor --------------------------------------------------------------
 
 /// Starts monitoring a process from a resource; a process exit triggers the `down` callback. NIF 2.12 (OTP 20.0). Wraps `enif_monitor_process`.
-pub(crate) unsafe fn monitor_process(
+pub unsafe fn monitor_process(
     env: *mut NifEnv, obj: *mut c_void, pid: *const NifPid, monitor: *mut NifMonitor,
 ) -> c_int {
     unsafe { (funcs().monitor_process)(env, obj, pid, monitor) }
 }
 
 /// Cancels a monitor created with `monitor_process`. Returns 0 on success. NIF 2.12 (OTP 20.0). Wraps `enif_demonitor_process`.
-pub(crate) unsafe fn demonitor_process(
+pub unsafe fn demonitor_process(
     env: *mut NifEnv, obj: *mut c_void, monitor: *const NifMonitor,
 ) -> c_int {
     unsafe { (funcs().demonitor_process)(env, obj, monitor) }
 }
 
 /// Compares two monitors: returns 0 if equal, <0 if mon1 < mon2, >0 if mon1 > mon2. NIF 2.12 (OTP 20.0). Wraps `enif_compare_monitors`.
-pub(crate) unsafe fn compare_monitors(
+pub unsafe fn compare_monitors(
     mon1: *const NifMonitor, mon2: *const NifMonitor,
 ) -> c_int {
     unsafe { (funcs().compare_monitors)(mon1, mon2) }
@@ -1544,7 +1544,7 @@ pub(crate) unsafe fn compare_monitors(
 // -- Select ---------------------------------------------------------------
 
 /// Registers for asynchronous notifications when an OS event object becomes ready for read or write. NIF 2.12 (OTP 20.0). Wraps `enif_select`.
-pub(crate) unsafe fn select(
+pub unsafe fn select(
     env: *mut NifEnv, e: NifEvent, flags: NifSelectFlags, obj: *mut c_void,
     pid: *const NifPid, ref_term: NifTerm,
 ) -> c_int {
@@ -1554,50 +1554,50 @@ pub(crate) unsafe fn select(
 // -- Time -----------------------------------------------------------------
 
 /// Returns the current Erlang monotonic time in the given time unit; may be negative. NIF 2.10 (OTP 18.3). Wraps `enif_monotonic_time`.
-pub(crate) unsafe fn monotonic_time(unit: NifTimeUnit) -> NifTime {
+pub unsafe fn monotonic_time(unit: NifTimeUnit) -> NifTime {
     unsafe { (funcs().monotonic_time)(unit) }
 }
 
 /// Returns the current time offset between Erlang monotonic time and Erlang system time. NIF 2.10 (OTP 18.3). Wraps `enif_time_offset`.
-pub(crate) unsafe fn time_offset(unit: NifTimeUnit) -> NifTime {
+pub unsafe fn time_offset(unit: NifTimeUnit) -> NifTime {
     unsafe { (funcs().time_offset)(unit) }
 }
 
 /// Converts a time value from one time unit to another. NIF 2.10 (OTP 18.3). Wraps `enif_convert_time_unit`.
-pub(crate) unsafe fn convert_time_unit(
+pub unsafe fn convert_time_unit(
     time: NifTime, from: NifTimeUnit, to: NifTimeUnit,
 ) -> NifTime {
     unsafe { (funcs().convert_time_unit)(time, from, to) }
 }
 
 /// Returns wall-clock time as an integer term. Deprecated in favor of `monotonic_time`. NIF 2.11 (OTP 19.0). Wraps `enif_now_time`.
-pub(crate) unsafe fn now_time(env: *mut NifEnv) -> NifTerm {
+pub unsafe fn now_time(env: *mut NifEnv) -> NifTerm {
     unsafe { (funcs().now_time)(env) }
 }
 
 /// Returns CPU time as an integer term. NIF 2.11 (OTP 19.0). Wraps `enif_cpu_time`.
-pub(crate) unsafe fn cpu_time(env: *mut NifEnv) -> NifTerm {
+pub unsafe fn cpu_time(env: *mut NifEnv) -> NifTerm {
     unsafe { (funcs().cpu_time)(env) }
 }
 
 // -- Hash -----------------------------------------------------------------
 
 /// Hashes a term using the specified hash type and salt. NIF 2.12 (OTP 20.0). Wraps `enif_hash`.
-pub(crate) unsafe fn hash(hash_type: NifHash, term: NifTerm, salt: u64) -> u64 {
+pub unsafe fn hash(hash_type: NifHash, term: NifTerm, salt: u64) -> u64 {
     unsafe { (funcs().hash)(hash_type, term, salt) }
 }
 
 // -- TypedTerm serialization ---------------------------------------------------
 
 /// Serializes a term into the Erlang external term format, allocating the result binary. NIF 2.11 (OTP 19.0). Wraps `enif_term_to_binary`.
-pub(crate) unsafe fn term_to_binary(
+pub unsafe fn term_to_binary(
     env: *mut NifEnv, term: NifTerm, bin: *mut NifBinary,
 ) -> c_int {
     unsafe { (funcs().term_to_binary)(env, term, bin) }
 }
 
 /// Deserializes a term from Erlang external term format, returning the number of bytes read. NIF 2.11 (OTP 19.0). Wraps `enif_binary_to_term`.
-pub(crate) unsafe fn binary_to_term(
+pub unsafe fn binary_to_term(
     env: *mut NifEnv, data: *const u8, sz: usize, term: *mut NifTerm, opts: c_uint,
 ) -> usize {
     unsafe { (funcs().binary_to_term)(env, data, sz, term, opts) }
@@ -1606,33 +1606,33 @@ pub(crate) unsafe fn binary_to_term(
 // -- Timeslice ------------------------------------------------------------
 
 /// Reports consumption of a timeslice (1-100 percent); returns non-zero if the timeslice is exhausted. NIF 2.4 (OTP R16B). Wraps `enif_consume_timeslice`.
-pub(crate) unsafe fn consume_timeslice(env: *mut NifEnv, percent: c_int) -> c_int {
+pub unsafe fn consume_timeslice(env: *mut NifEnv, percent: c_int) -> c_int {
     unsafe { (funcs().consume_timeslice)(env, percent) }
 }
 
 // -- System ---------------------------------------------------------------
 
 /// Fills a `NifSysInfo` struct with runtime system information. NIF 1.0 (OTP R13B04). Wraps `enif_system_info`.
-pub(crate) unsafe fn system_info(sip: *mut NifSysInfo, si_size: usize) {
+pub unsafe fn system_info(sip: *mut NifSysInfo, si_size: usize) {
     unsafe { (funcs().system_info)(sip, si_size) }
 }
 
 /// Gets the value of an environment variable, returning 0 on success. NIF 2.9 (OTP 18.2). Wraps `enif_getenv`.
-pub(crate) unsafe fn getenv(
+pub unsafe fn getenv(
     key: *const c_char, value: *mut c_char, value_size: *mut usize,
 ) -> c_int {
     unsafe { (funcs().getenv)(key, value, value_size) }
 }
 
 /// Returns the type of the current thread: 1 for scheduler, 2 for dirty CPU, 3 for dirty I/O, -1 for non-ERTS. NIF 2.11 (OTP 19.0). Wraps `enif_thread_type`.
-pub(crate) unsafe fn thread_type() -> c_int {
+pub unsafe fn thread_type() -> c_int {
     unsafe { (funcs().thread_type)() }
 }
 
 // -- Dynamic loading ------------------------------------------------------
 
 /// Opens a dynamically linked shared library, calling `err_handler` on failure. NIF 2.4 (OTP R16B). Wraps `enif_dlopen`.
-pub(crate) unsafe fn dlopen(
+pub unsafe fn dlopen(
     lib: *const c_char,
     err_handler: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
     err_arg: *mut c_void,
@@ -1641,7 +1641,7 @@ pub(crate) unsafe fn dlopen(
 }
 
 /// Looks up a symbol in a dynamically linked library opened with `dlopen`. NIF 2.4 (OTP R16B). Wraps `enif_dlsym`.
-pub(crate) unsafe fn dlsym(
+pub unsafe fn dlsym(
     handle: *mut c_void, symbol: *const c_char,
     err_handler: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
     err_arg: *mut c_void,
@@ -1652,127 +1652,127 @@ pub(crate) unsafe fn dlsym(
 // -- Threading ------------------------------------------------------------
 
 /// Creates a mutex with the given name. NIF 1.0 (OTP R13B04). Wraps `enif_mutex_create`.
-pub(crate) unsafe fn mutex_create(name: *mut c_char) -> *mut NifMutex {
+pub unsafe fn mutex_create(name: *mut c_char) -> *mut NifMutex {
     unsafe { (funcs().mutex_create)(name) }
 }
 
 /// Destroys a mutex. NIF 1.0 (OTP R13B04). Wraps `enif_mutex_destroy`.
-pub(crate) unsafe fn mutex_destroy(mtx: *mut NifMutex) {
+pub unsafe fn mutex_destroy(mtx: *mut NifMutex) {
     unsafe { (funcs().mutex_destroy)(mtx) }
 }
 
 /// Tries to lock a mutex without blocking; returns 0 on success. NIF 1.0 (OTP R13B04). Wraps `enif_mutex_trylock`.
-pub(crate) unsafe fn mutex_trylock(mtx: *mut NifMutex) -> c_int {
+pub unsafe fn mutex_trylock(mtx: *mut NifMutex) -> c_int {
     unsafe { (funcs().mutex_trylock)(mtx) }
 }
 
 /// Locks a mutex, blocking until it becomes available. NIF 1.0 (OTP R13B04). Wraps `enif_mutex_lock`.
-pub(crate) unsafe fn mutex_lock(mtx: *mut NifMutex) {
+pub unsafe fn mutex_lock(mtx: *mut NifMutex) {
     unsafe { (funcs().mutex_lock)(mtx) }
 }
 
 /// Unlocks a mutex. NIF 1.0 (OTP R13B04). Wraps `enif_mutex_unlock`.
-pub(crate) unsafe fn mutex_unlock(mtx: *mut NifMutex) {
+pub unsafe fn mutex_unlock(mtx: *mut NifMutex) {
     unsafe { (funcs().mutex_unlock)(mtx) }
 }
 
 /// Creates a condition variable with the given name. NIF 1.0 (OTP R13B04). Wraps `enif_cond_create`.
-pub(crate) unsafe fn cond_create(name: *mut c_char) -> *mut NifCond {
+pub unsafe fn cond_create(name: *mut c_char) -> *mut NifCond {
     unsafe { (funcs().cond_create)(name) }
 }
 
 /// Destroys a condition variable. NIF 1.0 (OTP R13B04). Wraps `enif_cond_destroy`.
-pub(crate) unsafe fn cond_destroy(cnd: *mut NifCond) {
+pub unsafe fn cond_destroy(cnd: *mut NifCond) {
     unsafe { (funcs().cond_destroy)(cnd) }
 }
 
 /// Signals one thread waiting on a condition variable. NIF 1.0 (OTP R13B04). Wraps `enif_cond_signal`.
-pub(crate) unsafe fn cond_signal(cnd: *mut NifCond) {
+pub unsafe fn cond_signal(cnd: *mut NifCond) {
     unsafe { (funcs().cond_signal)(cnd) }
 }
 
 /// Wakes all threads waiting on a condition variable. NIF 1.0 (OTP R13B04). Wraps `enif_cond_broadcast`.
-pub(crate) unsafe fn cond_broadcast(cnd: *mut NifCond) {
+pub unsafe fn cond_broadcast(cnd: *mut NifCond) {
     unsafe { (funcs().cond_broadcast)(cnd) }
 }
 
 /// Atomically unlocks the mutex and waits on a condition variable. NIF 1.0 (OTP R13B04). Wraps `enif_cond_wait`.
-pub(crate) unsafe fn cond_wait(cnd: *mut NifCond, mtx: *mut NifMutex) {
+pub unsafe fn cond_wait(cnd: *mut NifCond, mtx: *mut NifMutex) {
     unsafe { (funcs().cond_wait)(cnd, mtx) }
 }
 
 /// Creates a read-write lock with the given name. NIF 1.0 (OTP R13B04). Wraps `enif_rwlock_create`.
-pub(crate) unsafe fn rwlock_create(name: *mut c_char) -> *mut NifRWLock {
+pub unsafe fn rwlock_create(name: *mut c_char) -> *mut NifRWLock {
     unsafe { (funcs().rwlock_create)(name) }
 }
 
 /// Destroys a read-write lock. NIF 1.0 (OTP R13B04). Wraps `enif_rwlock_destroy`.
-pub(crate) unsafe fn rwlock_destroy(rwlck: *mut NifRWLock) {
+pub unsafe fn rwlock_destroy(rwlck: *mut NifRWLock) {
     unsafe { (funcs().rwlock_destroy)(rwlck) }
 }
 
 /// Tries to acquire a read lock without blocking; returns 0 on success. NIF 1.0 (OTP R13B04). Wraps `enif_rwlock_tryrlock`.
-pub(crate) unsafe fn rwlock_tryrlock(rwlck: *mut NifRWLock) -> c_int {
+pub unsafe fn rwlock_tryrlock(rwlck: *mut NifRWLock) -> c_int {
     unsafe { (funcs().rwlock_tryrlock)(rwlck) }
 }
 
 /// Acquires a read lock, blocking until available. NIF 1.0 (OTP R13B04). Wraps `enif_rwlock_rlock`.
-pub(crate) unsafe fn rwlock_rlock(rwlck: *mut NifRWLock) {
+pub unsafe fn rwlock_rlock(rwlck: *mut NifRWLock) {
     unsafe { (funcs().rwlock_rlock)(rwlck) }
 }
 
 /// Releases a read lock. NIF 1.0 (OTP R13B04). Wraps `enif_rwlock_runlock`.
-pub(crate) unsafe fn rwlock_runlock(rwlck: *mut NifRWLock) {
+pub unsafe fn rwlock_runlock(rwlck: *mut NifRWLock) {
     unsafe { (funcs().rwlock_runlock)(rwlck) }
 }
 
 /// Tries to acquire a read-write (exclusive) lock without blocking; returns 0 on success. NIF 1.0 (OTP R13B04). Wraps `enif_rwlock_tryrwlock`.
-pub(crate) unsafe fn rwlock_tryrwlock(rwlck: *mut NifRWLock) -> c_int {
+pub unsafe fn rwlock_tryrwlock(rwlck: *mut NifRWLock) -> c_int {
     unsafe { (funcs().rwlock_tryrwlock)(rwlck) }
 }
 
 /// Acquires a read-write (exclusive) lock, blocking until available. NIF 1.0 (OTP R13B04). Wraps `enif_rwlock_rwlock`.
-pub(crate) unsafe fn rwlock_rwlock(rwlck: *mut NifRWLock) {
+pub unsafe fn rwlock_rwlock(rwlck: *mut NifRWLock) {
     unsafe { (funcs().rwlock_rwlock)(rwlck) }
 }
 
 /// Releases a read-write (exclusive) lock. NIF 1.0 (OTP R13B04). Wraps `enif_rwlock_rwunlock`.
-pub(crate) unsafe fn rwlock_rwunlock(rwlck: *mut NifRWLock) {
+pub unsafe fn rwlock_rwunlock(rwlck: *mut NifRWLock) {
     unsafe { (funcs().rwlock_rwunlock)(rwlck) }
 }
 
 /// Creates a thread-specific data key with the given name. NIF 1.0 (OTP R13B04). Wraps `enif_tsd_key_create`.
-pub(crate) unsafe fn tsd_key_create(name: *mut c_char, key: *mut NifTSDKey) -> c_int {
+pub unsafe fn tsd_key_create(name: *mut c_char, key: *mut NifTSDKey) -> c_int {
     unsafe { (funcs().tsd_key_create)(name, key) }
 }
 
 /// Destroys a thread-specific data key. NIF 1.0 (OTP R13B04). Wraps `enif_tsd_key_destroy`.
-pub(crate) unsafe fn tsd_key_destroy(key: NifTSDKey) {
+pub unsafe fn tsd_key_destroy(key: NifTSDKey) {
     unsafe { (funcs().tsd_key_destroy)(key) }
 }
 
 /// Sets the thread-specific data for the given key. NIF 1.0 (OTP R13B04). Wraps `enif_tsd_set`.
-pub(crate) unsafe fn tsd_set(key: NifTSDKey, data: *mut c_void) {
+pub unsafe fn tsd_set(key: NifTSDKey, data: *mut c_void) {
     unsafe { (funcs().tsd_set)(key, data) }
 }
 
 /// Gets the thread-specific data for the given key. NIF 1.0 (OTP R13B04). Wraps `enif_tsd_get`.
-pub(crate) unsafe fn tsd_get(key: NifTSDKey) -> *mut c_void {
+pub unsafe fn tsd_get(key: NifTSDKey) -> *mut c_void {
     unsafe { (funcs().tsd_get)(key) }
 }
 
 /// Allocates and initializes a thread options structure. NIF 1.0 (OTP R13B04). Wraps `enif_thread_opts_create`.
-pub(crate) unsafe fn thread_opts_create(name: *mut c_char) -> *mut NifThreadOpts {
+pub unsafe fn thread_opts_create(name: *mut c_char) -> *mut NifThreadOpts {
     unsafe { (funcs().thread_opts_create)(name) }
 }
 
 /// Destroys a thread options structure. NIF 1.0 (OTP R13B04). Wraps `enif_thread_opts_destroy`.
-pub(crate) unsafe fn thread_opts_destroy(opts: *mut NifThreadOpts) {
+pub unsafe fn thread_opts_destroy(opts: *mut NifThreadOpts) {
     unsafe { (funcs().thread_opts_destroy)(opts) }
 }
 
 /// Creates a new thread with the given entry function and arguments. NIF 1.0 (OTP R13B04). Wraps `enif_thread_create`.
-pub(crate) unsafe fn thread_create(
+pub unsafe fn thread_create(
     name: *mut c_char, tid: *mut NifTid,
     func: Option<unsafe extern "C" fn(*mut c_void) -> *mut c_void>,
     args: *mut c_void, opts: *mut NifThreadOpts,
@@ -1781,44 +1781,44 @@ pub(crate) unsafe fn thread_create(
 }
 
 /// Returns the thread identifier of the calling thread. NIF 1.0 (OTP R13B04). Wraps `enif_thread_self`.
-pub(crate) unsafe fn thread_self() -> NifTid {
+pub unsafe fn thread_self() -> NifTid {
     unsafe { (funcs().thread_self)() }
 }
 
 /// Compares two thread identifiers; returns non-zero if they are equal. NIF 1.0 (OTP R13B04). Wraps `enif_equal_tids`.
-pub(crate) unsafe fn equal_tids(tid1: NifTid, tid2: NifTid) -> c_int {
+pub unsafe fn equal_tids(tid1: NifTid, tid2: NifTid) -> c_int {
     unsafe { (funcs().equal_tids)(tid1, tid2) }
 }
 
 /// Terminates the calling thread with the given result. NIF 1.0 (OTP R13B04). Wraps `enif_thread_exit`.
-pub(crate) unsafe fn thread_exit(resp: *mut c_void) {
+pub unsafe fn thread_exit(resp: *mut c_void) {
     unsafe { (funcs().thread_exit)(resp) }
 }
 
 /// Waits for a thread to terminate and retrieves its result. NIF 1.0 (OTP R13B04). Wraps `enif_thread_join`.
-pub(crate) unsafe fn thread_join(tid: NifTid, respp: *mut *mut c_void) -> c_int {
+pub unsafe fn thread_join(tid: NifTid, respp: *mut *mut c_void) -> c_int {
     unsafe { (funcs().thread_join)(tid, respp) }
 }
 
 // NIF 2.14
 
 /// Returns the name of a mutex. NIF 2.14 (OTP 21.0). Wraps `enif_mutex_name`.
-pub(crate) unsafe fn mutex_name(mtx: *mut NifMutex) -> *mut c_char {
+pub unsafe fn mutex_name(mtx: *mut NifMutex) -> *mut c_char {
     unsafe { (funcs().mutex_name)(mtx) }
 }
 
 /// Returns the name of a condition variable. NIF 2.14 (OTP 21.0). Wraps `enif_cond_name`.
-pub(crate) unsafe fn cond_name(cnd: *mut NifCond) -> *mut c_char {
+pub unsafe fn cond_name(cnd: *mut NifCond) -> *mut c_char {
     unsafe { (funcs().cond_name)(cnd) }
 }
 
 /// Returns the name of a read-write lock. NIF 2.14 (OTP 21.0). Wraps `enif_rwlock_name`.
-pub(crate) unsafe fn rwlock_name(rwlck: *mut NifRWLock) -> *mut c_char {
+pub unsafe fn rwlock_name(rwlck: *mut NifRWLock) -> *mut c_char {
     unsafe { (funcs().rwlock_name)(rwlck) }
 }
 
 /// Returns the name of a thread. NIF 2.14 (OTP 21.0). Wraps `enif_thread_name`.
-pub(crate) unsafe fn thread_name(tid: NifTid) -> *mut c_char {
+pub unsafe fn thread_name(tid: NifTid) -> *mut c_char {
     unsafe { (funcs().thread_name)(tid) }
 }
 
@@ -1826,50 +1826,50 @@ pub(crate) unsafe fn thread_name(tid: NifTid) -> *mut c_char {
 // NIF 2.13 (IOQ core), NIF 2.14 (ioq_peek_head)
 
 /// Creates a new I/O queue; `opts` must be `ERL_NIF_IOQ_NORMAL`. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_create`.
-pub(crate) unsafe fn ioq_create(opts: NifIOQueueOpts) -> *mut NifIOQueue {
+pub unsafe fn ioq_create(opts: NifIOQueueOpts) -> *mut NifIOQueue {
     unsafe { (funcs().ioq_create)(opts) }
 }
 
 /// Destroys an I/O queue and frees all of its contents. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_destroy`.
-pub(crate) unsafe fn ioq_destroy(q: *mut NifIOQueue) {
+pub unsafe fn ioq_destroy(q: *mut NifIOQueue) {
     unsafe { (funcs().ioq_destroy)(q) }
 }
 
 /// Enqueues a binary into the I/O queue, skipping the first `skip` bytes; ownership transfers to the queue. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_enq_binary`.
-pub(crate) unsafe fn ioq_enq_binary(
+pub unsafe fn ioq_enq_binary(
     q: *mut NifIOQueue, bin: *mut NifBinary, skip: usize,
 ) -> c_int {
     unsafe { (funcs().ioq_enq_binary)(q, bin, skip) }
 }
 
 /// Enqueues an iovec into the I/O queue, skipping the first `skip` bytes. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_enqv`.
-pub(crate) unsafe fn ioq_enqv(
+pub unsafe fn ioq_enqv(
     q: *mut NifIOQueue, iov: *mut NifIOVec, skip: usize,
 ) -> c_int {
     unsafe { (funcs().ioq_enqv)(q, iov, skip) }
 }
 
 /// Returns the total byte size of the I/O queue. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_size`.
-pub(crate) unsafe fn ioq_size(q: *mut NifIOQueue) -> usize {
+pub unsafe fn ioq_size(q: *mut NifIOQueue) -> usize {
     unsafe { (funcs().ioq_size)(q) }
 }
 
 /// Dequeues `count` bytes from the I/O queue; optionally stores the new size in `*size`. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_deq`.
-pub(crate) unsafe fn ioq_deq(
+pub unsafe fn ioq_deq(
     q: *mut NifIOQueue, count: usize, size: *mut usize,
 ) -> c_int {
     unsafe { (funcs().ioq_deq)(q, count, size) }
 }
 
 /// Returns the I/O queue contents as a `SysIOVec` array suitable for `writev`. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_peek`.
-pub(crate) unsafe fn ioq_peek(
+pub unsafe fn ioq_peek(
     q: *mut NifIOQueue, iovlen: *mut c_int,
 ) -> *mut SysIOVec {
     unsafe { (funcs().ioq_peek)(q, iovlen) }
 }
 
 /// Inspects an iolist or binary term as an iovec, processing up to `max_length` elements. NIF 2.12 (OTP 20.0). Wraps `enif_inspect_iovec`.
-pub(crate) unsafe fn inspect_iovec(
+pub unsafe fn inspect_iovec(
     env: *mut NifEnv, max_length: usize, iovec_term: NifTerm,
     tail: *mut NifTerm, iovec: *mut *mut NifIOVec,
 ) -> c_int {
@@ -1877,12 +1877,12 @@ pub(crate) unsafe fn inspect_iovec(
 }
 
 /// Frees an iovec returned by `inspect_iovec`. NIF 2.12 (OTP 20.0). Wraps `enif_free_iovec`.
-pub(crate) unsafe fn free_iovec(iov: *mut NifIOVec) {
+pub unsafe fn free_iovec(iov: *mut NifIOVec) {
     unsafe { (funcs().free_iovec)(iov) }
 }
 
 /// Gets the head of the I/O queue as a binary term, returning non-zero on success. NIF 2.14 (OTP 21.0). Wraps `enif_ioq_peek_head`.
-pub(crate) unsafe fn ioq_peek_head(
+pub unsafe fn ioq_peek_head(
     env: *mut NifEnv, q: *mut NifIOQueue, size: *mut usize, head: *mut NifTerm,
 ) -> c_int {
     unsafe { (funcs().ioq_peek_head)(env, q, size, head) }
@@ -1893,7 +1893,7 @@ pub(crate) unsafe fn ioq_peek_head(
 // ===========================================================================
 
 /// Extended select with custom message support. NIF 2.15 (OTP 22.0). Wraps `enif_select_x`.
-pub(crate) unsafe fn select_x(
+pub unsafe fn select_x(
     env: *mut NifEnv, e: NifEvent, flags: NifSelectFlags, obj: *mut c_void,
     pid: *const NifPid, msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
@@ -1901,30 +1901,30 @@ pub(crate) unsafe fn select_x(
 }
 
 /// Creates a term from a monitor for use in Erlang code. NIF 2.15 (OTP 22.0). Wraps `enif_make_monitor_term`.
-pub(crate) unsafe fn make_monitor_term(
+pub unsafe fn make_monitor_term(
     env: *mut NifEnv, monitor: *const NifMonitor,
 ) -> NifTerm {
     unsafe { (funcs().make_monitor_term)(env, monitor) }
 }
 
 /// Sets a pid variable to undefined, for use as a sentinel value. NIF 2.15 (OTP 22.0). Wraps `enif_set_pid_undefined`.
-pub(crate) unsafe fn set_pid_undefined(pid: *mut NifPid) {
+pub unsafe fn set_pid_undefined(pid: *mut NifPid) {
     unsafe { (funcs().set_pid_undefined)(pid) }
 }
 
 /// Returns non-zero if the pid was set to undefined with `set_pid_undefined`. NIF 2.15 (OTP 22.0). Wraps `enif_is_pid_undefined`.
-pub(crate) unsafe fn is_pid_undefined(pid: *const NifPid) -> c_int {
+pub unsafe fn is_pid_undefined(pid: *const NifPid) -> c_int {
     unsafe { (funcs().is_pid_undefined)(pid) }
 }
 
 /// Returns the type of a term as a `NifTermType` enum value. NIF 2.15 (OTP 22.0). Wraps `enif_term_type`.
-pub(crate) unsafe fn term_type(env: *mut NifEnv, term: NifTerm) -> NifTermType {
+pub unsafe fn term_type(env: *mut NifEnv, term: NifTerm) -> NifTermType {
     unsafe { (funcs().term_type)(env, term) }
 }
 
 /// Registers for async read notifications with a custom message. NIF 2.15 (OTP 22.0). Macro equivalent of `enif_select_read`.
 // Implementation note: calls select_x with SELECT_READ | SELECT_CUSTOM_MSG.
-pub(crate) unsafe fn select_read(
+pub unsafe fn select_read(
     env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const NifPid,
     msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
@@ -1933,7 +1933,7 @@ pub(crate) unsafe fn select_read(
 
 /// Registers for async write notifications with a custom message. NIF 2.15 (OTP 22.0). Macro equivalent of `enif_select_write`.
 // Implementation note: calls select_x with SELECT_WRITE | SELECT_CUSTOM_MSG.
-pub(crate) unsafe fn select_write(
+pub unsafe fn select_write(
     env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const NifPid,
     msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
@@ -1945,7 +1945,7 @@ pub(crate) unsafe fn select_write(
 // ===========================================================================
 
 /// Opens or takes over a resource type with versioned init struct. NIF 2.16 (OTP 24.0). Wraps `enif_init_resource_type`.
-pub(crate) unsafe fn init_resource_type(
+pub unsafe fn init_resource_type(
     env: *mut NifEnv, name_str: *const c_char, init: *const NifResourceTypeInit,
     flags: NifResourceFlags, tried: *mut NifResourceFlags,
 ) -> *mut NifResourceType {
@@ -1953,7 +1953,7 @@ pub(crate) unsafe fn init_resource_type(
 }
 
 /// Calls a resource type's dynamic callback across NIF modules. NIF 2.16 (OTP 24.0). Wraps `enif_dynamic_resource_call`.
-pub(crate) unsafe fn dynamic_resource_call(
+pub unsafe fn dynamic_resource_call(
     env: *mut NifEnv, mod_term: NifTerm, name_term: NifTerm, rsrc: NifTerm,
     call_data: *mut c_void,
 ) -> c_int {
@@ -1962,7 +1962,7 @@ pub(crate) unsafe fn dynamic_resource_call(
 
 /// Registers for async error notifications with a custom message. NIF 2.16 (OTP 24.0). Macro equivalent of `enif_select_error`.
 // Implementation note: calls select_x with SELECT_ERROR | SELECT_CUSTOM_MSG.
-pub(crate) unsafe fn select_error(
+pub unsafe fn select_error(
     env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const NifPid,
     msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
@@ -1974,14 +1974,14 @@ pub(crate) unsafe fn select_error(
 // ===========================================================================
 
 /// Gets the length (in bytes) of a string list without extracting it. NIF 2.17 (OTP 26.0). Wraps `enif_get_string_length`.
-pub(crate) unsafe fn get_string_length(
+pub unsafe fn get_string_length(
     env: *mut NifEnv, list: NifTerm, len: *mut c_uint, encoding: NifCharEncoding,
 ) -> c_int {
     unsafe { (funcs().get_string_length)(env, list, len, encoding) }
 }
 
 /// Creates an atom from a NUL-terminated string, failing if the atom does not already exist and the table is full. NIF 2.17 (OTP 26.0). Wraps `enif_make_new_atom`.
-pub(crate) unsafe fn make_new_atom(
+pub unsafe fn make_new_atom(
     env: *mut NifEnv, name: *const c_char, atom: *mut NifTerm,
     encoding: NifCharEncoding,
 ) -> c_int {
@@ -1989,7 +1989,7 @@ pub(crate) unsafe fn make_new_atom(
 }
 
 /// Creates an atom from a string with explicit length, failing if the atom does not already exist and the table is full. NIF 2.17 (OTP 26.0). Wraps `enif_make_new_atom_len`.
-pub(crate) unsafe fn make_new_atom_len(
+pub unsafe fn make_new_atom_len(
     env: *mut NifEnv, name: *const c_char, len: usize, atom: *mut NifTerm,
     encoding: NifCharEncoding,
 ) -> c_int {
@@ -2002,13 +2002,13 @@ pub(crate) unsafe fn make_new_atom_len(
 
 /// Returns the number of words used on the heap by the term. NIF 2.18 (OTP 29.0). Wraps `enif_term_size`.
 #[cfg(feature = "nif_2_18")]
-pub(crate) unsafe fn term_size(term: NifTerm) -> usize {
+pub unsafe fn term_size(term: NifTerm) -> usize {
     unsafe { (funcs().term_size)(term) }
 }
 
 /// Gets the atom cache index for an atom term. NIF 2.18 (OTP 29.0). Wraps `enif_get_atom_cache_index`.
 #[cfg(feature = "nif_2_18")]
-pub(crate) unsafe fn get_atom_cache_index(
+pub unsafe fn get_atom_cache_index(
     env: *mut NifEnv, atom: NifTerm, index: *mut c_uint,
 ) -> c_int {
     unsafe { (funcs().get_atom_cache_index)(env, atom, index) }
@@ -2016,6 +2016,6 @@ pub(crate) unsafe fn get_atom_cache_index(
 
 /// Returns the maximum atom cache index currently in use. NIF 2.18 (OTP 29.0). Wraps `enif_max_atom_cache_index`.
 #[cfg(feature = "nif_2_18")]
-pub(crate) unsafe fn max_atom_cache_index() -> c_uint {
+pub unsafe fn max_atom_cache_index() -> c_uint {
     unsafe { (funcs().max_atom_cache_index)() }
 }

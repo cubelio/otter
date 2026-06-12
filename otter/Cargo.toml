@@ -18,6 +18,8 @@ trybuild = "1"
 
 [features]
 nif_2_18 = []
+# Expose the raw, 1:1, all-unsafe `enif` module as a public escape hatch.
+raw = []
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
