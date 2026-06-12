@@ -5,7 +5,6 @@ use std::marker::PhantomData;
 use crate::sys::{NifEnv, NifPid};
 use crate::term::TypedTerm;
 use crate::types::Pid;
-use crate::wrapper;
 
 // ---------------------------------------------------------------------------
 // EnvKind
@@ -108,7 +107,7 @@ unsafe impl Send for OwnedEnv {}
 impl OwnedEnv {
     /// Allocate a new process-independent environment.
     pub fn new() -> OwnedEnv {
-        let env = unsafe { wrapper::env::alloc_env() };
+        let env = unsafe { crate::enif::alloc_env() };
         assert!(!env.is_null(), "enif_alloc_env returned null");
         OwnedEnv { env }
     }
@@ -141,7 +140,7 @@ impl OwnedEnv {
         let nif_pid = NifPid { pid: pid.term };
         // null caller_env = sending from outside a NIF call / scheduler thread.
         let ok = unsafe {
-            wrapper::env::send(std::ptr::null_mut(), &nif_pid, self.env, term)
+            crate::enif::send(std::ptr::null_mut(), &nif_pid, self.env, term) != 0
         };
         // enif_send always invalidates msg_env; clear our state to match.
         self.clear();
@@ -155,7 +154,7 @@ impl OwnedEnv {
     ///
     /// [`send`]: OwnedEnv::send
     pub fn clear(&mut self) {
-        unsafe { wrapper::env::clear_env(self.env) };
+        unsafe { crate::enif::clear_env(self.env) };
     }
 }
 
@@ -167,6 +166,6 @@ impl Default for OwnedEnv {
 
 impl Drop for OwnedEnv {
     fn drop(&mut self) {
-        unsafe { wrapper::env::free_env(self.env) };
+        unsafe { crate::enif::free_env(self.env) };
     }
 }
