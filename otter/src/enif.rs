@@ -88,6 +88,9 @@ pub(crate) struct EnifFunctions {
     pub make_double:        unsafe extern "C" fn(*mut NifEnv, f64) -> NifTerm,
     pub make_atom:          unsafe extern "C" fn(*mut NifEnv, *const c_char) -> NifTerm,
     pub make_existing_atom: unsafe extern "C" fn(*mut NifEnv, *const c_char, *mut NifTerm, NifCharEncoding) -> c_int,
+    // Variadic; the make_tupleN/make_listN shims call these with N args, mirroring the C macros.
+    pub make_tuple:         unsafe extern "C" fn(*mut NifEnv, c_uint, ...) -> NifTerm,
+    pub make_list:          unsafe extern "C" fn(*mut NifEnv, c_uint, ...) -> NifTerm,
     pub make_list_cell:     unsafe extern "C" fn(*mut NifEnv, NifTerm, NifTerm) -> NifTerm,
     pub make_string:        unsafe extern "C" fn(*mut NifEnv, *const c_char, NifCharEncoding) -> NifTerm,
     pub make_ref:           unsafe extern "C" fn(*mut NifEnv) -> NifTerm,
@@ -359,7 +362,7 @@ pub(crate) struct EnifFunctions {
     pub make_new_atom_len: unsafe extern "C" fn(
         *mut NifEnv, *const c_char, usize, *mut NifTerm, NifCharEncoding,
     ) -> c_int,
-    pub set_option:         *mut c_void, // variadic — transmuted per option variant
+    pub set_option:         unsafe extern "C" fn(*mut NifEnv, NifOption, ...) -> c_int,
 
     // =====================================================================
     // NIF 2.18 (OTP 29.0)
@@ -525,11 +528,13 @@ pub(crate) unsafe fn init() -> Result<(), &'static str> {
                 get_list_length:    load(b"enif_get_list_length\0")?,
                 make_list_cell:     load(b"enif_make_list_cell\0")?,
                 make_list_from_array: load(b"enif_make_list_from_array\0")?,
+                make_list:          load(b"enif_make_list\0")?,
                 make_reverse_list:  load(b"enif_make_reverse_list\0")?,
 
                 // Tuple
                 get_tuple:          load(b"enif_get_tuple\0")?,
                 make_tuple_from_array: load(b"enif_make_tuple_from_array\0")?,
+                make_tuple:         load(b"enif_make_tuple\0")?,
 
                 // String
                 make_string:        load(b"enif_make_string\0")?,
@@ -696,7 +701,7 @@ pub(crate) unsafe fn init() -> Result<(), &'static str> {
                 get_string_length:  load(b"enif_get_string_length\0")?,
                 make_new_atom:      load(b"enif_make_new_atom\0")?,
                 make_new_atom_len:  load(b"enif_make_new_atom_len\0")?,
-                set_option:         load_raw(b"enif_set_option\0")?,
+                set_option:         load(b"enif_set_option\0")?,
 
                 // NIF 2.18
                 #[cfg(feature = "nif_2_18")]
@@ -1043,77 +1048,68 @@ pub unsafe fn make_reverse_list(
 
 // Macro equivalents: enif_make_list1..9 → make_list_from_array
 
-/// Creates an ordinary list term with 1 element. Convenience wrapper around `make_list_from_array`.
+/// Creates an ordinary list term with 1 element. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
 pub unsafe fn make_list1(env: *mut NifEnv, e1: NifTerm) -> NifTerm {
-    let arr = [e1];
-    unsafe { make_list_from_array(env, arr.as_ptr(), 1) }
+    unsafe { (funcs().make_list)(env, 1, e1) }
 }
 
-/// Creates an ordinary list term with 2 elements. Convenience wrapper around `make_list_from_array`.
+/// Creates an ordinary list term with 2 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
 pub unsafe fn make_list2(env: *mut NifEnv, e1: NifTerm, e2: NifTerm) -> NifTerm {
-    let arr = [e1, e2];
-    unsafe { make_list_from_array(env, arr.as_ptr(), 2) }
+    unsafe { (funcs().make_list)(env, 2, e1, e2) }
 }
 
-/// Creates an ordinary list term with 3 elements. Convenience wrapper around `make_list_from_array`.
+/// Creates an ordinary list term with 3 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
 pub unsafe fn make_list3(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3];
-    unsafe { make_list_from_array(env, arr.as_ptr(), 3) }
+    unsafe { (funcs().make_list)(env, 3, e1, e2, e3) }
 }
 
-/// Creates an ordinary list term with 4 elements. Convenience wrapper around `make_list_from_array`.
+/// Creates an ordinary list term with 4 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
 pub unsafe fn make_list4(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4];
-    unsafe { make_list_from_array(env, arr.as_ptr(), 4) }
+    unsafe { (funcs().make_list)(env, 4, e1, e2, e3, e4) }
 }
 
-/// Creates an ordinary list term with 5 elements. Convenience wrapper around `make_list_from_array`.
+/// Creates an ordinary list term with 5 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
 pub unsafe fn make_list5(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4, e5];
-    unsafe { make_list_from_array(env, arr.as_ptr(), 5) }
+    unsafe { (funcs().make_list)(env, 5, e1, e2, e3, e4, e5) }
 }
 
-/// Creates an ordinary list term with 6 elements. Convenience wrapper around `make_list_from_array`.
+/// Creates an ordinary list term with 6 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
 pub unsafe fn make_list6(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4, e5, e6];
-    unsafe { make_list_from_array(env, arr.as_ptr(), 6) }
+    unsafe { (funcs().make_list)(env, 6, e1, e2, e3, e4, e5, e6) }
 }
 
-/// Creates an ordinary list term with 7 elements. Convenience wrapper around `make_list_from_array`.
+/// Creates an ordinary list term with 7 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
 pub unsafe fn make_list7(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4, e5, e6, e7];
-    unsafe { make_list_from_array(env, arr.as_ptr(), 7) }
+    unsafe { (funcs().make_list)(env, 7, e1, e2, e3, e4, e5, e6, e7) }
 }
 
-/// Creates an ordinary list term with 8 elements. Convenience wrapper around `make_list_from_array`.
+/// Creates an ordinary list term with 8 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
 pub unsafe fn make_list8(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4, e5, e6, e7, e8];
-    unsafe { make_list_from_array(env, arr.as_ptr(), 8) }
+    unsafe { (funcs().make_list)(env, 8, e1, e2, e3, e4, e5, e6, e7, e8) }
 }
 
-/// Creates an ordinary list term with 9 elements. Convenience wrapper around `make_list_from_array`.
+/// Creates an ordinary list term with 9 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
 pub unsafe fn make_list9(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm, e9: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4, e5, e6, e7, e8, e9];
-    unsafe { make_list_from_array(env, arr.as_ptr(), 9) }
+    unsafe { (funcs().make_list)(env, 9, e1, e2, e3, e4, e5, e6, e7, e8, e9) }
 }
 
 // -- Tuple ----------------------------------------------------------------
@@ -1132,79 +1128,70 @@ pub unsafe fn make_tuple_from_array(
     unsafe { (funcs().make_tuple_from_array)(env, arr, cnt) }
 }
 
-// Macro equivalents: enif_make_tuple1..9 → make_tuple_from_array
+// Macro equivalents: enif_make_tuple1..9 → enif_make_tuple (variadic)
 
-/// Creates a tuple term with 1 element. Convenience wrapper around `make_tuple_from_array`.
+/// Creates a tuple term with 1 element. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
 pub unsafe fn make_tuple1(env: *mut NifEnv, e1: NifTerm) -> NifTerm {
-    let arr = [e1];
-    unsafe { make_tuple_from_array(env, arr.as_ptr(), 1) }
+    unsafe { (funcs().make_tuple)(env, 1, e1) }
 }
 
-/// Creates a tuple term with 2 elements. Convenience wrapper around `make_tuple_from_array`.
+/// Creates a tuple term with 2 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
 pub unsafe fn make_tuple2(env: *mut NifEnv, e1: NifTerm, e2: NifTerm) -> NifTerm {
-    let arr = [e1, e2];
-    unsafe { make_tuple_from_array(env, arr.as_ptr(), 2) }
+    unsafe { (funcs().make_tuple)(env, 2, e1, e2) }
 }
 
-/// Creates a tuple term with 3 elements. Convenience wrapper around `make_tuple_from_array`.
+/// Creates a tuple term with 3 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
 pub unsafe fn make_tuple3(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3];
-    unsafe { make_tuple_from_array(env, arr.as_ptr(), 3) }
+    unsafe { (funcs().make_tuple)(env, 3, e1, e2, e3) }
 }
 
-/// Creates a tuple term with 4 elements. Convenience wrapper around `make_tuple_from_array`.
+/// Creates a tuple term with 4 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
 pub unsafe fn make_tuple4(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4];
-    unsafe { make_tuple_from_array(env, arr.as_ptr(), 4) }
+    unsafe { (funcs().make_tuple)(env, 4, e1, e2, e3, e4) }
 }
 
-/// Creates a tuple term with 5 elements. Convenience wrapper around `make_tuple_from_array`.
+/// Creates a tuple term with 5 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
 pub unsafe fn make_tuple5(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4, e5];
-    unsafe { make_tuple_from_array(env, arr.as_ptr(), 5) }
+    unsafe { (funcs().make_tuple)(env, 5, e1, e2, e3, e4, e5) }
 }
 
-/// Creates a tuple term with 6 elements. Convenience wrapper around `make_tuple_from_array`.
+/// Creates a tuple term with 6 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
 pub unsafe fn make_tuple6(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4, e5, e6];
-    unsafe { make_tuple_from_array(env, arr.as_ptr(), 6) }
+    unsafe { (funcs().make_tuple)(env, 6, e1, e2, e3, e4, e5, e6) }
 }
 
-/// Creates a tuple term with 7 elements. Convenience wrapper around `make_tuple_from_array`.
+/// Creates a tuple term with 7 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
 pub unsafe fn make_tuple7(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4, e5, e6, e7];
-    unsafe { make_tuple_from_array(env, arr.as_ptr(), 7) }
+    unsafe { (funcs().make_tuple)(env, 7, e1, e2, e3, e4, e5, e6, e7) }
 }
 
-/// Creates a tuple term with 8 elements. Convenience wrapper around `make_tuple_from_array`.
+/// Creates a tuple term with 8 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
 pub unsafe fn make_tuple8(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4, e5, e6, e7, e8];
-    unsafe { make_tuple_from_array(env, arr.as_ptr(), 8) }
+    unsafe { (funcs().make_tuple)(env, 8, e1, e2, e3, e4, e5, e6, e7, e8) }
 }
 
-/// Creates a tuple term with 9 elements. Convenience wrapper around `make_tuple_from_array`.
+/// Creates a tuple term with 9 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
 pub unsafe fn make_tuple9(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm, e9: NifTerm,
 ) -> NifTerm {
-    let arr = [e1, e2, e3, e4, e5, e6, e7, e8, e9];
-    unsafe { make_tuple_from_array(env, arr.as_ptr(), 9) }
+    unsafe { (funcs().make_tuple)(env, 9, e1, e2, e3, e4, e5, e6, e7, e8, e9) }
 }
 
 // -- String ---------------------------------------------------------------
@@ -1631,17 +1618,15 @@ pub unsafe fn thread_type() -> c_int {
 
 // -- Set option -----------------------------------------------------------
 //
-// `enif_set_option` is C-variadic; it cannot be bound as one Rust fn. The
-// faithful binding is one monomorphic shim per option, each transmuting the
-// type-erased `funcs().set_option` pointer to that option's concrete signature.
-// All return the raw `c_int` (0 on success); callers interpret it.
+// `enif_set_option` is C-variadic. `funcs().set_option` is bound as a variadic
+// fn pointer, so each option's shim just calls it with that option's trailing
+// args — the compiler emits a correct variadic call (no transmute). All return
+// the raw `c_int` (0 on success); callers interpret it.
 
 /// Enable the delay-halt option. `ERL_NIF_OPT_DELAY_HALT` takes no third
-/// argument, so the transmuted signature is two-arg. NIF 2.17 (OTP 26).
+/// argument. NIF 2.17 (OTP 26).
 pub unsafe fn set_option_delay_halt(env: *mut NifEnv) -> c_int {
-    type F = unsafe extern "C" fn(*mut NifEnv, NifOption) -> c_int;
-    let f: F = unsafe { std::mem::transmute(funcs().set_option) };
-    unsafe { f(env, NifOption::DelayHalt) }
+    unsafe { (funcs().set_option)(env, NifOption::DelayHalt) }
 }
 
 /// Set the on-halt callback. NIF 2.17 (OTP 26).
@@ -1649,9 +1634,7 @@ pub unsafe fn set_option_on_halt(
     env: *mut NifEnv,
     callback: unsafe extern "C" fn(*mut c_void),
 ) -> c_int {
-    type F = unsafe extern "C" fn(*mut NifEnv, NifOption, unsafe extern "C" fn(*mut c_void)) -> c_int;
-    let f: F = unsafe { std::mem::transmute(funcs().set_option) };
-    unsafe { f(env, NifOption::OnHalt, callback) }
+    unsafe { (funcs().set_option)(env, NifOption::OnHalt, callback) }
 }
 
 /// Set the on-unload-thread callback. NIF 2.17 (OTP 26).
@@ -1659,9 +1642,7 @@ pub unsafe fn set_option_on_unload_thread(
     env: *mut NifEnv,
     callback: unsafe extern "C" fn(*mut c_void),
 ) -> c_int {
-    type F = unsafe extern "C" fn(*mut NifEnv, NifOption, unsafe extern "C" fn(*mut c_void)) -> c_int;
-    let f: F = unsafe { std::mem::transmute(funcs().set_option) };
-    unsafe { f(env, NifOption::OnUnloadThread, callback) }
+    unsafe { (funcs().set_option)(env, NifOption::OnUnloadThread, callback) }
 }
 
 // -- Dynamic loading ------------------------------------------------------
