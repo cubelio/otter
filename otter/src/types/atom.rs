@@ -1,8 +1,9 @@
+use std::ffi::{c_char, c_uint};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
+use crate::sys::{NifCharEncoding, NifTerm};
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang atom.
@@ -39,10 +40,7 @@ impl Atom {
     ///
     /// Wraps `enif_make_atom_len`.
     pub fn intern(env: Env<'_>, name: &str) -> Option<Atom> {
-        let term = unsafe {
-            crate::wrapper::atom::make_atom(env.as_ptr(), name.as_bytes())
-        }?;
-        Some(Atom { term })
+        env.make_atom(name)
     }
 
     /// Look up an existing atom by name without creating it.
@@ -52,10 +50,7 @@ impl Atom {
     /// untrusted input — `None` means "not a known name, reject."
     /// Wraps `enif_make_existing_atom_len`.
     pub fn try_existing(env: Env<'_>, name: &str) -> Option<Atom> {
-        let term = unsafe {
-            crate::wrapper::atom::make_existing_atom(env.as_ptr(), name.as_bytes())
-        }?;
-        Some(Atom { term })
+        env.make_existing_atom(name)
     }
 
     pub(crate) fn from_raw(term: NifTerm) -> Atom {
@@ -67,11 +62,8 @@ impl Atom {
     /// Infallible: we request `ERL_NIF_UTF8` from `enif_get_atom`, so the BEAM
     /// encodes the name as UTF-8 for us.
     pub fn name(self, env: Env<'_>) -> String {
-        let mut buf = Vec::new();
-        unsafe { crate::wrapper::atom::get_atom_into(env.as_ptr(), self.term, &mut buf) }
-            .expect("enif_get_atom failed for a validated Atom");
-        // SAFETY: BEAM guarantees UTF-8 when requested with NifCharEncoding::Utf8
-        unsafe { String::from_utf8_unchecked(buf) }
+        env.atom_name(self)
+            .expect("enif_get_atom failed for a validated Atom")
     }
 }
 
@@ -173,6 +165,74 @@ impl<'a> Env<'a> {
     /// Returns `true` if `term` is an atom (`enif_is_atom`).
     pub fn is_atom(self, term: impl AsNifTerm<'a>) -> bool {
         unsafe { crate::enif::is_atom(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+
+    /// Create (or intern) an atom from a string (`enif_make_new_atom_len`).
+    ///
+    /// Returns `None` if the atom table is full. See [`Atom::intern`] for the
+    /// atom-table-exhaustion warning — never call this on untrusted input.
+    pub fn make_atom(self, name: &str) -> Option<Atom> {
+        let mut term: NifTerm = 0;
+        let ok = unsafe {
+            crate::enif::make_new_atom_len(
+                self.as_ptr(),
+                name.as_ptr() as *const c_char,
+                name.len(),
+                &mut term,
+                NifCharEncoding::Utf8,
+            )
+        };
+        if ok != 0 { Some(Atom { term }) } else { None }
+    }
+
+    /// Look up an existing atom by name without creating it
+    /// (`enif_make_existing_atom_len`). `None` if no such atom exists.
+    pub fn make_existing_atom(self, name: &str) -> Option<Atom> {
+        let mut term: NifTerm = 0;
+        let ok = unsafe {
+            crate::enif::make_existing_atom_len(
+                self.as_ptr(),
+                name.as_ptr() as *const c_char,
+                name.len(),
+                &mut term,
+                NifCharEncoding::Utf8,
+            )
+        };
+        if ok != 0 { Some(Atom { term }) } else { None }
+    }
+
+    /// The atom's UTF-8 name as a `String` (`enif_get_atom_length` +
+    /// `enif_get_atom`). `None` if `atom` is not an atom.
+    pub fn atom_name(self, atom: Atom) -> Option<String> {
+        let mut len: c_uint = 0;
+        let ok = unsafe {
+            crate::enif::get_atom_length(
+                self.as_ptr(),
+                atom.term,
+                &mut len,
+                NifCharEncoding::Utf8,
+            )
+        };
+        if ok == 0 {
+            return None;
+        }
+        let mut buf = vec![0u8; len as usize + 1];
+        let written = unsafe {
+            crate::enif::get_atom(
+                self.as_ptr(),
+                atom.term,
+                buf.as_mut_ptr() as *mut c_char,
+                buf.len() as c_uint,
+                NifCharEncoding::Utf8,
+            )
+        };
+        if written > 0 {
+            buf.truncate((written - 1) as usize); // strip null terminator
+            // SAFETY: BEAM guarantees UTF-8 when requested with Utf8 encoding.
+            Some(unsafe { String::from_utf8_unchecked(buf) })
+        } else {
+            None
+        }
     }
 }
 

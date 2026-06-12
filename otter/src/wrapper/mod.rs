@@ -7,7 +7,6 @@
 //! All public items in this module and its submodules are `pub(crate)`.
 //! Nothing here is part of the public otter API.
 
-pub(crate) mod atom;
 pub(crate) mod binary;
 pub(crate) mod env;
 pub(crate) mod exception;
