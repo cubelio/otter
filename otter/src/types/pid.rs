@@ -15,17 +15,14 @@ pub struct Pid {
 impl Pid {
     /// Return the pid of the calling process.
     pub fn self_(env: Env<'_>) -> Pid {
-        let mut nif_pid = NifPid { pid: 0 };
-        unsafe { crate::wrapper::pid::self_pid(env.as_ptr(), &mut nif_pid) };
-        Pid { term: nif_pid.pid }
+        env.self_pid()
     }
 
     /// Check if the process identified by this pid is alive.
     ///
     /// Wraps `enif_is_process_alive`.
     pub fn is_alive(self, env: Env<'_>) -> bool {
-        let mut nif_pid = NifPid { pid: self.term };
-        unsafe { crate::wrapper::pid::is_process_alive(env.as_ptr(), &mut nif_pid) }
+        env.is_process_alive(NifPid { pid: self.term })
     }
 
     /// Look up a process by its registered name.
@@ -33,23 +30,13 @@ impl Pid {
     /// Returns `None` if no process is registered under `name`.
     /// Wraps `enif_whereis_pid`.
     pub fn whereis(env: Env<'_>, name: crate::types::Atom) -> Option<Pid> {
-        let mut nif_pid = NifPid { pid: 0 };
-        if unsafe { crate::wrapper::pid::whereis_pid(env.as_ptr(), name.term, &mut nif_pid) } {
-            Some(Pid { term: nif_pid.pid })
-        } else {
-            None
-        }
+        env.whereis_pid(name)
     }
 
     /// Convert to a `NifPid` for use with lower-level NIF operations (e.g.
     /// `enif_send`). Returns `None` for distributed (non-local) pids.
     pub fn as_nif_pid(self, env: Env<'_>) -> Option<NifPid> {
-        let mut nif_pid = NifPid { pid: 0 };
-        if unsafe { crate::wrapper::pid::get_local_pid(env.as_ptr(), self.term, &mut nif_pid) } {
-            Some(nif_pid)
-        } else {
-            None
-        }
+        env.get_local_pid(self)
     }
 }
 
@@ -91,6 +78,42 @@ impl<'a> Env<'a> {
     /// Returns `true` if `term` is a pid (`enif_is_pid`).
     pub fn is_pid(self, term: impl AsNifTerm<'a>) -> bool {
         unsafe { crate::enif::is_pid(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+
+    /// The pid of the calling process (`enif_self`).
+    pub fn self_pid(self) -> Pid {
+        let mut out = NifPid { pid: 0 };
+        unsafe { crate::enif::self_(self.as_ptr(), &mut out) };
+        Pid { term: out.pid }
+    }
+
+    /// Decode a term into a local `NifPid` (`enif_get_local_pid`).
+    /// `None` if `term` is not a local pid.
+    pub fn get_local_pid(self, term: impl AsNifTerm<'a>) -> Option<NifPid> {
+        let mut out = NifPid { pid: 0 };
+        if unsafe { crate::enif::get_local_pid(self.as_ptr(), term.as_nif_term(), &mut out) != 0 } {
+            Some(out)
+        } else {
+            None
+        }
+    }
+
+    /// Whether the process identified by `pid` is alive
+    /// (`enif_is_process_alive`).
+    pub fn is_process_alive(self, pid: NifPid) -> bool {
+        let mut pid = pid;
+        unsafe { crate::enif::is_process_alive(self.as_ptr(), &mut pid) != 0 }
+    }
+
+    /// Look up a process by its registered name (`enif_whereis_pid`).
+    /// `None` if no process is registered under `name`.
+    pub fn whereis_pid(self, name: impl AsNifTerm<'a>) -> Option<Pid> {
+        let mut out = NifPid { pid: 0 };
+        if unsafe { crate::enif::whereis_pid(self.as_ptr(), name.as_nif_term(), &mut out) != 0 } {
+            Some(Pid { term: out.pid })
+        } else {
+            None
+        }
     }
 }
 

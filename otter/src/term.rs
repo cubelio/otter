@@ -423,7 +423,7 @@ impl<'a> Env<'a> {
     /// Returns `true` if the process that invoked this NIF is still alive.
     /// Wraps `enif_is_current_process_alive`.
     pub fn is_current_process_alive(self) -> bool {
-        unsafe { wrapper::pid::is_current_process_alive(self.as_ptr()) }
+        unsafe { crate::enif::is_current_process_alive(self.as_ptr()) != 0 }
     }
 
     /// Raise an exception with the given reason term.

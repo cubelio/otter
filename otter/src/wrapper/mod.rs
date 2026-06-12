@@ -10,7 +10,6 @@
 pub(crate) mod env;
 pub(crate) mod map;
 pub(crate) mod monitor;
-pub(crate) mod pid;
 pub(crate) mod port;
 pub(crate) mod resource;
 pub(crate) mod select;
