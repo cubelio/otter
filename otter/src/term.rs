@@ -435,7 +435,7 @@ impl<'a> Env<'a> {
     /// Wraps `enif_raise_exception`.
     pub fn raise(self, reason: impl AsNifTerm<'a>) -> Term<'a> {
         let raw =
-            unsafe { wrapper::exception::raise_exception(self.as_ptr(), reason.as_nif_term()) };
+            unsafe { crate::enif::raise_exception(self.as_ptr(), reason.as_nif_term()) };
         Term::new(self, raw)
     }
 
@@ -445,7 +445,7 @@ impl<'a> Env<'a> {
     /// `.as_raw()`. It is **not** a valid term — do not inspect or resolve it.
     /// Wraps `enif_make_badarg`.
     pub fn raise_badarg(self) -> Term<'a> {
-        let raw = unsafe { wrapper::exception::make_badarg(self.as_ptr()) };
+        let raw = unsafe { crate::enif::make_badarg(self.as_ptr()) };
         Term::new(self, raw)
     }
 
@@ -477,7 +477,7 @@ impl<'a> Env<'a> {
         argv: *const crate::sys::NifTerm,
     ) -> TypedTerm<'a> {
         let raw = unsafe {
-            wrapper::schedule::schedule_nif(
+            crate::enif::schedule_nif(
                 self.as_ptr(),
                 fun_name.as_ptr(),
                 flags,
