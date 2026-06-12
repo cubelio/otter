@@ -159,7 +159,7 @@ With an optional load callback:
 ```rust
 fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);  // initialize pre-declared atoms
-    otter::resource::register_resource_type::<MyResource>(env, "my_resource");
+    otter::resource::register_resource_type::<MyResource>(env);
     true
 }
 
@@ -668,7 +668,7 @@ Registration must happen in the load callback:
 
 ```rust
 fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::resource::register_resource_type::<MyState>(env, "my_state");
+    otter::resource::register_resource_type::<MyState>(env);
     true
 }
 

@@ -324,7 +324,7 @@ impl Resource for MyResource {
 }
 
 fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::resource::register_resource_type::<MyResource>(env, "my_resource");
+    otter::resource::register_resource_type::<MyResource>(env);
     true
 }
 

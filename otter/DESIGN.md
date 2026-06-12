@@ -348,7 +348,7 @@ Wraps `NifMonitor`. Implements `PartialEq`/`Eq` via `enif_compare_monitors`. Has
 
 ### Registration
 
-Explicit. `register_resource_type::<T>(env, name)` must be called from the load callback (`EnvKind::Init`). Panics if called from wrong context or called twice.
+Explicit. `register_resource_type::<T>(env)` must be called from the load callback (`EnvKind::Init`). The BEAM-side resource type identifier is derived from `std::any::type_name::<T>()` (the fully-qualified Rust type path), guaranteeing uniqueness within the per-NIF-library resource type table. For backward-compatibility with an existing external identifier use `register_resource_type_named::<T>(env, name)`. Panics if called from wrong context or called twice.
 
 ### `dynamic_resource_call`
 

@@ -174,11 +174,13 @@ Applied to `impl Resource for T`. Currently a pass-through that validates the im
 
 **Registration is not automatic.** The user explicitly registers each resource
 type in their `init!` load callback, by calling the free function
-`otter::resource::register_resource_type::<T>(env, name)`:
+`otter::resource::register_resource_type::<T>(env)`. The identifier is derived
+from `std::any::type_name::<T>()`, or pass an explicit string via
+`register_resource_type_named::<T>(env, name)`:
 
 ```rust
 fn on_load(env: Env<'_>, _load_info: Term<'_>) -> bool {
-    otter::resource::register_resource_type::<MyResource>(env, "MyResource");
+    otter::resource::register_resource_type::<MyResource>(env);
     true
 }
 ```

@@ -72,7 +72,7 @@ impl Eq for Monitor {}
 ///
 /// ```ignore
 /// fn load(env: Env<'_>) {
-///     otter::resource::register_resource_type::<MyType>(env, "MyType");
+///     otter::resource::register_resource_type::<MyType>(env);
 /// }
 /// ```
 ///
@@ -165,14 +165,46 @@ unsafe extern "C" fn down_callback<T: Resource>(
 // Registration
 // ---------------------------------------------------------------------------
 
-/// Register resource type `T` with the BEAM.
+/// Register resource type `T` with the BEAM, using the fully-qualified Rust
+/// type path as the identifier.
 ///
 /// Must be called exactly once per type, from the NIF load callback (an
 /// `EnvKind::Init` env). Panics if registration fails or is called twice.
 ///
 /// Must be called from the NIF load callback before any `ResourceArc<T>` is
 /// constructed or decoded. Panics if called outside of the load callback.
-pub fn register_resource_type<T: Resource>(env: Env<'_>, name: &str) {
+///
+/// The identifier is `std::any::type_name::<T>()`, e.g.
+/// `"my_crate::nifs::HashMapResource"`. This guarantees uniqueness within a
+/// single NIF library (BEAM's resource type table is per-library), since
+/// rustc's `type_name` for distinct types produces distinct strings in
+/// practice. For backward compatibility with an existing resource type
+/// identifier (or any case where the auto-derived string would be wrong),
+/// use [`register_resource_type_named`].
+///
+// NOTE: `std::any::type_name::<T>()` is documented as a "best-effort
+// description" — uniqueness across distinct types isn't formally guaranteed
+// by the std contract. In practice rustc emits the full path and distinct
+// types produce distinct strings. A separate verification experiment
+// (defining same-named types across modules and across an imported dep,
+// then asserting `type_name` distinguishes them) is open as a future
+// TODO; tracked in ASSESSMENT.md.
+pub fn register_resource_type<T: Resource>(env: Env<'_>) {
+    register_resource_type_named::<T>(env, std::any::type_name::<T>());
+}
+
+/// Register resource type `T` with the BEAM under an explicit name.
+///
+/// Use this when the auto-derived `type_name` string would be wrong — for
+/// example, when migrating a NIF library that previously registered the
+/// type under a different identifier and you need the BEAM-side resource
+/// type table to keep matching pre-existing resource terms (over a hot
+/// reload of the same library, etc.). For new code prefer
+/// [`register_resource_type`] which is auto-named.
+///
+/// Same calling-context rules as `register_resource_type`: load callback
+/// only, exactly once per type.
+pub fn register_resource_type_named<T: Resource>(env: Env<'_>, name: &str) {
     use crate::sys::NifResourceFlags;
 
     assert!(

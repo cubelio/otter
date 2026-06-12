@@ -466,8 +466,8 @@ fn panicking_resource_new(_env: Env) -> ResourceArc<PanickingResource> {
 
 fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);
-    otter::resource::register_resource_type::<HashMapResource>(env, "hashmap");
-    otter::resource::register_resource_type::<PanickingResource>(env, "panicking");
+    otter::resource::register_resource_type::<HashMapResource>(env);
+    otter::resource::register_resource_type::<PanickingResource>(env);
     true
 }
 

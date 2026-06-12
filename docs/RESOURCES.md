@@ -38,7 +38,7 @@ impl Resource for MyMap {
 }
 
 fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::resource::register_resource_type::<MyMap>(env, "my_map");
+    otter::resource::register_resource_type::<MyMap>(env);
     true
 }
 
@@ -48,6 +48,8 @@ otter::init!("my_module", [new, put, get], load = on_load);
 `Resource` requires `Send + Sync + 'static`. This is enforced at compile time — the compiler will reject a struct that isn't safe to share across threads.
 
 The `OnceLock<ResourceTypeHandle>` static is a one-time slot that `register_resource_type` fills. It stores the BEAM's internal type pointer so that `ResourceArc` can look it up later.
+
+`register_resource_type::<T>(env)` derives the BEAM-side resource type identifier from `std::any::type_name::<T>()` — the fully-qualified Rust type path (e.g. `"my_crate::MyMap"`). This guarantees uniqueness within the NIF library, since BEAM's resource type table is per-library and rustc's `type_name` for distinct types produces distinct strings. If you need to register under a specific external name (e.g., for backward compatibility with a pre-existing resource type identifier), use `register_resource_type_named::<T>(env, name)`.
 
 ### 3. Create an instance
 
