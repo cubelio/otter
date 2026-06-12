@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock};
 
 use otter::env::{Env, OwnedEnv};
 use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
-use otter::term::TypedTerm;
+use otter::term::{Term, TypedTerm};
 use otter::types::{Atom, Binary, BinaryBuilder, Float, Integer, List, Map, Pid, Reference, Tuple};
 
 otter::declare_atoms![
@@ -464,7 +464,7 @@ fn panicking_resource_new(_env: Env) -> ResourceArc<PanickingResource> {
     ResourceArc::from(PanickingResource)
 }
 
-fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);
     otter::resource::register_resource_type::<HashMapResource>(env, "hashmap");
     otter::resource::register_resource_type::<PanickingResource>(env, "panicking");

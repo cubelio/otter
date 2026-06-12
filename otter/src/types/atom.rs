@@ -86,7 +86,7 @@ impl Atom {
 /// ```ignore
 /// otter::declare_atoms![ok, error, not_found];
 ///
-/// fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+/// fn on_load(env: Env, _load_info: Term) -> bool {
 ///     otter::init_atoms!(env);
 ///     true
 /// }

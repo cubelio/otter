@@ -37,7 +37,7 @@ impl Resource for MyMap {
     }
 }
 
-fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+fn on_load(env: Env, _load_info: Term) -> bool {
     otter::resource::register_resource_type::<MyMap>(env, "my_map");
     true
 }

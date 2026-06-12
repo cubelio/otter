@@ -177,7 +177,7 @@ type in their `init!` load callback, by calling the free function
 `otter::resource::register_resource_type::<T>(env, name)`:
 
 ```rust
-fn on_load(env: Env<'_>, _load_info: TypedTerm<'_>) -> bool {
+fn on_load(env: Env<'_>, _load_info: Term<'_>) -> bool {
     otter::resource::register_resource_type::<MyResource>(env, "MyResource");
     true
 }

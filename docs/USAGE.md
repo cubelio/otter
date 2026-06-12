@@ -157,7 +157,7 @@ otter::init!("my_module", [add, subtract, hello]);
 With an optional load callback:
 
 ```rust
-fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);  // initialize pre-declared atoms
     otter::resource::register_resource_type::<MyResource>(env, "my_resource");
     true
@@ -166,7 +166,18 @@ fn on_load(env: Env, _load_info: TypedTerm) -> bool {
 otter::init!("my_module", [add, subtract], load = on_load);
 ```
 
-The load callback receives `Env` (with `EnvKind::Init`) and the load info term. Return `true` for success, `false` to abort loading. Panics are caught and treated as failure.
+The load callback receives `Env` (with `EnvKind::Init`) and the load info term. The second parameter can be any type that implements `Decoder` — `Term<'a>` is the zero-cost choice when you don't inspect the value, `TypedTerm<'a>` adds an `enif_term_type` call, and a concrete type (e.g. `Integer<'a>`) lets you reject mismatched `LoadInfo` at the type level. Return `true` for success, `false` to abort loading. Panics are caught and treated as failure.
+
+**Load failure return codes.** When the load callback returns non-zero, BEAM aborts the library load and `erlang:load_nif(Path, LoadInfo)` returns `{error, {load_failed, "Library load-call unsuccessful (N)."}}`. The integer `N` carries the cause:
+
+| `N` | Cause |
+|---|---|
+| 0 | Success (`erlang:load_nif/2` returns `ok`) |
+| 1 | User load callback returned `false` |
+| 2 | User load callback panicked (caught at the FFI boundary) |
+| 3 | `Decoder::decode` rejected the `LoadInfo` term — the type declared for the second parameter of the load callback did not match what `erlang:load_nif/2` was given |
+
+There is no structured channel back to Erlang for the decode-failure reason; the integer is the only signal. The codes live in `otter::__codegen` as named constants (`LOAD_OK`, `LOAD_FAILED_USER_FALSE`, `LOAD_FAILED_PANIC`, `LOAD_FAILED_DECODE`).
 
 ---
 
@@ -181,7 +192,7 @@ Atoms are tagged immediates — no lifetime needed. They are valid across enviro
 ```rust
 otter::declare_atoms![ok, error, not_found, content_type = "content-type"];
 
-fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);
     true
 }
@@ -470,7 +481,7 @@ This generates a hidden `__otter_atoms` module containing one `StaticAtom` per e
 Call `init_atoms!` from your `on_load` callback:
 
 ```rust
-fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);
     true
 }
@@ -636,7 +647,7 @@ impl Resource for MyState {
 Registration must happen in the load callback:
 
 ```rust
-fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+fn on_load(env: Env, _load_info: Term) -> bool {
     otter::resource::register_resource_type::<MyState>(env, "my_state");
     true
 }
@@ -857,7 +868,7 @@ fn sum_list<'a>(env: Env<'a>, list: List<'a>) -> Integer<'a> {
     Integer::from_i64(env, sum)
 }
 
-fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);
     true
 }

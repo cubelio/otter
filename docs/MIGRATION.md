@@ -112,7 +112,7 @@ atoms::ok().encode(env)
 // Pre-declare atoms for zero-cost retrieval
 otter::declare_atoms![ok, error, not_found];
 
-fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);
     true
 }
@@ -323,7 +323,7 @@ impl Resource for MyResource {
     }
 }
 
-fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+fn on_load(env: Env, _load_info: Term) -> bool {
     otter::resource::register_resource_type::<MyResource>(env, "my_resource");
     true
 }

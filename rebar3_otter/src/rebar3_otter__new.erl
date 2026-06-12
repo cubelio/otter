@@ -103,12 +103,12 @@ cargo_toml(Name) ->
 lib_rs(Name) ->
   io_lib:format(
     "use otter::env::Env;\n"
-    "use otter::term::TypedTerm;\n"
+    "use otter::term::Term;\n"
     "use otter::types::Atom;\n"
     "\n"
     "otter::declare_atoms![world];\n"
     "\n"
-    "fn on_load(env: Env, _info: TypedTerm) -> bool {\n"
+    "fn on_load(env: Env, _info: Term) -> bool {\n"
     "    otter::init_atoms!(env);\n"
     "    true\n"
     "}\n"

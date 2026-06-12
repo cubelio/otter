@@ -133,7 +133,7 @@ use otter::types::Atom;
 
 otter::declare_atoms![world];
 
-fn on_load(env: Env, _info: TypedTerm) -> bool {
+fn on_load(env: Env, _info: Term) -> bool {
     otter::init_atoms!(env);
     true
 }

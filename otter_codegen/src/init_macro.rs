@@ -88,15 +88,20 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
                         ::otter::__codegen::EnvKind::Init,
                     )
                 };
-                let __load_info = ::otter::__codegen::new_raw_term(
+                let __load_info_raw = ::otter::__codegen::new_raw_term(
                     __env, __otter_load_info,
-                ).resolve();
+                );
+                let __load_info = match ::otter::__codegen::Decoder::decode(__load_info_raw) {
+                    Ok(v) => v,
+                    Err(_) => return ::otter::__codegen::LOAD_FAILED_DECODE,
+                };
                 let __result = ::std::panic::catch_unwind(
                     ::std::panic::AssertUnwindSafe(|| #load_fn(__env, __load_info))
                 );
                 match __result {
-                    Ok(true) => 0,
-                    Ok(false) | Err(_) => 1,
+                    Ok(true) => ::otter::__codegen::LOAD_OK,
+                    Ok(false) => ::otter::__codegen::LOAD_FAILED_USER_FALSE,
+                    Err(_) => ::otter::__codegen::LOAD_FAILED_PANIC,
                 }
             }
         };

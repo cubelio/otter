@@ -90,7 +90,7 @@ macro_rules! __declare_atoms_inner {
 /// Must be called from the NIF `on_load` callback.
 ///
 /// ```ignore
-/// fn on_load(env: Env, _load_info: TypedTerm) -> bool {
+/// fn on_load(env: Env, _load_info: Term) -> bool {
 ///     otter::init_atoms!(env);
 ///     true
 /// }
