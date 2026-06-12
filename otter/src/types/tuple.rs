@@ -1,3 +1,5 @@
+use std::ffi::{c_int, c_uint};
+
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
@@ -13,9 +15,7 @@ pub struct Tuple<'a> {
 impl<'a> Tuple<'a> {
     /// Number of elements (arity) of the tuple.
     pub fn len(self) -> usize {
-        unsafe { crate::wrapper::tuple::get_tuple(self.env.as_ptr(), self.term) }
-            .map(|(_, arity)| arity)
-            .unwrap_or(0)
+        self.env.get_tuple(self).map_or(0, |elems| elems.len())
     }
 
     /// Returns `true` if the tuple has zero elements.
@@ -25,14 +25,16 @@ impl<'a> Tuple<'a> {
 
     /// Return the element at zero-based index `i`.
     ///
-    /// Panics if `i >= self.len()`. The pointer returned by `enif_get_tuple`
-    /// points into the BEAM heap and is valid for lifetime `'a`.
+    /// Panics if `i >= self.len()`. The elements point into the BEAM heap and
+    /// are valid for lifetime `'a`.
     pub fn element(self, i: usize) -> TypedTerm<'a> {
-        let (ptr, arity) =
-            unsafe { crate::wrapper::tuple::get_tuple(self.env.as_ptr(), self.term) }.unwrap();
-        assert!(i < arity, "Tuple::element index {i} out of bounds (arity {arity})");
-        let raw = unsafe { *ptr.add(i) };
-        Term::new(self.env, raw).resolve()
+        let elems = self.env.get_tuple(self).unwrap();
+        assert!(
+            i < elems.len(),
+            "Tuple::element index {i} out of bounds (arity {})",
+            elems.len()
+        );
+        Term::new(self.env, elems[i]).resolve()
     }
 
     /// Construct a tuple from any iterable of term-like values.
@@ -41,9 +43,7 @@ impl<'a> Tuple<'a> {
         I: IntoIterator<Item = T>,
         T: AsNifTerm<'a>,
     {
-        let raw: Vec<NifTerm> = terms.into_iter().map(|t| t.as_nif_term()).collect();
-        let term = unsafe { crate::wrapper::tuple::make_tuple(env.as_ptr(), &raw) };
-        Tuple { term, env }
+        env.make_tuple(terms)
     }
 }
 
@@ -89,6 +89,43 @@ impl<'a> Env<'a> {
     /// Returns `true` if `term` is a tuple (`enif_is_tuple`).
     pub fn is_tuple(self, term: impl AsNifTerm<'a>) -> bool {
         unsafe { crate::enif::is_tuple(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+
+    /// Decompose a tuple into its elements (`enif_get_tuple`).
+    ///
+    /// Returns `None` if `term` is not a tuple. The returned slice points into
+    /// the BEAM heap and is valid for the environment lifetime `'a`.
+    pub fn get_tuple(self, term: impl AsNifTerm<'a>) -> Option<&'a [NifTerm]> {
+        let mut arity: c_int = 0;
+        let mut array: *const NifTerm = std::ptr::null();
+        if unsafe {
+            crate::enif::get_tuple(self.as_ptr(), term.as_nif_term(), &mut arity, &mut array) != 0
+        } {
+            // enif_get_tuple may leave `array` null for the empty tuple; never
+            // hand a null pointer to from_raw_parts.
+            let elems = if arity == 0 {
+                &[][..]
+            } else {
+                unsafe { std::slice::from_raw_parts(array, arity as usize) }
+            };
+            Some(elems)
+        } else {
+            None
+        }
+    }
+
+    /// Construct a tuple from any iterable of term-like values
+    /// (`enif_make_tuple_from_array`).
+    pub fn make_tuple<I, T>(self, terms: I) -> Tuple<'a>
+    where
+        I: IntoIterator<Item = T>,
+        T: AsNifTerm<'a>,
+    {
+        let raw: Vec<NifTerm> = terms.into_iter().map(|t| t.as_nif_term()).collect();
+        let term = unsafe {
+            crate::enif::make_tuple_from_array(self.as_ptr(), raw.as_ptr(), raw.len() as c_uint)
+        };
+        Tuple { term, env: self }
     }
 }
 

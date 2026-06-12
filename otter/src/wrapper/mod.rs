@@ -17,4 +17,3 @@ pub(crate) mod port;
 pub(crate) mod resource;
 pub(crate) mod select;
 pub(crate) mod term;
-pub(crate) mod tuple;
