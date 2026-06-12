@@ -3,7 +3,7 @@ use crate::enif::funcs;
 
 /// Write the calling process's pid into `out`. Returns a pointer to `out`.
 pub(crate) unsafe fn self_pid(env: *mut NifEnv, out: &mut NifPid) -> *mut NifPid {
-    unsafe { (funcs().self_pid)(env, out) }
+    unsafe { (funcs().self_)(env, out) }
 }
 
 /// Decode a pid term. Returns `false` if `term` is not a local pid.

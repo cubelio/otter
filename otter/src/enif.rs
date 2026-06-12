@@ -181,16 +181,16 @@ pub(crate) struct EnifFunctions {
     pub clear_env:          unsafe extern "C" fn(*mut NifEnv),
     pub send:               unsafe extern "C" fn(*mut NifEnv, *const NifPid, *mut NifEnv, NifTerm) -> c_int,
     pub make_copy:          unsafe extern "C" fn(*mut NifEnv, NifTerm) -> NifTerm,
-    pub self_pid:           unsafe extern "C" fn(*mut NifEnv, *mut NifPid) -> *mut NifPid,
+    pub self_:           unsafe extern "C" fn(*mut NifEnv, *mut NifPid) -> *mut NifPid,
     pub get_local_pid:      unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifPid) -> c_int,
     pub keep_resource:      unsafe extern "C" fn(*mut c_void),
     pub make_resource_binary: unsafe extern "C" fn(*mut NifEnv, *mut c_void, *const c_void, usize) -> NifTerm,
     // int64/uint64: on 64-bit these are loaded as get_long/make_long.
     // On 32-bit they are separate symbols.
-    pub get_i64:            unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut i64) -> c_int,
-    pub get_u64:            unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut u64) -> c_int,
-    pub make_i64:           unsafe extern "C" fn(*mut NifEnv, i64) -> NifTerm,
-    pub make_u64:           unsafe extern "C" fn(*mut NifEnv, u64) -> NifTerm,
+    pub get_int64:            unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut i64) -> c_int,
+    pub get_uint64:            unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut u64) -> c_int,
+    pub make_int64:           unsafe extern "C" fn(*mut NifEnv, i64) -> NifTerm,
+    pub make_uint64:           unsafe extern "C" fn(*mut NifEnv, u64) -> NifTerm,
 
     // =====================================================================
     // NIF 2.2 (OTP R14B03)
@@ -450,14 +450,14 @@ pub(crate) unsafe fn init() -> Result<(), &'static str> {
 
     // On 64-bit: sizeof(long) == 8, so the header aliases int64 → long.
     #[cfg(target_pointer_width = "64")]
-    let (sym_get_i64, sym_get_u64, sym_make_i64, sym_make_u64) = (
+    let (sym_get_int64, sym_get_uint64, sym_make_int64, sym_make_uint64) = (
         b"enif_get_long\0".as_ref(),
         b"enif_get_ulong\0".as_ref(),
         b"enif_make_long\0".as_ref(),
         b"enif_make_ulong\0".as_ref(),
     );
     #[cfg(not(target_pointer_width = "64"))]
-    let (sym_get_i64, sym_get_u64, sym_make_i64, sym_make_u64) = (
+    let (sym_get_int64, sym_get_uint64, sym_make_int64, sym_make_uint64) = (
         b"enif_get_int64\0".as_ref(),
         b"enif_get_uint64\0".as_ref(),
         b"enif_make_int64\0".as_ref(),
@@ -510,10 +510,10 @@ pub(crate) unsafe fn init() -> Result<(), &'static str> {
                 make_long:          load(b"enif_make_long\0")?,
                 make_ulong:         load(b"enif_make_ulong\0")?,
                 make_double:        load(b"enif_make_double\0")?,
-                get_i64:            load(sym_get_i64)?,
-                get_u64:            load(sym_get_u64)?,
-                make_i64:           load(sym_make_i64)?,
-                make_u64:           load(sym_make_u64)?,
+                get_int64:            load(sym_get_int64)?,
+                get_uint64:            load(sym_get_uint64)?,
+                make_int64:           load(sym_make_int64)?,
+                make_uint64:           load(sym_make_uint64)?,
 
                 // Atom
                 make_atom:          load(b"enif_make_atom\0")?,
@@ -562,7 +562,7 @@ pub(crate) unsafe fn init() -> Result<(), &'static str> {
                 make_unique_integer: load(b"enif_make_unique_integer\0")?,
 
                 // Pid
-                self_pid:           load(b"enif_self\0")?,
+                self_:           load(b"enif_self\0")?,
                 get_local_pid:      load(b"enif_get_local_pid\0")?,
                 is_process_alive:   load(b"enif_is_process_alive\0")?,
                 is_current_process_alive: load(b"enif_is_current_process_alive\0")?,
@@ -945,23 +945,23 @@ pub unsafe fn make_double(env: *mut NifEnv, d: f64) -> NifTerm {
 }
 
 /// Gets the signed 64-bit integer value of `term`. Returns non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_get_int64`.
-pub unsafe fn get_i64(env: *mut NifEnv, term: NifTerm, ip: *mut i64) -> c_int {
-    unsafe { (funcs().get_i64)(env, term, ip) }
+pub unsafe fn get_int64(env: *mut NifEnv, term: NifTerm, ip: *mut i64) -> c_int {
+    unsafe { (funcs().get_int64)(env, term, ip) }
 }
 
 /// Gets the unsigned 64-bit integer value of `term`. Returns non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_get_uint64`.
-pub unsafe fn get_u64(env: *mut NifEnv, term: NifTerm, ip: *mut u64) -> c_int {
-    unsafe { (funcs().get_u64)(env, term, ip) }
+pub unsafe fn get_uint64(env: *mut NifEnv, term: NifTerm, ip: *mut u64) -> c_int {
+    unsafe { (funcs().get_uint64)(env, term, ip) }
 }
 
 /// Creates an integer term from a signed 64-bit integer. NIF 2.0 (OTP R14B). Wraps `enif_make_int64`.
-pub unsafe fn make_i64(env: *mut NifEnv, i: i64) -> NifTerm {
-    unsafe { (funcs().make_i64)(env, i) }
+pub unsafe fn make_int64(env: *mut NifEnv, i: i64) -> NifTerm {
+    unsafe { (funcs().make_int64)(env, i) }
 }
 
 /// Creates an integer term from an unsigned 64-bit integer. NIF 2.0 (OTP R14B). Wraps `enif_make_uint64`.
-pub unsafe fn make_u64(env: *mut NifEnv, i: u64) -> NifTerm {
-    unsafe { (funcs().make_u64)(env, i) }
+pub unsafe fn make_uint64(env: *mut NifEnv, i: u64) -> NifTerm {
+    unsafe { (funcs().make_uint64)(env, i) }
 }
 
 // -- Atom -----------------------------------------------------------------
@@ -1336,8 +1336,8 @@ pub unsafe fn make_unique_integer(
 // -- Pid ------------------------------------------------------------------
 
 /// Initializes `*pid` to represent the calling process, returning the pointer on success or NULL if not process-bound. NIF 2.0 (OTP R14B). Wraps `enif_self`.
-pub unsafe fn self_pid(env: *mut NifEnv, pid: *mut NifPid) -> *mut NifPid {
-    unsafe { (funcs().self_pid)(env, pid) }
+pub unsafe fn self_(env: *mut NifEnv, pid: *mut NifPid) -> *mut NifPid {
+    unsafe { (funcs().self_)(env, pid) }
 }
 
 /// Extracts a node-local pid from a term, returning non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_get_local_pid`.

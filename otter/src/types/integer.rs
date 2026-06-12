@@ -16,13 +16,13 @@ pub struct Integer<'a> {
 impl<'a> Integer<'a> {
     /// Construct an integer term from an `i64`.
     pub fn from_i64(env: Env<'a>, val: i64) -> Integer<'a> {
-        let term = unsafe { crate::wrapper::number::make_i64(env.as_ptr(), val) };
+        let term = unsafe { crate::wrapper::number::make_int64(env.as_ptr(), val) };
         Integer { term, env }
     }
 
     /// Construct an integer term from a `u64`.
     pub fn from_u64(env: Env<'a>, val: u64) -> Integer<'a> {
-        let term = unsafe { crate::wrapper::number::make_u64(env.as_ptr(), val) };
+        let term = unsafe { crate::wrapper::number::make_uint64(env.as_ptr(), val) };
         Integer { term, env }
     }
 }
@@ -32,7 +32,7 @@ impl TryFrom<Integer<'_>> for i64 {
     /// Returns `IntegerOverflow` if the value does not fit in `i64`.
     fn try_from(int: Integer<'_>) -> Result<i64, CodecError> {
         let mut val: i64 = 0;
-        if unsafe { crate::wrapper::number::get_i64(int.env.as_ptr(), int.term, &mut val) } {
+        if unsafe { crate::wrapper::number::get_int64(int.env.as_ptr(), int.term, &mut val) } {
             Ok(val)
         } else {
             Err(CodecError::IntegerOverflow)
@@ -46,7 +46,7 @@ impl TryFrom<Integer<'_>> for u64 {
     /// (including negative values).
     fn try_from(int: Integer<'_>) -> Result<u64, CodecError> {
         let mut val: u64 = 0;
-        if unsafe { crate::wrapper::number::get_u64(int.env.as_ptr(), int.term, &mut val) } {
+        if unsafe { crate::wrapper::number::get_uint64(int.env.as_ptr(), int.term, &mut val) } {
             Ok(val)
         } else {
             Err(CodecError::IntegerOverflow)
