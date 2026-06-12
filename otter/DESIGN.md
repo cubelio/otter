@@ -156,14 +156,14 @@ impl OwnedEnv {
 
 ```rust
 pub enum TypedTerm<'a> {
-    Atom(Atom), Binary(Binary<'a>), Bitstring(Bitstring<'a>),
-    Float(Float<'a>), Fun(Fun<'a>), Integer(Integer<'a>),
-    List(List<'a>), Map(Map<'a>), Pid(Pid), Port(Port),
+    Atom(Atom), Bitstring(Bitstring<'a>), Float(Float<'a>),
+    Fun(Fun<'a>), Integer(Integer<'a>), List(List<'a>),
+    Map(Map<'a>), Pid(Pid), Port(Port),
     Reference(Reference<'a>), Tuple(Tuple<'a>),
 }
 ```
 
-12 variants for 11 type tags — `Bitstring` maps to both `Binary` and `Bitstring` depending on `enif_is_binary`.
+11 variants for 11 type tags — `Bitstring` covers both byte-aligned binaries and sub-byte bitstrings; refine to a `Binary` with `Bitstring::try_into_binary` (or `is_binary`).
 
 `TypedTerm` and `Term` implement `PartialEq`/`Eq` (via `enif_is_identical`) and `PartialOrd`/`Ord` (via `enif_compare`).
 
@@ -295,10 +295,10 @@ impl<'a> Env<'a> {
     fn make_unique_integer(self, properties) -> TypedTerm<'a>
     fn hash(self, algorithm, term, salt) -> u64
     fn is_current_process_alive(self) -> bool
-    fn raise(self, reason: impl AsNifTerm<'a>) -> TypedTerm<'a>
-    fn raise_badarg(self) -> TypedTerm<'a>
+    fn raise(self, reason: impl AsNifTerm<'a>) -> Term<'a>
+    fn raise_badarg(self) -> Term<'a>
     unsafe fn schedule_nif(self, name, flags, fp, argc, argv) -> TypedTerm<'a>
-    fn set_option_delay_halt(self, ms) -> bool
+    fn set_option_delay_halt(self) -> bool
     unsafe fn set_option_on_halt(self, callback) -> bool
     unsafe fn set_option_on_unload_thread(self, callback) -> bool
 }
@@ -309,14 +309,14 @@ impl<'a> Env<'a> {
 ## Layer 5: Codec (`codec.rs`)
 
 ```rust
-pub enum CodecError { WrongType, IntegerOverflow, InvalidCodepoint }
+pub enum CodecError { WrongType, IntegerOverflow }
 
 pub trait Encoder {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a>;
 }
 
 pub trait Decoder<'a>: Sized {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError>;
+    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
 }
 ```
 

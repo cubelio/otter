@@ -52,7 +52,7 @@ pub trait Encoder {
 }
 
 pub trait Decoder<'a>: Sized {
-    fn decode(term: TypedTerm<'a>) -> Result<Self, CodecError>;
+    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
 }
 ```
 
