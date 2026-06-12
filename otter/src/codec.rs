@@ -18,9 +18,6 @@ pub enum CodecError {
     WrongType,
     /// An integer term did not fit the requested Rust integer type.
     IntegerOverflow,
-    /// An integer in a list was not a valid Unicode codepoint.
-    /// Returned by `List::try_string`.
-    InvalidCodepoint,
 }
 
 impl std::fmt::Display for CodecError {
@@ -28,7 +25,6 @@ impl std::fmt::Display for CodecError {
         match self {
             CodecError::WrongType        => write!(f, "wrong term type"),
             CodecError::IntegerOverflow  => write!(f, "integer overflow"),
-            CodecError::InvalidCodepoint => write!(f, "invalid Unicode codepoint"),
         }
     }
 }

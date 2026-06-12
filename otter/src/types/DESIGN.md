@@ -56,9 +56,9 @@ pub trait Decoder<'a>: Sized {
 }
 ```
 
-`CodecError` has three variants: `WrongType`, `IntegerOverflow`,
-`InvalidCodepoint`. The `#[otter::nif]` macro converts any `CodecError` into
-a `badarg` exception automatically.
+`CodecError` has two variants: `WrongType` and `IntegerOverflow`. The
+`#[otter::nif]` macro converts any `CodecError` into a `badarg` exception
+automatically.
 
 Every type in this directory implements both traits. `Decoder` accepts only
 the matching `TypedTerm` variant and rejects everything else with `WrongType`.
