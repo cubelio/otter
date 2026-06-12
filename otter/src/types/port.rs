@@ -84,9 +84,16 @@ impl Encoder for Port {
     }
 }
 
+impl<'a> Env<'a> {
+    /// Returns `true` if `term` is a port (`enif_is_port`).
+    pub fn is_port(self, term: impl AsNifTerm<'a>) -> bool {
+        unsafe { crate::enif::is_port(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+}
+
 impl<'a> Decoder<'a> for Port {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::check::is_port(term.env.as_ptr(), term.term) } {
+        if term.env.is_port(term) {
             Ok(Port { term: term.term })
         } else {
             Err(CodecError::WrongType)

@@ -250,9 +250,17 @@ impl<'b> Encoder for List<'b> {
     }
 }
 
+impl<'a> Env<'a> {
+    /// Returns `true` if `term` is a list, including improper and empty lists
+    /// (`enif_is_list`).
+    pub fn is_list(self, term: impl AsNifTerm<'a>) -> bool {
+        unsafe { crate::enif::is_list(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+}
+
 impl<'a> Decoder<'a> for List<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::check::is_list(term.env.as_ptr(), term.term) } {
+        if term.env.is_list(term) {
             Ok(List { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

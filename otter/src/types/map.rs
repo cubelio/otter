@@ -172,9 +172,16 @@ impl<'b> Encoder for Map<'b> {
     }
 }
 
+impl<'a> Env<'a> {
+    /// Returns `true` if `term` is a map (`enif_is_map`).
+    pub fn is_map(self, term: impl AsNifTerm<'a>) -> bool {
+        unsafe { crate::enif::is_map(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+}
+
 impl<'a> Decoder<'a> for Map<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::check::is_map(term.env.as_ptr(), term.term) } {
+        if term.env.is_map(term) {
             Ok(Map { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

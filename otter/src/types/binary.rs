@@ -2,7 +2,7 @@ use std::str::Utf8Error;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifTerm, NifTermType};
-use crate::term::{Term, TypedTerm};
+use crate::term::{Term, TypedTerm, AsNifTerm};
 
 /// A byte-aligned binary (`enif_is_binary` returned true).
 ///
@@ -33,7 +33,7 @@ impl<'a> Bitstring<'a> {
     ///
     /// One `enif_is_binary` call.
     pub fn is_binary(self) -> bool {
-        unsafe { crate::wrapper::check::is_binary(self.env.as_ptr(), self.term) }
+        self.env.is_binary(self)
     }
 
     /// Refine to a [`Binary`] if this bitstring is byte-aligned, else `None`.
@@ -417,9 +417,17 @@ impl<'b> Encoder for Binary<'b> {
     }
 }
 
+impl<'a> Env<'a> {
+    /// Returns `true` if `term` is a byte-aligned binary (`enif_is_binary`).
+    /// Sub-byte bitstrings return `false`.
+    pub fn is_binary(self, term: impl AsNifTerm<'a>) -> bool {
+        unsafe { crate::enif::is_binary(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+}
+
 impl<'a> Decoder<'a> for Binary<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::check::is_binary(term.env.as_ptr(), term.term) } {
+        if term.env.is_binary(term) {
             Ok(Binary { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

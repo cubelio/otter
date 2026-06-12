@@ -85,9 +85,16 @@ impl<'b> Encoder for Tuple<'b> {
     }
 }
 
+impl<'a> Env<'a> {
+    /// Returns `true` if `term` is a tuple (`enif_is_tuple`).
+    pub fn is_tuple(self, term: impl AsNifTerm<'a>) -> bool {
+        unsafe { crate::enif::is_tuple(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+}
+
 impl<'a> Decoder<'a> for Tuple<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::check::is_tuple(term.env.as_ptr(), term.term) } {
+        if term.env.is_tuple(term) {
             Ok(Tuple { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

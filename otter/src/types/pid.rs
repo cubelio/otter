@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifPid, NifTerm};
-use crate::term::Term;
+use crate::term::{Term, AsNifTerm};
 
 /// An Erlang process identifier.
 ///
@@ -87,9 +87,16 @@ impl Encoder for Pid {
     }
 }
 
+impl<'a> Env<'a> {
+    /// Returns `true` if `term` is a pid (`enif_is_pid`).
+    pub fn is_pid(self, term: impl AsNifTerm<'a>) -> bool {
+        unsafe { crate::enif::is_pid(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+}
+
 impl<'a> Decoder<'a> for Pid {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::check::is_pid(term.env.as_ptr(), term.term) } {
+        if term.env.is_pid(term) {
             Ok(Pid { term: term.term })
         } else {
             Err(CodecError::WrongType)

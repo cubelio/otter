@@ -9,7 +9,6 @@
 
 pub(crate) mod atom;
 pub(crate) mod binary;
-pub(crate) mod check;
 pub(crate) mod env;
 pub(crate) mod exception;
 pub(crate) mod list;

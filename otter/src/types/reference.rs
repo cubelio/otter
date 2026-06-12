@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::Term;
+use crate::term::{Term, AsNifTerm};
 
 /// An Erlang reference.
 #[derive(Clone, Copy)]
@@ -58,9 +58,16 @@ impl<'b> Encoder for Reference<'b> {
     }
 }
 
+impl<'a> Env<'a> {
+    /// Returns `true` if `term` is a reference (`enif_is_ref`).
+    pub fn is_ref(self, term: impl AsNifTerm<'a>) -> bool {
+        unsafe { crate::enif::is_ref(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+}
+
 impl<'a> Decoder<'a> for Reference<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::check::is_ref(term.env.as_ptr(), term.term) } {
+        if term.env.is_ref(term) {
             Ok(Reference { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)
