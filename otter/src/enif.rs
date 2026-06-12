@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 use crate::sys::{
     NifBinary, NifCharEncoding, NifEnv, NifEvent, NifHash, NifIOQueue, NifIOQueueOpts, NifIOVec,
-    NifMapIterator, NifMapIteratorEntry, NifMonitor, NifPid, NifPort,
+    NifMapIterator, NifMapIteratorEntry, NifMonitor, NifOption, NifPid, NifPort,
     NifResourceFlags, NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
     NifTermType, NifTime, NifTimeUnit, NifUniqueInteger, SysIOVec,
 };
@@ -1627,6 +1627,41 @@ pub unsafe fn getenv(
 /// Returns the type of the current thread: 1 for scheduler, 2 for dirty CPU, 3 for dirty I/O, -1 for non-ERTS. NIF 2.11 (OTP 19.0). Wraps `enif_thread_type`.
 pub unsafe fn thread_type() -> c_int {
     unsafe { (funcs().thread_type)() }
+}
+
+// -- Set option -----------------------------------------------------------
+//
+// `enif_set_option` is C-variadic; it cannot be bound as one Rust fn. The
+// faithful binding is one monomorphic shim per option, each transmuting the
+// type-erased `funcs().set_option` pointer to that option's concrete signature.
+// All return the raw `c_int` (0 on success); callers interpret it.
+
+/// Enable the delay-halt option. `ERL_NIF_OPT_DELAY_HALT` takes no third
+/// argument, so the transmuted signature is two-arg. NIF 2.17 (OTP 26).
+pub unsafe fn set_option_delay_halt(env: *mut NifEnv) -> c_int {
+    type F = unsafe extern "C" fn(*mut NifEnv, NifOption) -> c_int;
+    let f: F = unsafe { std::mem::transmute(funcs().set_option) };
+    unsafe { f(env, NifOption::DelayHalt) }
+}
+
+/// Set the on-halt callback. NIF 2.17 (OTP 26).
+pub unsafe fn set_option_on_halt(
+    env: *mut NifEnv,
+    callback: unsafe extern "C" fn(*mut c_void),
+) -> c_int {
+    type F = unsafe extern "C" fn(*mut NifEnv, NifOption, unsafe extern "C" fn(*mut c_void)) -> c_int;
+    let f: F = unsafe { std::mem::transmute(funcs().set_option) };
+    unsafe { f(env, NifOption::OnHalt, callback) }
+}
+
+/// Set the on-unload-thread callback. NIF 2.17 (OTP 26).
+pub unsafe fn set_option_on_unload_thread(
+    env: *mut NifEnv,
+    callback: unsafe extern "C" fn(*mut c_void),
+) -> c_int {
+    type F = unsafe extern "C" fn(*mut NifEnv, NifOption, unsafe extern "C" fn(*mut c_void)) -> c_int;
+    let f: F = unsafe { std::mem::transmute(funcs().set_option) };
+    unsafe { f(env, NifOption::OnUnloadThread, callback) }
 }
 
 // -- Dynamic loading ------------------------------------------------------

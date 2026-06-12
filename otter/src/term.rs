@@ -502,7 +502,7 @@ impl<'a> Env<'a> {
             self.kind == EnvKind::Init,
             "set_option_delay_halt must be called from the NIF load callback"
         );
-        unsafe { wrapper::system::set_option_delay_halt(self.as_ptr()) }
+        unsafe { crate::enif::set_option_delay_halt(self.as_ptr()) == 0 }
     }
 
     /// Set the on-halt callback. Must be called from the load callback.
@@ -520,7 +520,7 @@ impl<'a> Env<'a> {
             self.kind == EnvKind::Init,
             "set_option_on_halt must be called from the NIF load callback"
         );
-        unsafe { wrapper::system::set_option_on_halt(self.as_ptr(), callback) }
+        unsafe { crate::enif::set_option_on_halt(self.as_ptr(), callback) == 0 }
     }
 
     /// Set the on-unload-thread callback. Must be called from the load callback.
@@ -538,6 +538,6 @@ impl<'a> Env<'a> {
             self.kind == EnvKind::Init,
             "set_option_on_unload_thread must be called from the NIF load callback"
         );
-        unsafe { wrapper::system::set_option_on_unload_thread(self.as_ptr(), callback) }
+        unsafe { crate::enif::set_option_on_unload_thread(self.as_ptr(), callback) == 0 }
     }
 }
