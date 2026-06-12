@@ -8,7 +8,6 @@
 //! Nothing here is part of the public otter API.
 
 pub(crate) mod env;
-pub(crate) mod map;
 pub(crate) mod port;
 pub(crate) mod select;
 pub(crate) mod term;
