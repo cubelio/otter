@@ -68,7 +68,8 @@ impl Atom {
     /// encodes the name as UTF-8 for us.
     pub fn name(self, env: Env<'_>) -> String {
         let mut buf = Vec::new();
-        unsafe { crate::wrapper::atom::get_atom_into(env.as_ptr(), self.term, &mut buf) };
+        unsafe { crate::wrapper::atom::get_atom_into(env.as_ptr(), self.term, &mut buf) }
+            .expect("enif_get_atom failed for a validated Atom");
         // SAFETY: BEAM guarantees UTF-8 when requested with NifCharEncoding::Utf8
         unsafe { String::from_utf8_unchecked(buf) }
     }
