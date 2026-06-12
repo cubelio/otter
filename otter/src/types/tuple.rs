@@ -28,8 +28,9 @@ impl<'a> Tuple<'a> {
     /// Panics if `i >= self.len()`. The pointer returned by `enif_get_tuple`
     /// points into the BEAM heap and is valid for lifetime `'a`.
     pub fn element(self, i: usize) -> TypedTerm<'a> {
-        let (ptr, _arity) =
+        let (ptr, arity) =
             unsafe { crate::wrapper::tuple::get_tuple(self.env.as_ptr(), self.term) }.unwrap();
+        assert!(i < arity, "Tuple::element index {i} out of bounds (arity {arity})");
         let raw = unsafe { *ptr.add(i) };
         Term::new(self.env, raw).resolve()
     }
