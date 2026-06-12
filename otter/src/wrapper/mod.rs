@@ -13,7 +13,6 @@ pub(crate) mod exception;
 pub(crate) mod list;
 pub(crate) mod map;
 pub(crate) mod monitor;
-pub(crate) mod number;
 pub(crate) mod pid;
 pub(crate) mod port;
 pub(crate) mod resource;

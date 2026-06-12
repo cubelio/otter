@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifTerm, NifTermType};
-use crate::term::Term;
+use crate::term::{Term, AsNifTerm};
 
 /// An Erlang float. Always IEEE 754 double precision.
 ///
@@ -15,17 +15,33 @@ pub struct Float<'a> {
 impl<'a> Float<'a> {
     /// Construct a float term from an `f64`.
     pub fn from_f64(env: Env<'a>, val: f64) -> Float<'a> {
-        let term = unsafe { crate::wrapper::number::make_double(env.as_ptr(), val) };
-        Float { term, env }
+        env.make_double(val)
+    }
+}
+
+impl<'a> Env<'a> {
+    /// Construct a float term from an `f64` (`enif_make_double`).
+    pub fn make_double(self, val: f64) -> Float<'a> {
+        let term = unsafe { crate::enif::make_double(self.as_ptr(), val) };
+        Float { term, env: self }
+    }
+
+    /// Extract an `f64` from a float term (`enif_get_double`).
+    /// `None` if the term is not a float.
+    pub fn get_double(self, term: impl AsNifTerm<'a>) -> Option<f64> {
+        let mut val: f64 = 0.0;
+        if unsafe { crate::enif::get_double(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
+            Some(val)
+        } else {
+            None
+        }
     }
 }
 
 impl From<Float<'_>> for f64 {
     /// Extract the `f64` value. Infallible — the BEAM only stores `f64`.
     fn from(float: Float<'_>) -> f64 {
-        let mut val: f64 = 0.0;
-        unsafe { crate::wrapper::number::get_double(float.env.as_ptr(), float.term, &mut val) };
-        val
+        float.env.get_double(float).unwrap_or(0.0)
     }
 }
 
