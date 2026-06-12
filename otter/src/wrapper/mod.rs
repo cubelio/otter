@@ -9,7 +9,6 @@
 
 pub(crate) mod binary;
 pub(crate) mod env;
-pub(crate) mod list;
 pub(crate) mod map;
 pub(crate) mod monitor;
 pub(crate) mod pid;
