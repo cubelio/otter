@@ -1,7 +1,7 @@
 //! `Term<'a>` and `TypedTerm<'a>`.
 
 use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
+use crate::env::{Env, EnvKind};
 use crate::sys::{NifHash, NifTerm, NifTermType, NifUniqueInteger};
 use crate::types::{
     Atom, Binary, Bitstring, Float, Fun, Integer, List, Map, Pid, Port, Reference, Tuple,
@@ -489,11 +489,20 @@ impl<'a> Env<'a> {
         Term::new(self, raw).resolve()
     }
 
-    /// Set the halt delay in milliseconds. Must be called from the load callback.
+    /// Enable delayed halt: the VM waits for currently-running NIF calls to
+    /// return before halting. Must be called from the load callback. Returns
+    /// `true` on success.
     ///
-    /// Wraps `enif_set_option(ERL_NIF_OPT_DELAY_HALT, ...)`.
-    pub fn set_option_delay_halt(self, delay_ms: u64) -> bool {
-        unsafe { wrapper::system::set_option_delay_halt(self.as_ptr(), delay_ms) }
+    /// `ERL_NIF_OPT_DELAY_HALT` is a boolean enable that takes no argument —
+    /// there is no halt *duration* to configure.
+    ///
+    /// Wraps `enif_set_option(ERL_NIF_OPT_DELAY_HALT)`.
+    pub fn set_option_delay_halt(self) -> bool {
+        assert!(
+            self.kind == EnvKind::Init,
+            "set_option_delay_halt must be called from the NIF load callback"
+        );
+        unsafe { wrapper::system::set_option_delay_halt(self.as_ptr()) }
     }
 
     /// Set the on-halt callback. Must be called from the load callback.
@@ -507,6 +516,10 @@ impl<'a> Env<'a> {
         self,
         callback: unsafe extern "C" fn(*mut std::ffi::c_void),
     ) -> bool {
+        assert!(
+            self.kind == EnvKind::Init,
+            "set_option_on_halt must be called from the NIF load callback"
+        );
         unsafe { wrapper::system::set_option_on_halt(self.as_ptr(), callback) }
     }
 
@@ -521,6 +534,10 @@ impl<'a> Env<'a> {
         self,
         callback: unsafe extern "C" fn(*mut std::ffi::c_void),
     ) -> bool {
+        assert!(
+            self.kind == EnvKind::Init,
+            "set_option_on_unload_thread must be called from the NIF load callback"
+        );
         unsafe { wrapper::system::set_option_on_unload_thread(self.as_ptr(), callback) }
     }
 }

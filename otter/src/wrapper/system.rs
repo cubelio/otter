@@ -19,11 +19,14 @@ pub(crate) fn thread_type() -> c_int {
     unsafe { (funcs().thread_type)() }
 }
 
-/// Set the halt delay option (milliseconds). Returns `true` on success.
-pub(crate) unsafe fn set_option_delay_halt(env: *mut NifEnv, delay_ms: u64) -> bool {
-    type F = unsafe extern "C" fn(*mut NifEnv, NifOption, u64) -> c_int;
+/// Enable the delay-halt option. Returns `true` on success.
+///
+/// `ERL_NIF_OPT_DELAY_HALT` takes no third argument — it is a boolean enable,
+/// so the transmuted signature is two-arg.
+pub(crate) unsafe fn set_option_delay_halt(env: *mut NifEnv) -> bool {
+    type F = unsafe extern "C" fn(*mut NifEnv, NifOption) -> c_int;
     let f: F = unsafe { std::mem::transmute(funcs().set_option) };
-    unsafe { f(env, NifOption::DelayHalt, delay_ms) == 0 }
+    unsafe { f(env, NifOption::DelayHalt) == 0 }
 }
 
 /// Set the on-halt callback. Returns `true` on success.

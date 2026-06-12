@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 use crate::sys::{
     NifBinary, NifCharEncoding, NifEnv, NifEvent, NifHash, NifIOQueue, NifIOQueueOpts, NifIOVec,
-    NifMapIterator, NifMapIteratorEntry, NifMonitor, NifOption, NifPid, NifPort,
+    NifMapIterator, NifMapIteratorEntry, NifMonitor, NifPid, NifPort,
     NifResourceFlags, NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
     NifTermType, NifTime, NifTimeUnit, NifUniqueInteger, SysIOVec,
 };
@@ -2006,28 +2006,6 @@ pub(crate) unsafe fn make_new_atom_len(
     encoding: NifCharEncoding,
 ) -> c_int {
     unsafe { (funcs().make_new_atom_len)(env, name, len, atom, encoding) }
-}
-
-/// Sets the `ERL_NIF_OPT_DELAY_HALT` option, preventing the runtime from halting until NIF cleanup completes. NIF 2.17 (OTP 26.0). Wraps `enif_set_option`.
-// Implementation note: enif_set_option is variadic in C; this transmutes to the single-arg variant.
-pub(crate) unsafe fn set_option_delay_halt(env: *mut NifEnv) -> c_int {
-    let f: unsafe extern "C" fn(*mut NifEnv, NifOption) -> c_int =
-        unsafe { std::mem::transmute(funcs().set_option) };
-    unsafe { f(env, NifOption::DelayHalt) }
-}
-
-/// Registers a callback to be invoked when the runtime halts. NIF 2.17 (OTP 26.0). Wraps `enif_set_option`.
-// Implementation note: enif_set_option is variadic in C; this transmutes to the two-arg variant (option + callback).
-pub(crate) unsafe fn set_option_on_halt(
-    env: *mut NifEnv,
-    callback: unsafe extern "C" fn(*mut c_void),
-) -> c_int {
-    let f: unsafe extern "C" fn(
-        *mut NifEnv,
-        NifOption,
-        unsafe extern "C" fn(*mut c_void),
-    ) -> c_int = unsafe { std::mem::transmute(funcs().set_option) };
-    unsafe { f(env, NifOption::OnHalt, callback) }
 }
 
 // ===========================================================================
