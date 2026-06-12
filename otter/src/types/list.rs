@@ -166,7 +166,7 @@ impl<'a> ListIterator<'a> {
 
 impl PartialEq for List<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
+        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -180,7 +180,7 @@ impl PartialOrd for List<'_> {
 
 impl Ord for List<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
+        let c = unsafe { crate::enif::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -193,12 +193,11 @@ impl std::fmt::Debug for List<'_> {
 
 impl<'b> Encoder for List<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let raw = if self.env.as_ptr() == env.as_ptr() {
-            self.term
+        if self.env.as_ptr() == env.as_ptr() {
+            Term::new(env, self.term)
         } else {
-            unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) }
-        };
-        Term::new(env, raw)
+            env.make_copy(*self)
+        }
     }
 }
 

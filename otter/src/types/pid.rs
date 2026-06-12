@@ -42,7 +42,7 @@ impl Pid {
 
 impl PartialEq for Pid {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
+        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -56,7 +56,7 @@ impl PartialOrd for Pid {
 
 impl Ord for Pid {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
+        let c = unsafe { crate::enif::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }

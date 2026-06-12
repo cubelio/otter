@@ -47,7 +47,7 @@ impl From<Float<'_>> for f64 {
 
 impl PartialEq for Float<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
+        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -61,7 +61,7 @@ impl PartialOrd for Float<'_> {
 
 impl Ord for Float<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
+        let c = unsafe { crate::enif::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -74,20 +74,17 @@ impl std::fmt::Debug for Float<'_> {
 
 impl<'b> Encoder for Float<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let raw = if self.env.as_ptr() == env.as_ptr() {
-            self.term
+        if self.env.as_ptr() == env.as_ptr() {
+            Term::new(env, self.term)
         } else {
-            unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) }
-        };
-        Term::new(env, raw)
+            env.make_copy(*self)
+        }
     }
 }
 
 impl<'a> Decoder<'a> for Float<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::term::term_type(term.env.as_ptr(), term.term) }
-            == NifTermType::Float
-        {
+        if term.env.term_type(term) == NifTermType::Float {
             Ok(Float { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

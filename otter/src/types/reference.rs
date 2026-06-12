@@ -15,14 +15,13 @@ impl<'a> Reference<'a> {
     ///
     /// Wraps `enif_make_ref`.
     pub fn new(env: Env<'a>) -> Reference<'a> {
-        let term = unsafe { crate::wrapper::term::make_ref(env.as_ptr()) };
-        Reference { term, env }
+        env.make_ref()
     }
 }
 
 impl PartialEq for Reference<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
+        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -36,7 +35,7 @@ impl PartialOrd for Reference<'_> {
 
 impl Ord for Reference<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
+        let c = unsafe { crate::enif::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -49,12 +48,11 @@ impl std::fmt::Debug for Reference<'_> {
 
 impl<'b> Encoder for Reference<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let raw = if self.env.as_ptr() == env.as_ptr() {
-            self.term
+        if self.env.as_ptr() == env.as_ptr() {
+            Term::new(env, self.term)
         } else {
-            unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) }
-        };
-        Term::new(env, raw)
+            env.make_copy(*self)
+        }
     }
 }
 
@@ -62,6 +60,12 @@ impl<'a> Env<'a> {
     /// Returns `true` if `term` is a reference (`enif_is_ref`).
     pub fn is_ref(self, term: impl AsNifTerm<'a>) -> bool {
         unsafe { crate::enif::is_ref(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+
+    /// Create a new unique reference (`enif_make_ref`).
+    pub fn make_ref(self) -> Reference<'a> {
+        let term = unsafe { crate::enif::make_ref(self.as_ptr()) };
+        Reference { term, env: self }
     }
 }
 

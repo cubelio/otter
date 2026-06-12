@@ -6,7 +6,6 @@ use crate::sys::{NifHash, NifTerm, NifTermType, NifUniqueInteger};
 use crate::types::{
     Atom, Binary, Bitstring, Float, Fun, Integer, List, Map, Pid, Port, Reference, Tuple,
 };
-use crate::wrapper;
 
 // ---------------------------------------------------------------------------
 // Term
@@ -52,8 +51,7 @@ impl<'a> Term<'a> {
     /// surface as [`TypedTerm::Bitstring`]; call [`Bitstring::is_binary`] or
     /// [`Bitstring::try_into_binary`] to refine.
     pub fn resolve(self) -> TypedTerm<'a> {
-        let env_ptr = self.env.as_ptr();
-        match unsafe { wrapper::term::term_type(env_ptr, self.term) } {
+        match self.env.term_type(self) {
             NifTermType::Atom => {
                 TypedTerm::Atom(Atom::from_raw(self.term))
             }
@@ -142,7 +140,7 @@ impl<'a> TypedTerm<'a> {
 
 impl<'a> PartialEq for Term<'a> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
+        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -156,14 +154,14 @@ impl<'a> PartialOrd for Term<'a> {
 
 impl<'a> Ord for Term<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
+        let c = unsafe { crate::enif::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
 
 impl<'a> PartialEq for TypedTerm<'a> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.as_raw(), other.as_raw()) }
+        unsafe { crate::enif::is_identical(self.as_raw(), other.as_raw()) != 0 }
     }
 }
 
@@ -177,7 +175,7 @@ impl<'a> PartialOrd for TypedTerm<'a> {
 
 impl<'a> Ord for TypedTerm<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.as_raw(), other.as_raw()) };
+        let c = unsafe { crate::enif::compare(self.as_raw(), other.as_raw()) };
         c.cmp(&0)
     }
 }
@@ -276,12 +274,11 @@ impl<'a> Decoder<'a> for TypedTerm<'a> {
 
 impl<'b> Encoder for Term<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let raw = if self.env.as_ptr() == env.as_ptr() {
-            self.term
+        if self.env.as_ptr() == env.as_ptr() {
+            Term::new(env, self.term)
         } else {
-            unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) }
-        };
-        Term::new(env, raw)
+            env.make_copy(*self)
+        }
     }
 }
 
@@ -384,6 +381,18 @@ impl<'a, T: AsNifTerm<'a> + ?Sized> AsNifTerm<'a> for &T {
 // ---------------------------------------------------------------------------
 
 impl<'a> Env<'a> {
+    /// The dynamic type of `term` (`enif_term_type`).
+    pub fn term_type(self, term: impl AsNifTerm<'a>) -> NifTermType {
+        unsafe { crate::enif::term_type(self.as_ptr(), term.as_nif_term()) }
+    }
+
+    /// Copy `src` (which may belong to another environment) into this one,
+    /// returning a term owned by this env (`enif_make_copy`).
+    pub fn make_copy<'b>(self, src: impl AsNifTerm<'b>) -> Term<'a> {
+        let raw = unsafe { crate::enif::make_copy(self.as_ptr(), src.as_nif_term()) };
+        Term::new(self, raw)
+    }
+
     /// Tell the scheduler how much of the current timeslice this NIF has consumed.
     ///
     /// `percent` should be between 1 and 100. Returns `true` if the timeslice
@@ -392,7 +401,7 @@ impl<'a> Env<'a> {
     ///
     /// Wraps `enif_consume_timeslice`.
     pub fn consume_timeslice(self, percent: i32) -> bool {
-        unsafe { crate::wrapper::term::consume_timeslice(self.as_ptr(), percent) != 0 }
+        unsafe { crate::enif::consume_timeslice(self.as_ptr(), percent) != 0 }
     }
 
     /// Create a unique integer.
@@ -403,7 +412,7 @@ impl<'a> Env<'a> {
     /// Wraps `enif_make_unique_integer`.
     pub fn make_unique_integer(self, properties: NifUniqueInteger) -> TypedTerm<'a> {
         let raw = unsafe {
-            wrapper::term::make_unique_integer(self.as_ptr(), properties)
+            crate::enif::make_unique_integer(self.as_ptr(), properties)
         };
         Term::new(self, raw).resolve()
     }
@@ -415,7 +424,7 @@ impl<'a> Env<'a> {
     ///
     /// Wraps `enif_hash`.
     pub fn hash(self, algorithm: NifHash, term: impl AsNifTerm<'a>, salt: u64) -> u64 {
-        wrapper::term::hash(algorithm, term.as_nif_term(), salt)
+        unsafe { crate::enif::hash(algorithm, term.as_nif_term(), salt) }
     }
 
     /// Check if the calling process is still alive.
