@@ -554,6 +554,43 @@ fn select_stop_count<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<
     Integer::from_i64(env, arc.stop_count.load(Ordering::Relaxed) as i64)
 }
 
+// --- test_time/0 --------------------------------------------------------
+// Exercise the time module: monotonic_time, time_offset, convert_time_unit
+// across the TimeUnit variants.
+
+#[otter::nif]
+fn test_time(_env: Env) -> Atom {
+    use otter::time::{convert_time_unit, monotonic_time, time_offset, TimeUnit};
+
+    // Monotonic time does not go backwards.
+    let t1 = monotonic_time(TimeUnit::Nanosecond);
+    let t2 = monotonic_time(TimeUnit::Nanosecond);
+    assert!(t2 >= t1);
+
+    // time_offset is callable (monotonic + offset = system time).
+    let _ = time_offset(TimeUnit::Millisecond);
+
+    // Unit conversion is exact for these ratios.
+    assert_eq!(convert_time_unit(1, TimeUnit::Second, TimeUnit::Nanosecond), 1_000_000_000);
+    assert_eq!(convert_time_unit(1000, TimeUnit::Millisecond, TimeUnit::Second), 1);
+
+    otter::atom![ok]
+}
+
+// --- test_consume_timeslice/0 -------------------------------------------
+// Drive enif_consume_timeslice to exhaustion. Consuming 100% repeatedly
+// must eventually report the timeslice used up (returns true).
+
+#[otter::nif]
+fn test_consume_timeslice(env: Env) -> Atom {
+    for _ in 0..100 {
+        if env.consume_timeslice(100) {
+            return otter::atom![ok];
+        }
+    }
+    otter::atom![error]
+}
+
 // --- monitor / down callback --------------------------------------------
 // A resource that monitors a process via ResourceArc::monitor. When the
 // monitored process exits, the BEAM dispatches to Resource::down on a
@@ -642,4 +679,6 @@ otter::init!("otter_demo__nif", [
     monitor_resource_new,
     monitor_pid,
     monitor_down_count,
+    test_time,
+    test_consume_timeslice,
 ], load = on_load);

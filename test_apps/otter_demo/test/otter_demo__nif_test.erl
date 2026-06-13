@@ -126,6 +126,10 @@ smoke_test_() ->
     ?_assertEqual(ok, otter_demo__nif:test_map()),
     ?_assertEqual(ok, otter_demo__nif:test_tuple()),
 
+    %% Time module and consume_timeslice
+    ?_assertEqual(ok, otter_demo__nif:test_time()),
+    ?_assertEqual(ok, otter_demo__nif:test_consume_timeslice()),
+
     %% Float roundtrip
     ?_assertEqual(6.28, otter_demo__nif:double_float(3.14)),
     ?_assertEqual(+0.0, otter_demo__nif:double_float(+0.0)),

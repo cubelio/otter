@@ -23,6 +23,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([panicking_resource_new/0]).
 -export([select_resource_new/0, select_register/1, select_stop/1, select_stop_count/1]).
 -export([monitor_resource_new/0, monitor_pid/2, monitor_down_count/1]).
+-export([test_time/0, test_consume_timeslice/0]).
 
 %%------------------------------------------------------------------------------
 
@@ -216,3 +217,14 @@ monitor_pid(_R, _Pid) -> exit(nif_not_loaded).
 -doc "Number of times the resource's `down` callback has run.".
 -spec monitor_down_count(reference()) -> non_neg_integer().
 monitor_down_count(_R) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Time and scheduling helpers
+
+-doc "Exercises the time module (monotonic_time, time_offset, convert_time_unit).".
+-spec test_time() -> ok.
+test_time() -> exit(nif_not_loaded).
+
+-doc "Drives enif_consume_timeslice to exhaustion. Returns ok if reported used up.".
+-spec test_consume_timeslice() -> ok | error.
+test_consume_timeslice() -> exit(nif_not_loaded).
