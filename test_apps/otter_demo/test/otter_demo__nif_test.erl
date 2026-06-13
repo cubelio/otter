@@ -44,6 +44,8 @@ smoke_test_() ->
     ?_assertEqual(map,       otter_demo__nif:type_of(#{a => 1})),
     ?_assertEqual(pid,       otter_demo__nif:type_of(self())),
     ?_assertEqual(reference, otter_demo__nif:type_of(make_ref())),
+    ?_assertEqual('fun',     otter_demo__nif:type_of(fun () -> ok end)),
+    ?_assertEqual(bitstring, otter_demo__nif:type_of(<<1:1>>)),
 
     %% Binary and list operations
     ?_assertEqual(<<"olleh">>, otter_demo__nif:reverse_binary(<<"hello">>)),
@@ -88,6 +90,8 @@ smoke_test_() ->
     ?_assertEqual(<<"Map">>,       otter_demo__nif:test_debug(#{a => 1})),
     ?_assertEqual(<<"Pid">>,       otter_demo__nif:test_debug(self())),
     ?_assertEqual(<<"Reference">>, otter_demo__nif:test_debug(make_ref())),
+    ?_assertEqual(<<"Fun">>,       otter_demo__nif:test_debug(fun () -> ok end)),
+    ?_assertEqual(<<"Bitstring">>, otter_demo__nif:test_debug(<<1:1>>)),
 
     %% TryFrom<Integer>
     ?_assertEqual(42, otter_demo__nif:test_try_from(42)),
@@ -238,4 +242,19 @@ wait_for_down(R, N) ->
   case otter_demo__nif:monitor_down_count(R) of
     C when C >= 1 -> ok;
     _ -> timer:sleep(10), wait_for_down(R, N - 1)
+  end.
+
+%% test-01 — select_x delivers a custom notification message. Selecting READ
+%% with a custom term, then making the fd readable, must deliver that exact
+%% term to the calling process (not the default {select,...} tuple).
+-spec select_x_test() -> _.
+select_x_test() ->
+  R = otter_demo__nif:select_resource_new(),
+  Msg = {selected, make_ref()},
+  Reg = otter_demo__nif:select_x_register(R, Msg),
+  ?assert(is_integer(Reg)),
+  receive
+    Msg -> ok
+  after 2000 ->
+    ?assert(false)
   end.

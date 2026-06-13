@@ -507,7 +507,7 @@ fn panicking_resource_new(_env: Env) -> ResourceArc<PanickingResource> {
 // deregistered the fd from the pollset.
 struct FdResource {
     a: UnixStream,
-    _b: UnixStream,
+    b: UnixStream,
     stop_count: AtomicUsize,
 }
 
@@ -526,7 +526,7 @@ impl Resource for FdResource {
 #[otter::nif]
 fn select_resource_new(_env: Env) -> ResourceArc<FdResource> {
     let (a, b) = UnixStream::pair().expect("socketpair");
-    ResourceArc::from(FdResource { a, _b: b, stop_count: AtomicUsize::new(0) })
+    ResourceArc::from(FdResource { a, b, stop_count: AtomicUsize::new(0) })
 }
 
 #[otter::nif]
@@ -552,6 +552,24 @@ fn select_stop<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
 #[otter::nif]
 fn select_stop_count<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
     Integer::from_i64(env, arc.stop_count.load(Ordering::Relaxed) as i64)
+}
+
+// select_x with a custom notification message. Selects READ on the fd, then
+// writes to its peer so the fd becomes readable — the BEAM then delivers
+// `msg` (not the default {select,...} tuple) to the calling process.
+#[otter::nif]
+fn select_x_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>, msg: TypedTerm<'a>) -> Integer<'a> {
+    use std::io::Write;
+    let pid = Pid::self_(env);
+    // CUSTOM_MSG is required for select_x to deliver `msg` itself; without it
+    // the BEAM sends the default {select,...} tuple with msg nested as the ref.
+    let flags = otter::select::select_x(
+        env, arc.a.as_raw_fd(), NifSelectFlags::READ | NifSelectFlags::CUSTOM_MSG,
+        &arc, &pid, msg, None,
+    );
+    let mut peer = &arc.b;
+    let _ = peer.write_all(b"x");
+    Integer::from_i64(env, flags as i64)
 }
 
 // --- test_time/0 --------------------------------------------------------
@@ -676,6 +694,7 @@ otter::init!("otter_demo__nif", [
     select_register,
     select_stop,
     select_stop_count,
+    select_x_register,
     monitor_resource_new,
     monitor_pid,
     monitor_down_count,

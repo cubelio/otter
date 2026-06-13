@@ -22,6 +22,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([send_to/2, cpu_time/0]).
 -export([panicking_resource_new/0]).
 -export([select_resource_new/0, select_register/1, select_stop/1, select_stop_count/1]).
+-export([select_x_register/2]).
 -export([monitor_resource_new/0, monitor_pid/2, monitor_down_count/1]).
 -export([test_time/0, test_consume_timeslice/0]).
 
@@ -195,6 +196,14 @@ select_stop(_R) -> exit(nif_not_loaded).
 -doc "Number of times the resource's `stop` callback has run.".
 -spec select_stop_count(reference()) -> non_neg_integer().
 select_stop_count(_R) -> exit(nif_not_loaded).
+
+-doc """
+Selects READ on the resource's fd with `Msg` as the custom notification,
+then makes the fd readable so the BEAM delivers `Msg` to the caller.
+Returns the select flags.
+""".
+-spec select_x_register(reference(), term()) -> integer().
+select_x_register(_R, _Msg) -> exit(nif_not_loaded).
 
 %%------------------------------------------------------------------------------
 %% Resource monitor — down callback
