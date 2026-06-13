@@ -11,7 +11,7 @@ pub mod reference;
 pub mod tuple;
 
 pub use atom::Atom;
-pub use binary::{Binary, BinaryBuilder, Bitstring};
+pub use binary::{Binary, BinaryBuf, Bitstring};
 pub use float::Float;
 pub use fun::Fun;
 pub use integer::Integer;

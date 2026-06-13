@@ -8,7 +8,7 @@ use otter::env::{Env, OwnedEnv};
 use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
 use otter::sys::NifSelectFlags;
 use otter::term::{Term, TypedTerm, Raised};
-use otter::types::{Atom, Binary, BinaryBuilder, Float, Integer, List, LocalPid, LocalPort, Map, Reference, Tuple};
+use otter::types::{Atom, Binary, BinaryBuf, Float, Integer, List, LocalPid, LocalPort, Map, Reference, Tuple};
 
 otter::declare_atoms![
     ok, error,
@@ -80,11 +80,30 @@ fn type_of(_env: Env, val: TypedTerm) -> Atom {
 #[otter::nif]
 fn reverse_binary<'a>(env: Env<'a>, bin: Binary<'a>) -> Binary<'a> {
     let bytes = bin.as_bytes();
-    let mut builder = BinaryBuilder::with_capacity(bytes.len());
+    let mut builder = BinaryBuf::with_capacity(bytes.len());
     for &b in bytes.iter().rev() {
         builder.push(b);
     }
-    builder.finish(env)
+    builder.into_binary(env)
+}
+
+// --- etf_encode/1 -------------------------------------------------------
+// Serialize a term to the external term format, returning the bytes as an
+// Erlang binary via BinaryBuf::into_binary. Equivalent to term_to_binary/1.
+
+#[otter::nif]
+fn etf_encode<'a>(env: Env<'a>, val: Term<'a>) -> Binary<'a> {
+    val.serialize().expect("serialize").into_binary(env)
+}
+
+// --- etf_roundtrip/1 ----------------------------------------------------
+// serialize -> read bytes via BinaryBuf::as_bytes -> deserialize. The
+// result must equal the input.
+
+#[otter::nif]
+fn etf_roundtrip<'a>(env: Env<'a>, val: Term<'a>) -> Term<'a> {
+    let buf = val.serialize().expect("serialize");
+    env.deserialize(buf.as_bytes(), false).expect("deserialize")
 }
 
 // --- sum_list/1 ---------------------------------------------------------
@@ -181,7 +200,7 @@ fn test_try_from<'a>(env: Env<'a>, val: Integer<'a>) -> TypedTerm<'a> {
 }
 
 // --- test_binary_traits/0 -----------------------------------------------
-// Exercise Binary Deref, AsRef, sub, and BinaryBuilder Extend/Deref.
+// Exercise Binary Deref, AsRef, sub, and BinaryBuf Extend/Deref.
 
 #[otter::nif]
 fn test_binary_traits(env: Env) -> Atom {
@@ -198,22 +217,22 @@ fn test_binary_traits(env: Env) -> Atom {
     fn takes_asref(b: &impl AsRef<[u8]>) -> usize { b.as_ref().len() }
     assert_eq!(takes_asref(&bin), 11);
 
-    // BinaryBuilder: Extend
-    let mut builder = BinaryBuilder::new();
+    // BinaryBuf: Extend
+    let mut builder = BinaryBuf::new();
     builder.extend(b"hello".iter().copied());
     assert_eq!(builder.len(), 5);
     assert_eq!(&*builder, b"hello");  // via Deref
 
-    // BinaryBuilder: DerefMut
+    // BinaryBuf: DerefMut
     builder[0] = b'H';
     assert_eq!(&*builder, b"Hello");
 
-    // BinaryBuilder: io::Write
+    // BinaryBuf: io::Write
     use std::io::Write;
     write!(builder, " world").unwrap();
     assert_eq!(&*builder, b"Hello world");
 
-    let _ = builder.finish(env);
+    let _ = builder.into_binary(env);
 
     otter::atom![ok]
 }
@@ -678,6 +697,8 @@ otter::init!("otter_demo__nif", [
     echo,
     type_of,
     reverse_binary,
+    etf_encode,
+    etf_roundtrip,
     sum_list,
     test_eq,
     test_ord,

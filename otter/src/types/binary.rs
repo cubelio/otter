@@ -19,7 +19,7 @@ pub struct Binary<'a> {
 /// In BEAM, every binary is a bitstring. A `Bitstring` may hold a byte-
 /// aligned binary or a sub-byte bitstring; decoding via `Bitstring::decode`
 /// accepts both. Call [`is_binary`](Self::is_binary) or
-/// [`try_into_binary`](Self::try_into_binary) to refine. The NIF API
+/// [`to_binary`](Self::to_binary) to refine. The NIF API
 /// provides no inspection functions for the sub-byte case, so a sub-byte
 /// `Bitstring` can only be held and passed back to Erlang unchanged.
 #[derive(Clone, Copy)]
@@ -36,10 +36,10 @@ impl<'a> Bitstring<'a> {
         self.env.is_binary(self)
     }
 
-    /// Refine to a [`Binary`] if this bitstring is byte-aligned, else `None`.
+    /// View as a [`Binary`] if this bitstring is byte-aligned, else `None`.
     ///
     /// One `enif_is_binary` call.
-    pub fn try_into_binary(self) -> Option<Binary<'a>> {
+    pub fn to_binary(self) -> Option<Binary<'a>> {
         if self.is_binary() {
             Some(Binary { term: self.term, env: self.env })
         } else {
@@ -177,42 +177,51 @@ impl Ord for Bitstring<'_> {
 }
 
 // ---------------------------------------------------------------------------
-// BinaryBuilder — growable binary buffer (Vec<u8> model)
+// BinaryBuf — growable binary buffer (Vec<u8> model)
 // ---------------------------------------------------------------------------
 
-/// A growable binary buffer backed by `enif_alloc_binary`.
+/// An owned, mutable binary buffer backed by `enif_alloc_binary`.
 ///
-/// Mirrors `Vec<u8>`: tracks `len` (bytes written) and `capacity` (bytes
-/// allocated) separately. Grows automatically via `enif_realloc_binary`
-/// when appending would exceed capacity.
+/// The RAII owner of a mutable `ErlNifBinary`: `Drop` releases it
+/// (`enif_release_binary`), so the allocation is guaranteed to be reclaimed
+/// or handed to the BEAM. Mirrors `Vec<u8>` — tracks `len` (bytes written)
+/// and `capacity` (bytes allocated) separately and grows via
+/// `enif_realloc_binary` — and is also what [`Term::serialize`] returns.
 ///
-/// Call [`finish`] to shrink the allocation to the written length and
-/// produce an immutable `Binary` term. If dropped without finishing,
-/// the buffer is released automatically.
+/// Read the bytes with [`as_bytes`](Self::as_bytes) (zero-copy) or `Deref`;
+/// copy them out with `.to_vec()`. Consume it with
+/// [`into_binary`](Self::into_binary) to hand the allocation to the BEAM as a
+/// `Binary` term. If dropped without converting, the buffer is released.
 ///
 /// Implements [`std::io::Write`] for use with `write!` and friends.
 ///
-/// [`finish`]: BinaryBuilder::finish
-pub struct BinaryBuilder {
+/// [`Term::serialize`]: crate::term::Term::serialize
+pub struct BinaryBuf {
     bin: crate::sys::NifBinary,
     len: usize,
     released: bool,
 }
 
-impl BinaryBuilder {
-    /// Create an empty builder with no allocation.
-    pub fn new() -> BinaryBuilder {
-        BinaryBuilder::with_capacity(0)
+impl BinaryBuf {
+    /// Create an empty buffer with no allocation.
+    pub fn new() -> BinaryBuf {
+        BinaryBuf::with_capacity(0)
     }
 
-    /// Create a builder with preallocated capacity.
+    /// Create a buffer with preallocated capacity.
     ///
     /// Panics if the allocation fails.
-    pub fn with_capacity(capacity: usize) -> BinaryBuilder {
+    pub fn with_capacity(capacity: usize) -> BinaryBuf {
         let mut bin: crate::sys::NifBinary = unsafe { std::mem::zeroed() };
         let ok = unsafe { crate::enif::alloc_binary(capacity, &mut bin) != 0 };
         assert!(ok, "enif_alloc_binary failed");
-        BinaryBuilder { bin, len: 0, released: false }
+        BinaryBuf { bin, len: 0, released: false }
+    }
+
+    /// Take ownership of an already-filled `NifBinary` (e.g. from
+    /// `enif_term_to_binary`), where the whole allocation is live data.
+    pub(crate) fn from_filled(bin: crate::sys::NifBinary) -> BinaryBuf {
+        BinaryBuf { len: bin.size, bin, released: false }
     }
 
     /// Number of bytes written.
@@ -231,12 +240,12 @@ impl BinaryBuilder {
     }
 
     /// View the written bytes as an immutable slice.
-    pub fn as_slice(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.bin.data, self.len) }
     }
 
     /// View the written bytes as a mutable slice.
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         unsafe { std::slice::from_raw_parts_mut(self.bin.data, self.len) }
     }
 
@@ -283,11 +292,11 @@ impl BinaryBuilder {
         assert!(ok, "enif_realloc_binary failed");
     }
 
-    /// Finalize the buffer into a `Binary` term.
+    /// Consume the buffer, handing its allocation to the BEAM as a `Binary`
+    /// term (`enif_make_binary`).
     ///
-    /// Shrinks the allocation to the exact written length, then transfers
-    /// ownership to the BEAM.
-    pub fn finish<'a>(mut self, env: Env<'a>) -> Binary<'a> {
+    /// Shrinks the allocation to the exact written length first.
+    pub fn into_binary<'a>(mut self, env: Env<'a>) -> Binary<'a> {
         if self.len < self.bin.size {
             let ok = unsafe { crate::enif::realloc_binary(&mut self.bin, self.len) != 0 };
             assert!(ok, "enif_realloc_binary failed on shrink");
@@ -297,13 +306,13 @@ impl BinaryBuilder {
     }
 }
 
-impl Default for BinaryBuilder {
+impl Default for BinaryBuf {
     fn default() -> Self {
-        BinaryBuilder::new()
+        BinaryBuf::new()
     }
 }
 
-impl std::io::Write for BinaryBuilder {
+impl std::io::Write for BinaryBuf {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.extend_from_slice(buf);
         Ok(buf.len())
@@ -314,7 +323,7 @@ impl std::io::Write for BinaryBuilder {
     }
 }
 
-impl Drop for BinaryBuilder {
+impl Drop for BinaryBuf {
     fn drop(&mut self) {
         if !self.released {
             unsafe { crate::enif::release_binary(&mut self.bin) };
@@ -322,32 +331,32 @@ impl Drop for BinaryBuilder {
     }
 }
 
-impl std::ops::Deref for BinaryBuilder {
+impl std::ops::Deref for BinaryBuf {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        self.as_slice()
+        self.as_bytes()
     }
 }
 
-impl std::ops::DerefMut for BinaryBuilder {
+impl std::ops::DerefMut for BinaryBuf {
     fn deref_mut(&mut self) -> &mut [u8] {
-        self.as_mut_slice()
+        self.as_bytes_mut()
     }
 }
 
-impl AsRef<[u8]> for BinaryBuilder {
+impl AsRef<[u8]> for BinaryBuf {
     fn as_ref(&self) -> &[u8] {
-        self.as_slice()
+        self.as_bytes()
     }
 }
 
-impl AsMut<[u8]> for BinaryBuilder {
+impl AsMut<[u8]> for BinaryBuf {
     fn as_mut(&mut self) -> &mut [u8] {
-        self.as_mut_slice()
+        self.as_bytes_mut()
     }
 }
 
-impl Extend<u8> for BinaryBuilder {
+impl Extend<u8> for BinaryBuf {
     fn extend<I: IntoIterator<Item = u8>>(&mut self, iter: I) {
         let iter = iter.into_iter();
         let (lower, _) = iter.size_hint();
@@ -358,15 +367,15 @@ impl Extend<u8> for BinaryBuilder {
     }
 }
 
-impl<'a> Extend<&'a u8> for BinaryBuilder {
+impl<'a> Extend<&'a u8> for BinaryBuf {
     fn extend<I: IntoIterator<Item = &'a u8>>(&mut self, iter: I) {
         self.extend(iter.into_iter().copied());
     }
 }
 
-impl std::fmt::Debug for BinaryBuilder {
+impl std::fmt::Debug for BinaryBuf {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BinaryBuilder")
+        f.debug_struct("BinaryBuf")
             .field("len", &self.len)
             .field("capacity", &self.bin.size)
             .finish()
@@ -374,15 +383,15 @@ impl std::fmt::Debug for BinaryBuilder {
 }
 
 impl Binary<'_> {
-    /// Deserialize a term from the external binary format.
+    /// Deserialize a term from this binary's external-term-format contents.
     ///
     /// If `safe` is true, encoded atoms that don't already exist in the atom
     /// table are rejected. Returns `None` on decode failure. The decoded value
     /// is an unresolved [`Term`]; call [`Term::resolve`] or a decoder to type it.
     ///
     /// Wraps `enif_binary_to_term`.
-    pub fn to_term<'a>(&self, env: Env<'a>, safe: bool) -> Option<Term<'a>> {
-        env.binary_to_term(self.as_bytes(), safe)
+    pub fn deserialize<'a>(&self, env: Env<'a>, safe: bool) -> Option<Term<'a>> {
+        env.deserialize(self.as_bytes(), safe)
     }
 }
 
@@ -442,11 +451,11 @@ impl<'a> Env<'a> {
         unsafe { crate::enif::term_to_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
     }
 
-    /// Deserialize a term from the external binary format
+    /// Deserialize a term from external-term-format bytes
     /// (`enif_binary_to_term`). If `safe`, encoded atoms not already in the
     /// atom table are rejected. `None` on decode failure. The decoded value is
     /// an unresolved [`Term`]; call [`Term::resolve`] or a decoder to type it.
-    pub fn binary_to_term(self, data: &[u8], safe: bool) -> Option<Term<'a>> {
+    pub fn deserialize(self, data: &[u8], safe: bool) -> Option<Term<'a>> {
         let opts = if safe { crate::sys::NIF_BIN2TERM_SAFE } else { 0 };
         let mut term: NifTerm = 0;
         let consumed = unsafe {

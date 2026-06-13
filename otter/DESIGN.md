@@ -80,7 +80,7 @@ Minimum required version: NIF 2.17 (OTP 26). C macros that delegate to real enif
 
 Above `enif` is the entire Erlang-facing surface, and it audits as safe — `enif` is the only place `funcs()`/`unsafe` FFI is reached.
 
-The organising principle is **env-as-receiver**: an operation takes its environment explicitly. When the env *is* the subject it is the receiver — `env.make_tuple(&[…])`, `env.is_binary(term)`, `env.get_map_value(map, key)` — under the audit rule *every `enif_foo(env, …)` becomes `env.foo(…)`*. Env-less operations on a clear subject are value-type methods instead (`Term`'s `Ord`/`Eq` via `enif_compare`/`enif_is_identical`, the `BinaryBuilder` buffer ops). Term inputs are taken as `impl AsNifTerm<'a>` (see Layer 4), so a term from another env is rejected at compile time.
+The organising principle is **env-as-receiver**: an operation takes its environment explicitly. When the env *is* the subject it is the receiver — `env.make_tuple(&[…])`, `env.is_binary(term)`, `env.get_map_value(map, key)` — under the audit rule *every `enif_foo(env, …)` becomes `env.foo(…)`*. Env-less operations on a clear subject are value-type methods instead (`Term`'s `Ord`/`Eq` via `enif_compare`/`enif_is_identical`, the `BinaryBuf` buffer ops). Term inputs are taken as `impl AsNifTerm<'a>` (see Layer 4), so a term from another env is rejected at compile time.
 
 These methods are not gathered in one module — each lives next to its subject. The predicate and builder Env methods for a type sit on that type's file in `types/` (`env.make_binary` in `types/binary.rs`, `env.make_tuple` in `types/tuple.rs`); the general ones (`raise_exception`, `make_copy`, `term_type`, `schedule_nif`, `cpu_time`, …) sit on `term.rs`. The per-type constructors (`Atom::intern`, `Binary::from_bytes`, `Map::new`, …) remain and delegate to the matching Env method.
 
@@ -151,7 +151,7 @@ pub enum TypedTerm<'a> {
 }
 ```
 
-11 variants for 11 type tags — `Bitstring` covers both byte-aligned binaries and sub-byte bitstrings; refine to a `Binary` with `Bitstring::try_into_binary` (or `is_binary`).
+11 variants for 11 type tags — `Bitstring` covers both byte-aligned binaries and sub-byte bitstrings; refine to a `Binary` with `Bitstring::to_binary` (or `is_binary`).
 
 `TypedTerm` and `Term` implement `PartialEq`/`Eq` (via `enif_is_identical`) and `PartialOrd`/`Ord` (via `enif_compare`).
 
@@ -215,14 +215,14 @@ fn len(self) -> usize
 fn try_str(self) -> Result<&'a str, Utf8Error>
 fn sub(self, pos, len) -> Binary<'a>   // zero-copy slice
 fn from_bytes(env, data) -> Binary<'a>
-fn to_term(self, env, safe) -> Option<TypedTerm<'a>>  // deserialize from external format
+fn deserialize(&self, env, safe) -> Option<Term<'a>>  // deserialize ETF bytes
 impl Deref<Target=[u8]>            // auto-coerce to &[u8]
 impl AsRef<[u8]>                   // trait-based byte access
 impl Debug                         // Binary(N bytes)
 
-// BinaryBuilder — growable buffer (Vec<u8> model)
-fn new() -> BinaryBuilder
-fn with_capacity(cap) -> BinaryBuilder
+// BinaryBuf — growable buffer (Vec<u8> model)
+fn new() -> BinaryBuf
+fn with_capacity(cap) -> BinaryBuf
 fn push(&mut self, byte)
 fn extend_from_slice(&mut self, &[u8])
 fn resize(&mut self, new_len, value)
@@ -233,7 +233,7 @@ impl Deref<Target=[u8]> / DerefMut // auto-coerce to &[u8] / &mut [u8]
 impl AsRef<[u8]> / AsMut<[u8]>    // trait-based byte access
 impl Extend<u8>                    // iterator-based appending
 impl Write                         // write! and write_all support
-impl Debug                         // BinaryBuilder { len, capacity }
+impl Debug                         // BinaryBuf { len, capacity }
 
 // List (cons cell)
 fn node(self) -> Node<'a>           // decompose: Nil or Cell(head, tail)
@@ -253,7 +253,7 @@ fn from_terms(env, terms) -> Tuple<'a>
 // Map
 fn new(env) -> Map<'a>
 fn size(self) -> usize
-fn get(self, key) -> Option<TypedTerm<'a>>
+fn get(self, key) -> Option<Term<'a>>
 fn put(self, key, value) -> Map<'a>
 fn update(self, key, value) -> Option<Map<'a>>
 fn remove(self, key) -> Option<Map<'a>>
@@ -272,8 +272,8 @@ fn command(self, caller_env, msg_env, msg) -> bool
 // Reference
 fn new(env) -> Reference<'a>
 
-// TypedTerm
-fn to_binary(self, env) -> Option<Binary<'a>>  // serialize to external format
+// Term (serialization is type-agnostic — no resolve needed)
+fn serialize(self) -> Option<BinaryBuf>   // serialize to ETF; .into_binary(env) or .as_bytes()
 ```
 
 ### Env methods

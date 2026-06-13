@@ -53,6 +53,14 @@ smoke_test_() ->
     ?_assertEqual(15, otter_demo__nif:sum_list([1, 2, 3, 4, 5])),
     ?_assertEqual(0,  otter_demo__nif:sum_list([])),
 
+    %% ETF serialize/deserialize (term_to_binary/binary_to_term equivalents)
+    ?_assertEqual(term_to_binary(hello),       otter_demo__nif:etf_encode(hello)),
+    ?_assertEqual(term_to_binary({a, [1,2], #{k => v}}),
+                  otter_demo__nif:etf_encode({a, [1,2], #{k => v}})),
+    ?_assertEqual({a, [1,2], #{k => v}},
+                  otter_demo__nif:etf_roundtrip({a, [1,2], #{k => v}})),
+    ?_assertEqual(<<"bytes">>, otter_demo__nif:etf_roundtrip(<<"bytes">>)),
+
     %% Equality (PartialEq)
     ?_assertEqual(true,  otter_demo__nif:test_eq(hello, hello)),
     ?_assertEqual(false, otter_demo__nif:test_eq(hello, world)),

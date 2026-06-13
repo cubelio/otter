@@ -13,6 +13,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -on_load(on_load/0).
 
 -export([hello/0, add/2, echo/1, type_of/1, reverse_binary/1, sum_list/1]).
+-export([etf_encode/1, etf_roundtrip/1]).
 -export([test_eq/2, test_ord/2, test_debug/1, test_try_from/1,
          test_binary_traits/0, test_from_str/1, reverse_list/1, list_tail/1]).
 -export([atom_name/1]).
@@ -71,6 +72,12 @@ type_of(_Term) -> exit(nif_not_loaded).
 
 -spec reverse_binary(binary()) -> binary().
 reverse_binary(_B) -> exit(nif_not_loaded).
+
+-spec etf_encode(term()) -> binary().
+etf_encode(_T) -> exit(nif_not_loaded).
+
+-spec etf_roundtrip(term()) -> term().
+etf_roundtrip(_T) -> exit(nif_not_loaded).
 
 -spec sum_list([integer()]) -> integer().
 sum_list(_L) -> exit(nif_not_loaded).

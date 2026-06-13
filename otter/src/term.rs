@@ -4,8 +4,8 @@ use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::sys::{NifHash, NifTerm, NifTermType, NifUniqueInteger};
 use crate::types::{
-    Atom, Binary, Bitstring, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid, Port,
-    Reference, Tuple,
+    Atom, Binary, BinaryBuf, Bitstring, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,
+    Port, Reference, Tuple,
 };
 
 // ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ impl<'a> Term<'a> {
     /// Resolve to a typed `TypedTerm<'a>` by calling `enif_term_type`.
     /// Exactly one NIF call regardless of variant. Binary-tagged terms
     /// surface as [`TypedTerm::Bitstring`]; call [`Bitstring::is_binary`] or
-    /// [`Bitstring::try_into_binary`] to refine.
+    /// [`Bitstring::to_binary`] to refine.
     ///
     /// `None` if the term's type is one this otter build does not recognize (a
     /// type added by a newer OTP). The term is still a valid [`Term`] — the
@@ -78,6 +78,24 @@ impl<'a> Term<'a> {
     pub fn term_type_raw(self) -> std::ffi::c_int {
         unsafe { crate::enif::term_type(self.env.as_ptr(), self.term) }
     }
+
+    /// Serialize this term to the Erlang external term format, returning the
+    /// bytes in a [`BinaryBuf`]. Serialization is type-agnostic, so this is on
+    /// `Term` — no `resolve` needed. Read the bytes with `as_bytes()` /
+    /// `.to_vec()`, or hand them to the BEAM as a binary term with
+    /// `.into_binary(env)`.
+    ///
+    /// Returns `None` if serialization fails (should not happen for valid terms).
+    ///
+    /// Wraps `enif_term_to_binary`.
+    pub fn serialize(self) -> Option<BinaryBuf> {
+        let mut bin: crate::sys::NifBinary = unsafe { std::mem::zeroed() };
+        if self.env.term_to_binary(self, &mut bin) {
+            Some(BinaryBuf::from_filled(bin))
+        } else {
+            None
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +110,7 @@ impl<'a> Term<'a> {
 /// Mirrors BEAM's `ErlNifTermType` exactly: byte-aligned binaries and
 /// sub-byte bitstrings share the [`Bitstring`](Self::Bitstring) variant
 /// because BEAM treats every binary as a bitstring. Refine with
-/// [`Bitstring::is_binary`] / [`Bitstring::try_into_binary`] if you need
+/// [`Bitstring::is_binary`] / [`Bitstring::to_binary`] if you need
 /// the byte-aligned distinction.
 #[derive(Clone, Copy)]
 pub enum TypedTerm<'a> {
@@ -171,22 +189,6 @@ impl<'a> Ord for TypedTerm<'a> {
     }
 }
 
-impl<'a> TypedTerm<'a> {
-    /// Serialize this term to the external binary format.
-    ///
-    /// Returns `None` if serialization fails (should not happen for valid terms).
-    ///
-    /// Wraps `enif_term_to_binary`.
-    pub fn to_binary(self, env: Env<'a>) -> Option<Binary<'a>> {
-        let mut bin: crate::sys::NifBinary = unsafe { std::mem::zeroed() };
-        if env.term_to_binary(self, &mut bin) {
-            // term_to_binary allocates via alloc_binary; make_binary takes ownership.
-            Some(env.make_binary(&mut bin))
-        } else {
-            None
-        }
-    }
-}
 
 impl<'a> TryFrom<Term<'a>> for TypedTerm<'a> {
     type Error = CodecError;

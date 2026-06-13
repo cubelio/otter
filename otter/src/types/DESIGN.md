@@ -23,7 +23,7 @@ NifTerm (u64 machine word)
 `TypedTerm` mirrors `ErlNifTermType` exactly — one variant per tag, no
 peer variants. The `Bitstring` variant covers both byte-aligned binaries
 and sub-byte bitstrings (BEAM treats every binary as a bitstring); call
-`Bitstring::is_binary` or `Bitstring::try_into_binary` to refine.
+`Bitstring::is_binary` or `Bitstring::to_binary` to refine.
 `resolve()` is uniformly one NIF call regardless of variant.
 
 
@@ -145,55 +145,57 @@ struct Bitstring<'a> { term: NifTerm, env: Env<'a> }
 | `try_str(self) → Result<&'a str, Utf8Error>` | Zero-copy UTF-8 view | `enif_inspect_binary` + `std::str::from_utf8` |
 | `sub(self, pos, len) → Binary<'a>` | Zero-copy sub-binary (panics on OOB) | `enif_make_sub_binary` |
 | `from_bytes(env, data) → Binary<'a>` | Allocate and copy bytes onto BEAM heap | `enif_alloc_binary` + `enif_make_binary` |
-| `to_term(self, env, safe) → Option<TypedTerm<'a>>` | Deserialize from external binary format | `enif_binary_to_term` |
+| `deserialize(&self, env, safe) → Option<Term<'a>>` | Deserialize a term from this binary's ETF bytes | `enif_binary_to_term` |
 | `impl Deref<Target=[u8]>` | Auto-coerce to `&[u8]` | `enif_inspect_binary` |
 | `impl AsRef<[u8]>` | Trait-based byte access | `enif_inspect_binary` |
 | `impl Debug` | `Binary(N bytes)` | `enif_inspect_binary` |
 
-**BinaryBuilder** — growable buffer mirroring `Vec<u8>`:
+**BinaryBuf** — growable buffer mirroring `Vec<u8>`:
 
 ```rust
-struct BinaryBuilder { bin: NifBinary, len: usize, released: bool }
+struct BinaryBuf { bin: NifBinary, len: usize, released: bool }
 ```
 
 | Method | Does | Calls |
 |---|---|---|
-| `new() → BinaryBuilder` | Empty builder | `enif_alloc_binary(0)` |
-| `with_capacity(cap) → BinaryBuilder` | Preallocated builder | `enif_alloc_binary(cap)` |
+| `new() → BinaryBuf` | Empty buffer | `enif_alloc_binary(0)` |
+| `with_capacity(cap) → BinaryBuf` | Preallocated buffer | `enif_alloc_binary(cap)` |
 | `push(&mut self, byte)` | Append one byte, grow if needed | `enif_realloc_binary` |
 | `extend_from_slice(&mut self, &[u8])` | Append slice, grow if needed | `enif_realloc_binary` |
 | `resize(&mut self, new_len, value)` | Resize and fill new bytes with value | `enif_realloc_binary` |
-| `as_slice(&self) → &[u8]` | View written bytes | — |
-| `as_mut_slice(&mut self) → &mut [u8]` | Mutable view of written bytes | — |
+| `as_bytes(&self) → &[u8]` | View written bytes (zero-copy) | — |
+| `as_bytes_mut(&mut self) → &mut [u8]` | Mutable view of written bytes | — |
 | `len(&self) → usize` | Bytes written | — |
 | `capacity(&self) → usize` | Bytes allocated | — |
 | `reserve(&mut self, additional)` | Ensure room for more bytes | `enif_realloc_binary` |
-| `finish(self, env) → Binary<'a>` | Shrink to len, finalize | `enif_realloc_binary` + `enif_make_binary` |
+| `into_binary(self, env) → Binary<'a>` | Consume, handing the allocation to the BEAM as a term (shrinks first) | `enif_realloc_binary` + `enif_make_binary` |
 | `impl Write` | `write!` and `write_all` support | — |
-| `impl Deref<Target=[u8]>` | Auto-coerce to `&[u8]` (written bytes) | — |
+| `impl Deref<Target=[u8]>` | Auto-coerce to `&[u8]` (written bytes); gives `.to_vec()` | — |
 | `impl DerefMut` | Auto-coerce to `&mut [u8]` (written bytes) | — |
 | `impl AsRef<[u8]>` / `AsMut<[u8]>` | Trait-based byte access | — |
 | `impl Extend<u8>` | Iterator-based appending | — |
-| `impl Debug` | `BinaryBuilder { len: N, capacity: M }` | — |
-| `Drop` | Release if not finalized | `enif_release_binary` |
+| `impl Debug` | `BinaryBuf { len: N, capacity: M }` | — |
+| `Drop` | Release if not converted to a term | `enif_release_binary` |
 
-**TypedTerm methods** (on `TypedTerm<'a>`):
+**Serialization** (on `Term<'a>` — type-agnostic, no `resolve`):
 
 | Method | Does | Calls |
 |---|---|---|
-| `to_binary(self, env) → Option<Binary<'a>>` | Serialize any term to external binary format | `enif_term_to_binary` + `enif_make_binary` |
+| `Term::serialize(self) → Option<BinaryBuf>` | Serialize any term to ETF bytes; `.into_binary(env)` for a term, `.as_bytes()`/`.to_vec()` for bytes | `enif_term_to_binary` |
 
 ### Internals
 
 `as_bytes` calls `enif_inspect_binary` which returns a pointer and size into
 the BEAM heap. The returned slice borrows from the environment lifetime `'a`,
-so it cannot outlive the NIF call. `BinaryBuilder` mirrors `Vec<u8>`: it
+so it cannot outlive the NIF call. `BinaryBuf` mirrors `Vec<u8>`: it
 tracks `len` (bytes written) and `capacity` (bytes allocated via
 `enif_alloc_binary`) separately. `push` and `extend_from_slice` grow via
-`enif_realloc_binary` with amortized doubling. `finish` calls
+`enif_realloc_binary` with amortized doubling. `into_binary` calls
 `enif_realloc_binary` to shrink to exact `len`, then `enif_make_binary` to
 transfer ownership to the BEAM. The `Drop` impl calls `enif_release_binary`
-if the builder is dropped without finishing, preventing leaks.
+if the buffer is dropped without being converted to a term, preventing leaks.
+`BinaryBuf` is also what `Term::serialize` returns, so the same RAII owner
+covers both building binaries and holding `enif_term_to_binary` output.
 
 `Bitstring` is a pass-through type with no inspection methods (the NIF API
 provides none for sub-byte bitstrings). It implements `Encoder`, `Decoder`,
@@ -204,7 +206,7 @@ them.
 ### Not Exposed
 
 `enif_inspect_iolist_as_binary` (iolist flattening is a higher-level
-operation), `enif_make_new_binary` (one-step alloc+term; BinaryBuilder
+operation), `enif_make_new_binary` (one-step alloc+term; BinaryBuf
 covers this with more control).
 
 ---
@@ -343,7 +345,7 @@ enum Node<'a> {
 | Method | Does |
 |---|---|
 | `next() → Option<Term<'a>>` | Yield next head; `None` when a non-cell tail is reached |
-| `tail() → Option<TypedTerm<'a>>` | Terminal value after iteration: `[]` for proper lists, improper tail otherwise |
+| `tail() → Option<Term<'a>>` | Terminal value after iteration: `[]` for proper lists, improper tail otherwise |
 
 ### Internals
 
@@ -443,7 +445,7 @@ struct MapIterator<'a> { iter: Box<NifMapIterator>, env: Env<'a>, exhausted: boo
 |---|---|---|
 | `new(env) → Map<'a>` | Create empty map | `enif_make_new_map` |
 | `size(self) → usize` | Key-value pair count | `enif_get_map_size` |
-| `get(self, impl AsNifTerm<'a>) → Option<TypedTerm<'a>>` | Look up key | `enif_get_map_value` |
+| `get(self, impl AsNifTerm<'a>) → Option<Term<'a>>` | Look up key | `enif_get_map_value` |
 | `put(self, impl AsNifTerm<'a>, impl AsNifTerm<'a>) → Map<'a>` | Insert or replace | `enif_make_map_put` |
 | `update(self, impl AsNifTerm<'a>, impl AsNifTerm<'a>) → Option<Map<'a>>` | Update existing key; `None` if absent | `enif_make_map_update` |
 | `remove(self, impl AsNifTerm<'a>) → Option<Map<'a>>` | Remove key; `None` if absent | `enif_make_map_remove` |
@@ -629,7 +631,7 @@ per design.
 | Type | Create | Inspect | Modify | Iterate | Encode/Decode |
 |---|---|---|---|---|---|
 | Atom | `new`, `try_existing` | `name` | — | — | yes |
-| Binary | `from_bytes`, `BinaryBuilder` | `as_bytes`, `try_str`, `len` | `sub` | — | yes |
+| Binary | `from_bytes`, `BinaryBuf` | `as_bytes`, `try_str`, `len` | `sub` | — | yes |
 | Bitstring | — | — | — | — | yes (pass-through) |
 | Integer | `from_i64`, `from_u64` | `TryFrom` for i64/u64/i128 | — | — | yes |
 | Float | `from_f64` | `From<Float> for f64` | — | — | yes |

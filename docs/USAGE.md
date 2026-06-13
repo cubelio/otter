@@ -262,9 +262,9 @@ Zero-copy access to BEAM-heap binaries.
 //   fn read<'a>(_env: Env<'a>, bin: Binary<'a>) -> ...
 //
 // Or refine from a TypedTerm — every binary surfaces as TypedTerm::Bitstring,
-// and Bitstring::try_into_binary refines to Binary if byte-aligned:
+// and Bitstring::to_binary refines to Binary if byte-aligned:
 let TypedTerm::Bitstring(bs) = term else { ... };
-let bin = bs.try_into_binary().ok_or(...)?;
+let bin = bs.to_binary().ok_or(...)?;
 
 // Read
 let bytes: &[u8] = bin.as_bytes();
@@ -278,28 +278,43 @@ let sub = bin.sub(0, 5);
 let new_bin = Binary::from_bytes(env, b"hello");
 ```
 
-**BinaryBuilder** — growable buffer for constructing binaries, mirrors `Vec<u8>`:
+**BinaryBuf** — growable buffer for constructing binaries, mirrors `Vec<u8>`:
 
 ```rust
 // Append-style (unknown size)
-let mut builder = BinaryBuilder::new();
+let mut builder = BinaryBuf::new();
 builder.extend_from_slice(b"hel");
 builder.extend_from_slice(b"lo");
-let bin: Binary = builder.finish(env);
+let bin: Binary = builder.into_binary(env);
 
 // Pre-sized with indexed writes (known size)
-let mut builder = BinaryBuilder::with_capacity(5);
+let mut builder = BinaryBuf::with_capacity(5);
 builder.resize(5, 0);
-let buf: &mut [u8] = builder.as_mut_slice();
+let buf: &mut [u8] = builder.as_bytes_mut();
 buf[0] = b'h';
 buf[1] = b'e';
 buf[2] = b'l';
 buf[3] = b'l';
 buf[4] = b'o';
-let bin: Binary = builder.finish(env);
+let bin: Binary = builder.into_binary(env);
 ```
 
-`BinaryBuilder` allocates via `enif_alloc_binary` and grows via `enif_realloc_binary`. `finish()` shrinks to the written length and transfers ownership to the BEAM. If dropped without calling `finish()`, the allocation is released. Implements `std::io::Write`.
+`BinaryBuf` allocates via `enif_alloc_binary` and grows via `enif_realloc_binary`. `into_binary()` shrinks to the written length and transfers ownership to the BEAM. If dropped without calling `into_binary()`, the allocation is released. Implements `std::io::Write`.
+
+### Serialize / deserialize (external term format)
+
+`Term::serialize` is the `term_to_binary/1` codec — it works on any term (no `resolve`) and returns a `BinaryBuf`, so you choose whether you want the bytes or an Erlang binary term. `deserialize` is the `binary_to_term/1` inverse.
+
+```rust
+// term -> ETF
+let buf = term.serialize().expect("serializable");
+let bytes: &[u8] = buf.as_bytes();        // use the bytes in Rust
+let bin: Binary = buf.into_binary(env);   // ...or hand them back as a binary term
+
+// ETF -> term (safe = reject unknown atoms)
+let term: Term = env.deserialize(bytes, true).ok_or(...)?;
+let term: Term = binary.deserialize(env, true).ok_or(...)?;
+```
 
 ### Bitstring
 
@@ -392,7 +407,7 @@ let TypedTerm::Map(map) = term else { ... };
 let n: usize = map.size();
 
 // Lookup — accepts any AsNifTerm (Atom, Integer, TypedTerm, etc.)
-let val: Option<TypedTerm> = map.get(atom_key);
+let val: Option<Term> = map.get(atom_key);
 
 // Insert (returns a new map — maps are immutable)
 let map2: Map = map.put(atom_key, integer_val);
@@ -880,7 +895,7 @@ The BEAM sends a message to `pid` when the event fires. Use `NifSelectFlags::REA
 ```rust
 use otter::env::Env;
 use otter::term::TypedTerm;
-use otter::types::{Atom, Binary, BinaryBuilder, Integer, List};
+use otter::types::{Atom, Binary, BinaryBuf, Integer, List};
 
 otter::declare_atoms![world, ok];
 
@@ -903,11 +918,11 @@ fn echo(_env: Env, val: TypedTerm) -> TypedTerm {
 #[otter::nif]
 fn reverse_binary<'a>(env: Env<'a>, bin: Binary<'a>) -> Binary<'a> {
     let bytes = bin.as_bytes();
-    let mut builder = BinaryBuilder::with_capacity(bytes.len());
+    let mut builder = BinaryBuf::with_capacity(bytes.len());
     for &b in bytes.iter().rev() {
         builder.push(b);
     }
-    builder.finish(env)
+    builder.into_binary(env)
 }
 
 #[otter::nif]
