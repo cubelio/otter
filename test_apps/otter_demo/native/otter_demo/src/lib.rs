@@ -1,8 +1,12 @@
 use std::collections::HashMap;
+use std::os::unix::io::AsRawFd;
+use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use otter::env::{Env, OwnedEnv};
 use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
+use otter::sys::NifSelectFlags;
 use otter::term::{Term, TypedTerm, Raised};
 use otter::types::{Atom, Binary, BinaryBuilder, Float, Integer, List, Map, Pid, Reference, Tuple};
 
@@ -491,10 +495,70 @@ fn panicking_resource_new(_env: Env) -> ResourceArc<PanickingResource> {
     ResourceArc::from(PanickingResource)
 }
 
+// --- select / stop callback (audit-01 regression) -----------------------
+// A resource owning a connected socket pair. select() registers READ
+// interest on one end; select() with STOP drives the select-stop path,
+// which the BEAM dispatches to Resource::stop. Before audit-01 the stop
+// slot was NULL and this call segfaulted the VM. `stop` bumps a counter the
+// Erlang side polls, proving the (non-NULL) callback ran and the VM lived.
+//
+// Both ends are held alive so neither becomes readable: the only event is
+// the explicit STOP. The streams close on Drop, after STOP has already
+// deregistered the fd from the pollset.
+struct FdResource {
+    a: UnixStream,
+    _b: UnixStream,
+    stop_count: AtomicUsize,
+}
+
+static FD_RESOURCE_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
+
+impl Resource for FdResource {
+    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
+        &FD_RESOURCE_TYPE
+    }
+
+    fn stop(&self, _env: Env<'_>, _event: otter::sys::NifEvent, _is_direct_call: bool) {
+        self.stop_count.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[otter::nif]
+fn select_resource_new(_env: Env) -> ResourceArc<FdResource> {
+    let (a, b) = UnixStream::pair().expect("socketpair");
+    ResourceArc::from(FdResource { a, _b: b, stop_count: AtomicUsize::new(0) })
+}
+
+#[otter::nif]
+fn select_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
+    let pid = Pid::self_(env);
+    let ref_term = TypedTerm::Reference(Reference::new(env));
+    let flags = otter::select::select(
+        env, arc.a.as_raw_fd(), NifSelectFlags::READ, &arc, &pid, ref_term,
+    );
+    Integer::from_i64(env, flags as i64)
+}
+
+#[otter::nif]
+fn select_stop<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
+    let pid = Pid::self_(env);
+    let ref_term = TypedTerm::Reference(Reference::new(env));
+    let flags = otter::select::select(
+        env, arc.a.as_raw_fd(), NifSelectFlags::STOP, &arc, &pid, ref_term,
+    );
+    Integer::from_i64(env, flags as i64)
+}
+
+#[otter::nif]
+fn select_stop_count<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
+    Integer::from_i64(env, arc.stop_count.load(Ordering::Relaxed) as i64)
+}
+
 fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);
     otter::resource::register_resource_type::<HashMapResource>(env);
     otter::resource::register_resource_type::<PanickingResource>(env);
+    otter::resource::register_resource_type::<FdResource>(env);
     true
 }
 
@@ -531,4 +595,8 @@ otter::init!("otter_demo__nif", [
     send_to,
     cpu_time,
     panicking_resource_new,
+    select_resource_new,
+    select_register,
+    select_stop,
+    select_stop_count,
 ], load = on_load);

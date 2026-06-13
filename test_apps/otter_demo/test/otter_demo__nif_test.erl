@@ -190,3 +190,28 @@ smoke_test_() ->
       ?assertEqual(3, otter_demo__nif:add(1, 2))
     end)
   ].
+
+%% audit-01 regression — the select-stop path must invoke the resource's
+%% stop callback, not call a NULL function pointer and segfault the VM.
+%% Register READ interest on a socket-pair fd, then drive ERL_NIF_SELECT_STOP.
+%% The stop callback bumps a counter; we poll it (STOP may run directly or be
+%% scheduled to a poller thread). Reaching the assertions at all proves the VM
+%% survived the stop dispatch.
+-spec select_stop_test() -> _.
+select_stop_test() ->
+  R = otter_demo__nif:select_resource_new(),
+  Reg = otter_demo__nif:select_register(R),
+  ?assert(is_integer(Reg)),
+  Stop = otter_demo__nif:select_stop(R),
+  %% STOP_CALLED (1) or STOP_SCHEDULED (2) — the stop was accepted.
+  ?assert(Stop band 3 =/= 0),
+  ?assertEqual(ok, wait_for_stop(R, 100)),
+  ?assertEqual(1, otter_demo__nif:select_stop_count(R)).
+
+-spec wait_for_stop(reference(), non_neg_integer()) -> ok | timeout.
+wait_for_stop(_R, 0) -> timeout;
+wait_for_stop(R, N) ->
+  case otter_demo__nif:select_stop_count(R) of
+    C when C >= 1 -> ok;
+    _ -> timer:sleep(10), wait_for_stop(R, N - 1)
+  end.

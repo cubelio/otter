@@ -21,6 +21,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([divide/2, dirty_cpu_thread_type/0, send_from_thread/0]).
 -export([send_to/2, cpu_time/0]).
 -export([panicking_resource_new/0]).
+-export([select_resource_new/0, select_register/1, select_stop/1, select_stop_count/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -166,3 +167,29 @@ test in `otter_demo__nif_test`.
 """.
 -spec panicking_resource_new() -> reference().
 panicking_resource_new() -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% audit-01 regression — select stop callback
+
+-doc """
+Returns a resource owning a connected socket pair, for exercising the
+`enif_select` stop path. See the `select_stop` test in
+`otter_demo__nif_test`.
+""".
+-spec select_resource_new() -> reference().
+select_resource_new() -> exit(nif_not_loaded).
+
+-doc "Registers READ interest on the resource's fd. Returns the select flags.".
+-spec select_register(reference()) -> integer().
+select_register(_R) -> exit(nif_not_loaded).
+
+-doc """
+Drives the select-stop path (`ERL_NIF_SELECT_STOP`), invoking the
+resource's `stop` callback. Returns the select flags.
+""".
+-spec select_stop(reference()) -> integer().
+select_stop(_R) -> exit(nif_not_loaded).
+
+-doc "Number of times the resource's `stop` callback has run.".
+-spec select_stop_count(reference()) -> non_neg_integer().
+select_stop_count(_R) -> exit(nif_not_loaded).
