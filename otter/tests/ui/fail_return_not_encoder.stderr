@@ -11,7 +11,7 @@ help: the trait `Encoder` is not implemented for `NotEncodable`
    | ^^^^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `Encoder`:
              ResourceArc<T>
-             Result<T, E>
+             Result<T, Raised<'r>>
              Term<'b>
              TypedTerm<'b>
              otter::types::Atom

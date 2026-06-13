@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifTerm, NifTermType};
-use crate::term::Term;
+use crate::term::{Term, AsNifTerm};
 
 /// An Erlang integer. Arbitrary precision — small integers are tagged
 /// immediates, large integers (bignums) are heap-allocated.
@@ -16,14 +16,48 @@ pub struct Integer<'a> {
 impl<'a> Integer<'a> {
     /// Construct an integer term from an `i64`.
     pub fn from_i64(env: Env<'a>, val: i64) -> Integer<'a> {
-        let term = unsafe { crate::wrapper::number::make_int64(env.as_ptr(), val) };
-        Integer { term, env }
+        env.make_int64(val)
     }
 
     /// Construct an integer term from a `u64`.
     pub fn from_u64(env: Env<'a>, val: u64) -> Integer<'a> {
-        let term = unsafe { crate::wrapper::number::make_uint64(env.as_ptr(), val) };
-        Integer { term, env }
+        env.make_uint64(val)
+    }
+}
+
+impl<'a> Env<'a> {
+    /// Construct an integer term from an `i64` (`enif_make_int64`).
+    pub fn make_int64(self, val: i64) -> Integer<'a> {
+        let term = unsafe { crate::enif::make_int64(self.as_ptr(), val) };
+        Integer { term, env: self }
+    }
+
+    /// Construct an integer term from a `u64` (`enif_make_uint64`).
+    pub fn make_uint64(self, val: u64) -> Integer<'a> {
+        let term = unsafe { crate::enif::make_uint64(self.as_ptr(), val) };
+        Integer { term, env: self }
+    }
+
+    /// Extract an `i64` from an integer term (`enif_get_int64`).
+    /// `None` if the term is not an integer or does not fit in `i64`.
+    pub fn get_int64(self, term: impl AsNifTerm<'a>) -> Option<i64> {
+        let mut val: i64 = 0;
+        if unsafe { crate::enif::get_int64(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
+            Some(val)
+        } else {
+            None
+        }
+    }
+
+    /// Extract a `u64` from an integer term (`enif_get_uint64`).
+    /// `None` if the term is not an integer or does not fit in `u64`.
+    pub fn get_uint64(self, term: impl AsNifTerm<'a>) -> Option<u64> {
+        let mut val: u64 = 0;
+        if unsafe { crate::enif::get_uint64(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
+            Some(val)
+        } else {
+            None
+        }
     }
 }
 
@@ -31,12 +65,7 @@ impl TryFrom<Integer<'_>> for i64 {
     type Error = CodecError;
     /// Returns `IntegerOverflow` if the value does not fit in `i64`.
     fn try_from(int: Integer<'_>) -> Result<i64, CodecError> {
-        let mut val: i64 = 0;
-        if unsafe { crate::wrapper::number::get_int64(int.env.as_ptr(), int.term, &mut val) } {
-            Ok(val)
-        } else {
-            Err(CodecError::IntegerOverflow)
-        }
+        int.env.get_int64(int).ok_or(CodecError::IntegerOverflow)
     }
 }
 
@@ -45,12 +74,7 @@ impl TryFrom<Integer<'_>> for u64 {
     /// Returns `IntegerOverflow` if the value does not fit in `u64`
     /// (including negative values).
     fn try_from(int: Integer<'_>) -> Result<u64, CodecError> {
-        let mut val: u64 = 0;
-        if unsafe { crate::wrapper::number::get_uint64(int.env.as_ptr(), int.term, &mut val) } {
-            Ok(val)
-        } else {
-            Err(CodecError::IntegerOverflow)
-        }
+        int.env.get_uint64(int).ok_or(CodecError::IntegerOverflow)
     }
 }
 
@@ -73,7 +97,7 @@ impl TryFrom<Integer<'_>> for i128 {
 
 impl PartialEq for Integer<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
+        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -87,7 +111,7 @@ impl PartialOrd for Integer<'_> {
 
 impl Ord for Integer<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
+        let c = unsafe { crate::enif::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -100,20 +124,17 @@ impl std::fmt::Debug for Integer<'_> {
 
 impl<'b> Encoder for Integer<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let raw = if self.env.as_ptr() == env.as_ptr() {
-            self.term
+        if self.env.as_ptr() == env.as_ptr() {
+            Term::new(env, self.term)
         } else {
-            unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) }
-        };
-        Term::new(env, raw)
+            env.make_copy(*self)
+        }
     }
 }
 
 impl<'a> Decoder<'a> for Integer<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::term::term_type(term.env.as_ptr(), term.term) }
-            == NifTermType::Integer
-        {
+        if term.env.term_type(term) == NifTermType::Integer {
             Ok(Integer { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

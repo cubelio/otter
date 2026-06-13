@@ -2,10 +2,9 @@
 
 use std::marker::PhantomData;
 
-use crate::sys::{NifEnv, NifPid};
+use crate::sys::{NifEnv, NifPid, NifPort};
 use crate::term::TypedTerm;
-use crate::types::Pid;
-use crate::wrapper;
+use crate::types::{Pid, Port};
 
 // ---------------------------------------------------------------------------
 // EnvKind
@@ -108,7 +107,7 @@ unsafe impl Send for OwnedEnv {}
 impl OwnedEnv {
     /// Allocate a new process-independent environment.
     pub fn new() -> OwnedEnv {
-        let env = unsafe { wrapper::env::alloc_env() };
+        let env = unsafe { crate::enif::alloc_env() };
         assert!(!env.is_null(), "enif_alloc_env returned null");
         OwnedEnv { env }
     }
@@ -141,9 +140,35 @@ impl OwnedEnv {
         let nif_pid = NifPid { pid: pid.term };
         // null caller_env = sending from outside a NIF call / scheduler thread.
         let ok = unsafe {
-            wrapper::env::send(std::ptr::null_mut(), &nif_pid, self.env, term)
+            crate::enif::send(std::ptr::null_mut(), &nif_pid, self.env, term) != 0
         };
         // enif_send always invalidates msg_env; clear our state to match.
+        self.clear();
+        ok
+    }
+
+    /// Build a port command message and send it to `port`.
+    ///
+    /// Like [`send`], but issues `enif_port_command`. The closure receives a
+    /// temporary [`Env`] backed by this environment and returns the command
+    /// term; afterwards the environment is cleared. Returns `true` if the
+    /// command was accepted.
+    ///
+    /// [`send`]: OwnedEnv::send
+    pub fn port_command<F>(&mut self, port: &Port, f: F) -> bool
+    where
+        F: FnOnce(Env<'_>) -> TypedTerm<'_>,
+    {
+        let marker = ();
+        // SAFETY: self.env is valid; marker ties the lifetime to this frame.
+        let env = unsafe { Env::new(&marker, self.env, EnvKind::ProcessIndependent) };
+        let term = f(env).as_raw();
+        let nif_port = NifPort { port_id: port.term };
+        // null caller_env = issuing the command from outside a NIF call.
+        let ok = unsafe {
+            crate::enif::port_command(std::ptr::null_mut(), &nif_port, self.env, term) != 0
+        };
+        // port_command invalidates msg_env like send; clear our state to match.
         self.clear();
         ok
     }
@@ -155,7 +180,7 @@ impl OwnedEnv {
     ///
     /// [`send`]: OwnedEnv::send
     pub fn clear(&mut self) {
-        unsafe { wrapper::env::clear_env(self.env) };
+        unsafe { crate::enif::clear_env(self.env) };
     }
 }
 
@@ -167,6 +192,6 @@ impl Default for OwnedEnv {
 
 impl Drop for OwnedEnv {
     fn drop(&mut self) {
-        unsafe { wrapper::env::free_env(self.env) };
+        unsafe { crate::enif::free_env(self.env) };
     }
 }

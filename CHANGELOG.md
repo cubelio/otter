@@ -10,7 +10,9 @@ Initial release.
 - Three-level term resolution: Term (zero work) → TypedTerm (one `enif_term_type` call) → concrete-type extraction
 - Compile-time lifetime safety via invariant `Env<'a>` constructed from a stack borrow
 - `Encoder`/`Decoder` traits for all types and `ResourceArc`; `Encoder::encode` returns `Term<'a>` to avoid an extra `enif_term_type` call on every encoded return
-- `impl Encoder for Result<T: Encoder, E: Encoder>`: `Ok` encodes normally, `Err` encodes and raises via `enif_raise_exception` — auto-raise dispatched by trait, not macro magic
+- Env-as-receiver safe layer: every `enif_foo(env, …)` is exposed as `env.foo(…)` (e.g. `env.make_tuple`, `env.is_binary`, `env.get_map_value`), with `enif.rs` the sole `unsafe`/`funcs()` floor (`pub` under the `raw` feature). Per-type constructors (`Atom::intern`, `Binary::from_bytes`, …) delegate to these
+- Exception model via `Raised<'a>`, an unforgeable witness that an exception is already pending: `env.raise_exception(reason)` / `env.make_badarg()` (generic over the success type) and fallible builders return `Result<_, Raised>`, which the `Encoder` returns raw at NIF exit — never re-raised, so double-raising is impossible. `make_double` / `Float::from_f64` / `cpu_time` / `schedule_nif` are fallible accordingly; `Env::check_raised` guards `raw`-surface calls that may raise
+- `Env::send` (in-NIF send), `OwnedEnv::port_command`, and `Env::cpu_time`
 - `BinaryBuilder` with `io::Write`, `Extend`, `Deref`/`DerefMut`, and `Drop`-on-leak release
 - `List` as cons cell with `Node::{Nil, Cell}`, `ListIterator` (with `FusedIterator` and `IntoIterator`), `len`, `reverse`, `try_string`, `from_str`
 - `MapIterator` with `enif_map_iterator_*` and `Drop`

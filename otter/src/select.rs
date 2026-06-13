@@ -35,7 +35,7 @@ pub fn select<T: Resource>(
 ) -> i32 {
     let nif_pid = NifPid { pid: pid.term };
     unsafe {
-        crate::wrapper::select::select(
+        crate::enif::select(
             env.as_ptr(),
             event,
             flags,
@@ -64,7 +64,7 @@ pub fn select_x<T: Resource>(
     let nif_pid = NifPid { pid: pid.term };
     let msg_env_ptr = msg_env.map(|e| e.as_ptr()).unwrap_or(std::ptr::null_mut());
     unsafe {
-        crate::wrapper::select::select_x(
+        crate::enif::select_x(
             env.as_ptr(),
             event,
             flags,

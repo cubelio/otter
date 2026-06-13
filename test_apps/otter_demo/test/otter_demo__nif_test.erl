@@ -131,6 +131,13 @@ smoke_test_() ->
     ?_assertEqual(+0.0, otter_demo__nif:double_float(+0.0)),
     ?_assertEqual(-4.0, otter_demo__nif:double_float(-2.0)),
 
+    %% make_double on a non-finite value raises badarg; the pending exception
+    %% is surfaced through Raised and the VM survives a follow-up call.
+    ?_test(begin
+      ?assertError(badarg, otter_demo__nif:nan_float()),
+      ?assertEqual(6.28, otter_demo__nif:double_float(3.14))
+    end),
+
     %% Pid — must capture self() inside the thunk
     ?_test(begin
       Self = self(),
@@ -157,6 +164,19 @@ smoke_test_() ->
         ?assert(false)
       end
     end),
+
+    %% In-NIF send — copy a term into our own mailbox and receive it.
+    ?_test(begin
+      ?assertEqual(ok, otter_demo__nif:send_to(self(), {hello, 42})),
+      receive
+        {hello, 42} -> ok
+      after 5000 ->
+        ?assert(false)
+      end
+    end),
+
+    %% cpu_time returns an erlang:timestamp()-format 3-tuple.
+    ?_assertMatch({_, _, _}, otter_demo__nif:cpu_time()),
 
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.

@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifTerm, NifTermType};
-use crate::term::Term;
+use crate::term::{Term, AsNifTerm, Raised};
 
 /// An Erlang float. Always IEEE 754 double precision.
 ///
@@ -14,24 +14,46 @@ pub struct Float<'a> {
 
 impl<'a> Float<'a> {
     /// Construct a float term from an `f64`.
-    pub fn from_f64(env: Env<'a>, val: f64) -> Float<'a> {
-        let term = unsafe { crate::wrapper::number::make_double(env.as_ptr(), val) };
-        Float { term, env }
+    ///
+    /// Returns `Err(Raised)` if `val` is not finite: `enif_make_double` raises
+    /// `badarg` for NaN and infinities.
+    pub fn from_f64(env: Env<'a>, val: f64) -> Result<Float<'a>, Raised<'a>> {
+        env.make_double(val)
+    }
+}
+
+impl<'a> Env<'a> {
+    /// Construct a float term from an `f64` (`enif_make_double`).
+    ///
+    /// Returns `Err(Raised)` if `val` is not finite (NaN or infinity), which
+    /// the BEAM rejects with `badarg`.
+    pub fn make_double(self, val: f64) -> Result<Float<'a>, Raised<'a>> {
+        let term = unsafe { crate::enif::make_double(self.as_ptr(), val) };
+        Ok(Float { term: self.check_raised(term)?.as_raw(), env: self })
+    }
+
+    /// Extract an `f64` from a float term (`enif_get_double`).
+    /// `None` if the term is not a float.
+    pub fn get_double(self, term: impl AsNifTerm<'a>) -> Option<f64> {
+        let mut val: f64 = 0.0;
+        if unsafe { crate::enif::get_double(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
+            Some(val)
+        } else {
+            None
+        }
     }
 }
 
 impl From<Float<'_>> for f64 {
     /// Extract the `f64` value. Infallible — the BEAM only stores `f64`.
     fn from(float: Float<'_>) -> f64 {
-        let mut val: f64 = 0.0;
-        unsafe { crate::wrapper::number::get_double(float.env.as_ptr(), float.term, &mut val) };
-        val
+        float.env.get_double(float).unwrap_or(0.0)
     }
 }
 
 impl PartialEq for Float<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
+        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -45,7 +67,7 @@ impl PartialOrd for Float<'_> {
 
 impl Ord for Float<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
+        let c = unsafe { crate::enif::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -58,20 +80,17 @@ impl std::fmt::Debug for Float<'_> {
 
 impl<'b> Encoder for Float<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let raw = if self.env.as_ptr() == env.as_ptr() {
-            self.term
+        if self.env.as_ptr() == env.as_ptr() {
+            Term::new(env, self.term)
         } else {
-            unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) }
-        };
-        Term::new(env, raw)
+            env.make_copy(*self)
+        }
     }
 }
 
 impl<'a> Decoder<'a> for Float<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::term::term_type(term.env.as_ptr(), term.term) }
-            == NifTermType::Float
-        {
+        if term.env.term_type(term) == NifTermType::Float {
             Ok(Float { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

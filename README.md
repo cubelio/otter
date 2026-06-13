@@ -131,7 +131,7 @@ You only depend on `otter`. The codegen macros are re-exported through it.
 - **Resource types** — BEAM-managed Rust objects with destructors and process monitors
 - **OwnedEnv** — build and send terms from background threads
 - **Dirty schedulers** — `#[otter::nif(schedule = "DirtyCpu")]` / `"DirtyIo"`
-- **Result returns** — `Result<T, E>` where Ok encodes normally and Err raises an exception
+- **Result returns** — `Result<T, Raised>` where `Ok` encodes normally and `Err(Raised)` carries an already-pending exception out (raise via `env.raise_exception` / `env.make_badarg`)
 - **BinaryBuilder** — growable binary buffer with `io::Write` support
 - **I/O select** — `enif_select` / `enif_select_x` for async I/O integration
 - **Panic safety** — panics in NIF bodies are caught and converted to exceptions

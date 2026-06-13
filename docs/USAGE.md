@@ -123,7 +123,7 @@ The user's return type must implement `Encoder`. The macro emits a single `Encod
 | Type | What happens |
 |---|---|
 | `T: Encoder` (any otter term type) | `.encode(env).as_raw()` — one NIF call to build the term, plus the BEAM-bound machine word |
-| `Result<T, E>` where `T: Encoder, E: Encoder` | `Ok(v)` encodes `v` and returns; `Err(e)` encodes `e` and raises it as a class-`error` exception |
+| `Result<T, Raised>` where `T: Encoder` | `Ok(v)` encodes `v` and returns; `Err(Raised)` returns the already-pending exception's marker word (the BEAM raises it on return — never re-raised) |
 | `TypedTerm<'a>` / `Term<'a>` | Same path — both implement `Encoder`. Same-env (the macro return path is always same-env) is a zero-copy passthrough; cross-env falls back to `enif_make_copy` |
 
 **Attributes:**
@@ -587,7 +587,7 @@ pub trait Decoder<'a>: Sized {
 
 `Encoder::encode` converts a value back into a `Term` tied to the target env's lifetime. For types that already hold a NIF term (like `Integer`, `Binary`), the impl compares the source and target env pointers: same-env is a zero-copy passthrough; cross-env falls back to `enif_make_copy`. The macro return path is always same-env, so the common case is free.
 
-`Result<T, E>` implements `Encoder` when both `T` and `E` do: `Ok(v)` encodes `v`, `Err(e)` encodes `e` and raises it via `enif_raise_exception`. This is how `Result`-returning NIFs work — through normal trait dispatch on the return type, not through any macro-level special case. A user type happening to be called `Result` does not inherit this behavior.
+`Result<T, Raised>` implements `Encoder`: `Ok(v)` encodes `v`; `Err(Raised)` returns the already-pending exception's marker word (the BEAM raises it on return — never re-raised). This is how `Result`-returning NIFs raise — through normal trait dispatch on the return type, not any macro-level special case. See [Raising exceptions](#raising-exceptions-raised-and-resultt-raised). A user type happening to be called `Result` does not inherit this behavior.
 
 **CodecError variants:**
 
@@ -601,41 +601,50 @@ pub trait Decoder<'a>: Sized {
 
 ## Error Handling
 
-### Result return type
+### Raising exceptions: `Raised` and `Result<T, Raised>`
 
-The idiomatic shape is a `Result<T, E>` return type where both `T: Encoder` and `E: Encoder`. `Ok(val)` encodes and returns; `Err(reason)` encodes the reason and raises it as a class-`error` exception (via `enif_raise_exception`):
+The NIF C API has exactly two exception mechanisms — `enif_make_badarg` and `enif_raise_exception` — and both *raise on the spot*: they set a pending exception on the environment and the BEAM raises it when the NIF returns. While an exception is pending, any further environment operation is undefined behaviour.
+
+Otter models this with [`Raised<'a>`]: an opaque value that can only be produced by an operation that actually raised, so holding one is proof the env is already in the pending-exception state. You produce one with `Env::raise_exception` or `Env::make_badarg`, and propagate it out of the NIF:
 
 ```rust
 otter::declare_atoms![division_by_zero];
 
 #[otter::nif]
-fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Atom> {
+fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
     let bv = i64::try_from(b).unwrap();
     if bv == 0 {
-        Err(otter::atom![division_by_zero])
-    } else {
-        let av = i64::try_from(a).unwrap();
-        Ok(Integer::from_i64(env, av / bv))
+        return env.raise_exception(otter::atom![division_by_zero]);
     }
+    let av = i64::try_from(a).unwrap();
+    Ok(Integer::from_i64(env, av / bv))
 }
 ```
 
-This is normal `Encoder` trait dispatch on the return type — `Result<T, E>` has a blanket impl. No macro-level special case; a user type happening to be named `Result` does not inherit this behavior.
-
-### Raising exceptions explicitly
-
-For the cases where a `Result` return type doesn't fit — raising from a helper, or building the error term mid-function — call the raise primitives directly. Both produce a `TypedTerm<'a>` that you return from the NIF:
+Both primitives always fail and are generic over the success type, so they slot into any position — `raise_exception` accepts any `impl AsNifTerm<'a>` as the reason:
 
 ```rust
-// badarg
-return env.raise_badarg();
+return env.make_badarg();                       // enif_make_badarg
+return env.raise_exception(otter::atom![oops]); // enif_raise_exception
 
-// arbitrary reason — accepts any AsNifTerm, no .encode(env) needed.
-// `my_error` is pre-declared via `declare_atoms![my_error]` at module scope.
-return env.raise(otter::atom![my_error]);
+// in a `let`-`else` (the `return` makes the arm diverge):
+let TypedTerm::Tuple(t) = term else { return env.make_badarg() };
+
+// bridging a fallible decode to badarg:
+let n: i64 = i64::try_from(int).or_else(|_| env.make_badarg())?;
 ```
 
-These are the only two exception mechanisms in the NIF C API (`enif_make_badarg` and `enif_raise_exception`). The `Err` branch of a `Result` return goes through `enif_raise_exception` under the hood.
+A NIF's error type is always `Raised`. At return, the `Encoder` for `Result<T, Raised>` hands the marker word straight back — it never *re-*raises, because the exception is already pending — so propagating a `Raised` out of a NIF is sound even though the env is in the exception state.
+
+### Builders that can raise, and `check_raised`
+
+A few enif functions raise on bad input. The only one on otter's safe surface is `enif_make_double`, which raises `badarg` for `NaN`/infinity, so `Env::make_double` and `Float::from_f64` return `Result<Float<'a>, Raised<'a>>`:
+
+```rust
+let f = Float::from_f64(env, x)?;   // Err(Raised) if x is not finite
+```
+
+To call a `raw`-surface enif function that may raise and handle it the same way, pass its result through [`Env::check_raised`], which tests `enif_has_pending_exception` and returns `Err(Raised)` if one is pending.
 
 ---
 
@@ -753,6 +762,20 @@ fn start_worker(env: Env) -> Atom {
 The closure passed to `send` receives a temporary `Env`. Terms built inside cannot escape — the lifetime is bound to the closure. After `send`, the environment is automatically cleared.
 
 Call `owned.clear()` to reuse the environment for multiple sends without reallocating.
+
+`OwnedEnv::port_command` is the port equivalent of `send`, with the same closure shape.
+
+**From inside a NIF**, you already hold the process env, so send a term directly — no `OwnedEnv` needed:
+
+```rust
+#[otter::nif]
+fn notify<'a>(env: Env<'a>, to: Pid, msg: TypedTerm<'a>) -> Atom {
+    env.send(&to, msg);   // msg is copied into to's mailbox
+    otter::atom![ok]
+}
+```
+
+`Env::send` returns `true` if the target was alive. The matching port operation is the existing `Env::port_command`.
 
 ---
 

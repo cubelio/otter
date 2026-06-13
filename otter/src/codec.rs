@@ -5,7 +5,7 @@
 //! subsequent step.
 
 use crate::env::Env;
-use crate::term::Term;
+use crate::term::{Term, Raised};
 
 /// Error returned by term type conversion operations.
 ///
@@ -48,22 +48,23 @@ pub trait Encoder {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a>;
 }
 
-/// Encode a `Result` as either a returned term or a raised exception.
+/// Encode a `Result<T, Raised>` as either a returned term or the pending
+/// exception.
 ///
-/// `Ok(v)` encodes `v` and returns the resulting term. `Err(e)` encodes `e`,
-/// passes the term to `enif_raise_exception`, and returns the resulting
-/// exception term. The BEAM treats the latter as a class-`error` raise of
-/// the encoded reason; the `Ok`/`Err` discrimination happens through normal
-/// trait dispatch on the user's return type (no name matching anywhere).
+/// `Ok(v)` encodes `v`. `Err(raised)` carries proof that an exception has
+/// already been raised on the env (a [`Raised`] can only be produced by an
+/// operation that raised), so the marker word is returned directly — the BEAM
+/// raises the already-pending exception on NIF return. Nothing is re-raised
+/// here, so this is sound even though the env is in the exception state.
 ///
-/// This is the *only* implicit raise behavior in the codec — there is no
-/// "looks like a Result" inference. A user type that wants Result-shaped
-/// raise semantics must write its own `Encoder` impl.
-impl<T: Encoder, E: Encoder> Encoder for Result<T, E> {
+/// To raise from a NIF, produce a `Raised` via [`Env::raise_exception`] /
+/// [`Env::make_badarg`] (e.g. `env.raise_exception(reason)?`) and let it
+/// propagate; the error type of a NIF's `Result` must be `Raised`.
+impl<'r, T: Encoder> Encoder for Result<T, Raised<'r>> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         match self {
-            Ok(v)  => v.encode(env),
-            Err(e) => env.raise(e.encode(env)),
+            Ok(v)       => v.encode(env),
+            Err(raised) => Term::new(env, raised.raw()),
         }
     }
 }

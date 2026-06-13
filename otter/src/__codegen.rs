@@ -81,3 +81,15 @@ pub unsafe fn new_env<'a>(
 pub fn new_raw_term<'a>(env: Env<'a>, term: NifTerm) -> Term<'a> {
     Term::new(env, term)
 }
+
+/// Raise `badarg` and return the machine word to hand back from the NIF.
+#[inline]
+pub fn raise_badarg(env: Env<'_>) -> NifTerm {
+    env.make_badarg::<()>().unwrap_err().raw()
+}
+
+/// Raise an exception with reason term `reason` and return the machine word.
+#[inline]
+pub fn raise(env: Env<'_>, reason: NifTerm) -> NifTerm {
+    env.raise_exception::<()>(Term::new(env, reason)).unwrap_err().raw()
+}

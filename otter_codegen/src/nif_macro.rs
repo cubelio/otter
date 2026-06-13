@@ -79,10 +79,11 @@ fn arg_ident(arg: &FnArg) -> Result<syn::Ident> {
 fn panic_handler() -> TokenStream {
     quote! {
         match ::otter::__codegen::Atom::intern(__otter_env, "nif_panicked") {
-            Some(__atom) => __otter_env.raise(
-                ::otter::__codegen::Encoder::encode(&__atom, __otter_env)
-            ).as_raw(),
-            None => __otter_env.raise_badarg().as_raw(),
+            Some(__atom) => ::otter::__codegen::raise(
+                __otter_env,
+                ::otter::__codegen::Encoder::encode(&__atom, __otter_env).as_raw(),
+            ),
+            None => ::otter::__codegen::raise_badarg(__otter_env),
         }
     }
 }
@@ -157,7 +158,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
     let result_handling = quote! {
         match __otter_result {
             Ok(Ok(__val)) => ::otter::__codegen::Encoder::encode(&__val, __otter_env).as_raw(),
-            Ok(Err(_))    => __otter_env.raise_badarg().as_raw(),
+            Ok(Err(_))    => ::otter::__codegen::raise_badarg(__otter_env),
             Err(_)        => { #panic_arm }
         }
     };
@@ -203,7 +204,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
             // registered arity, so a mismatch means a registration/ABI bug —
             // fail safe with badarg rather than reading out of bounds.
             if __otter_argc != #arity as ::std::ffi::c_int {
-                return __otter_env.raise_badarg().as_raw();
+                return ::otter::__codegen::raise_badarg(__otter_env);
             }
 
             // Constrain the user fn's return type to `Encoder` here so the

@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifPid, NifTerm};
-use crate::term::Term;
+use crate::term::{Term, AsNifTerm};
 
 /// An Erlang process identifier.
 ///
@@ -15,17 +15,14 @@ pub struct Pid {
 impl Pid {
     /// Return the pid of the calling process.
     pub fn self_(env: Env<'_>) -> Pid {
-        let mut nif_pid = NifPid { pid: 0 };
-        unsafe { crate::wrapper::pid::self_pid(env.as_ptr(), &mut nif_pid) };
-        Pid { term: nif_pid.pid }
+        env.self_pid()
     }
 
     /// Check if the process identified by this pid is alive.
     ///
     /// Wraps `enif_is_process_alive`.
     pub fn is_alive(self, env: Env<'_>) -> bool {
-        let mut nif_pid = NifPid { pid: self.term };
-        unsafe { crate::wrapper::pid::is_process_alive(env.as_ptr(), &mut nif_pid) }
+        env.is_process_alive(NifPid { pid: self.term })
     }
 
     /// Look up a process by its registered name.
@@ -33,29 +30,19 @@ impl Pid {
     /// Returns `None` if no process is registered under `name`.
     /// Wraps `enif_whereis_pid`.
     pub fn whereis(env: Env<'_>, name: crate::types::Atom) -> Option<Pid> {
-        let mut nif_pid = NifPid { pid: 0 };
-        if unsafe { crate::wrapper::pid::whereis_pid(env.as_ptr(), name.term, &mut nif_pid) } {
-            Some(Pid { term: nif_pid.pid })
-        } else {
-            None
-        }
+        env.whereis_pid(name)
     }
 
     /// Convert to a `NifPid` for use with lower-level NIF operations (e.g.
     /// `enif_send`). Returns `None` for distributed (non-local) pids.
     pub fn as_nif_pid(self, env: Env<'_>) -> Option<NifPid> {
-        let mut nif_pid = NifPid { pid: 0 };
-        if unsafe { crate::wrapper::pid::get_local_pid(env.as_ptr(), self.term, &mut nif_pid) } {
-            Some(nif_pid)
-        } else {
-            None
-        }
+        env.get_local_pid(self)
     }
 }
 
 impl PartialEq for Pid {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
+        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -69,7 +56,7 @@ impl PartialOrd for Pid {
 
 impl Ord for Pid {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
+        let c = unsafe { crate::enif::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -87,9 +74,65 @@ impl Encoder for Pid {
     }
 }
 
+impl<'a> Env<'a> {
+    /// Returns `true` if `term` is a pid (`enif_is_pid`).
+    pub fn is_pid(self, term: impl AsNifTerm<'a>) -> bool {
+        unsafe { crate::enif::is_pid(self.as_ptr(), term.as_nif_term()) != 0 }
+    }
+
+    /// The pid of the calling process (`enif_self`).
+    pub fn self_pid(self) -> Pid {
+        let mut out = NifPid { pid: 0 };
+        unsafe { crate::enif::self_(self.as_ptr(), &mut out) };
+        Pid { term: out.pid }
+    }
+
+    /// Decode a term into a local `NifPid` (`enif_get_local_pid`).
+    /// `None` if `term` is not a local pid.
+    pub fn get_local_pid(self, term: impl AsNifTerm<'a>) -> Option<NifPid> {
+        let mut out = NifPid { pid: 0 };
+        if unsafe { crate::enif::get_local_pid(self.as_ptr(), term.as_nif_term(), &mut out) != 0 } {
+            Some(out)
+        } else {
+            None
+        }
+    }
+
+    /// Whether the process identified by `pid` is alive
+    /// (`enif_is_process_alive`).
+    pub fn is_process_alive(self, pid: NifPid) -> bool {
+        let mut pid = pid;
+        unsafe { crate::enif::is_process_alive(self.as_ptr(), &mut pid) != 0 }
+    }
+
+    /// Look up a process by its registered name (`enif_whereis_pid`).
+    /// `None` if no process is registered under `name`.
+    pub fn whereis_pid(self, name: impl AsNifTerm<'a>) -> Option<Pid> {
+        let mut out = NifPid { pid: 0 };
+        if unsafe { crate::enif::whereis_pid(self.as_ptr(), name.as_nif_term(), &mut out) != 0 } {
+            Some(Pid { term: out.pid })
+        } else {
+            None
+        }
+    }
+
+    /// Send `msg` (a term in this env) to process `to` (`enif_send`).
+    ///
+    /// The message is copied into the target's mailbox. Returns `true` if `to`
+    /// was alive. This is the in-NIF send; from a non-scheduler thread build
+    /// the message in an `OwnedEnv` and use `OwnedEnv::send` instead.
+    pub fn send(self, to: &Pid, msg: impl AsNifTerm<'a>) -> bool {
+        let nif_pid = NifPid { pid: to.term };
+        // null msg_env: msg is a term in this (caller) env and is copied.
+        unsafe {
+            crate::enif::send(self.as_ptr(), &nif_pid, std::ptr::null_mut(), msg.as_nif_term()) != 0
+        }
+    }
+}
+
 impl<'a> Decoder<'a> for Pid {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if unsafe { crate::wrapper::check::is_pid(term.env.as_ptr(), term.term) } {
+        if term.env.is_pid(term) {
             Ok(Pid { term: term.term })
         } else {
             Err(CodecError::WrongType)

@@ -6,7 +6,6 @@ use crate::sys::{NifHash, NifTerm, NifTermType, NifUniqueInteger};
 use crate::types::{
     Atom, Binary, Bitstring, Float, Fun, Integer, List, Map, Pid, Port, Reference, Tuple,
 };
-use crate::wrapper;
 
 // ---------------------------------------------------------------------------
 // Term
@@ -52,8 +51,7 @@ impl<'a> Term<'a> {
     /// surface as [`TypedTerm::Bitstring`]; call [`Bitstring::is_binary`] or
     /// [`Bitstring::try_into_binary`] to refine.
     pub fn resolve(self) -> TypedTerm<'a> {
-        let env_ptr = self.env.as_ptr();
-        match unsafe { wrapper::term::term_type(env_ptr, self.term) } {
+        match self.env.term_type(self) {
             NifTermType::Atom => {
                 TypedTerm::Atom(Atom::from_raw(self.term))
             }
@@ -142,7 +140,7 @@ impl<'a> TypedTerm<'a> {
 
 impl<'a> PartialEq for Term<'a> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.term, other.term) }
+        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -156,14 +154,14 @@ impl<'a> PartialOrd for Term<'a> {
 
 impl<'a> Ord for Term<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.term, other.term) };
+        let c = unsafe { crate::enif::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
 
 impl<'a> PartialEq for TypedTerm<'a> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::wrapper::term::is_identical(self.as_raw(), other.as_raw()) }
+        unsafe { crate::enif::is_identical(self.as_raw(), other.as_raw()) != 0 }
     }
 }
 
@@ -177,7 +175,7 @@ impl<'a> PartialOrd for TypedTerm<'a> {
 
 impl<'a> Ord for TypedTerm<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::wrapper::term::compare(self.as_raw(), other.as_raw()) };
+        let c = unsafe { crate::enif::compare(self.as_raw(), other.as_raw()) };
         c.cmp(&0)
     }
 }
@@ -190,11 +188,9 @@ impl<'a> TypedTerm<'a> {
     /// Wraps `enif_term_to_binary`.
     pub fn to_binary(self, env: Env<'a>) -> Option<Binary<'a>> {
         let mut bin: crate::sys::NifBinary = unsafe { std::mem::zeroed() };
-        if unsafe { crate::wrapper::binary::term_to_binary(env.as_ptr(), self.as_raw(), &mut bin) }
-        {
-            // term_to_binary allocates via alloc_binary; we need to make it into a term.
-            let term = unsafe { crate::wrapper::binary::make_binary(env.as_ptr(), &mut bin) };
-            Some(Binary { term, env })
+        if env.term_to_binary(self, &mut bin) {
+            // term_to_binary allocates via alloc_binary; make_binary takes ownership.
+            Some(env.make_binary(&mut bin))
         } else {
             None
         }
@@ -278,12 +274,11 @@ impl<'a> Decoder<'a> for TypedTerm<'a> {
 
 impl<'b> Encoder for Term<'b> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        let raw = if self.env.as_ptr() == env.as_ptr() {
-            self.term
+        if self.env.as_ptr() == env.as_ptr() {
+            Term::new(env, self.term)
         } else {
-            unsafe { crate::wrapper::term::make_copy(env.as_ptr(), self.term) }
-        };
-        Term::new(env, raw)
+            env.make_copy(*self)
+        }
     }
 }
 
@@ -382,10 +377,55 @@ impl<'a, T: AsNifTerm<'a> + ?Sized> AsNifTerm<'a> for &T {
 }
 
 // ---------------------------------------------------------------------------
-// Env::raise / Env::raise_badarg
+// Raised — proof that an exception is pending on the environment
+// ---------------------------------------------------------------------------
+
+/// Proof that an exception has been raised on the environment.
+///
+/// A `Raised` can only be produced by an operation that actually raises — see
+/// [`Env::raise_exception`], [`Env::make_badarg`], [`Env::check_raised`], or a
+/// fallible builder such as [`Env::make_double`]. Because it can only exist
+/// *after* a raise, holding one means the environment is in a pending-exception
+/// state in which no further environment operation is valid.
+///
+/// The intended use is to propagate it straight out of the NIF with `?`: the
+/// generated wrapper returns it directly and the BEAM raises the pending
+/// exception. Do **not** perform further work on the env while holding one.
+pub struct Raised<'a> {
+    marker: Term<'a>,
+}
+
+impl<'a> Raised<'a> {
+    #[inline]
+    pub(crate) fn new(marker: Term<'a>) -> Raised<'a> {
+        Raised { marker }
+    }
+
+    /// The machine word to return from the NIF. With the exception already
+    /// pending, returning it triggers the raise.
+    #[inline]
+    pub(crate) fn raw(&self) -> NifTerm {
+        self.marker.as_raw()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Env: type/copy/raise operations
 // ---------------------------------------------------------------------------
 
 impl<'a> Env<'a> {
+    /// The dynamic type of `term` (`enif_term_type`).
+    pub fn term_type(self, term: impl AsNifTerm<'a>) -> NifTermType {
+        unsafe { crate::enif::term_type(self.as_ptr(), term.as_nif_term()) }
+    }
+
+    /// Copy `src` (which may belong to another environment) into this one,
+    /// returning a term owned by this env (`enif_make_copy`).
+    pub fn make_copy<'b>(self, src: impl AsNifTerm<'b>) -> Term<'a> {
+        let raw = unsafe { crate::enif::make_copy(self.as_ptr(), src.as_nif_term()) };
+        Term::new(self, raw)
+    }
+
     /// Tell the scheduler how much of the current timeslice this NIF has consumed.
     ///
     /// `percent` should be between 1 and 100. Returns `true` if the timeslice
@@ -394,7 +434,7 @@ impl<'a> Env<'a> {
     ///
     /// Wraps `enif_consume_timeslice`.
     pub fn consume_timeslice(self, percent: i32) -> bool {
-        unsafe { crate::wrapper::term::consume_timeslice(self.as_ptr(), percent) != 0 }
+        unsafe { crate::enif::consume_timeslice(self.as_ptr(), percent) != 0 }
     }
 
     /// Create a unique integer.
@@ -405,7 +445,7 @@ impl<'a> Env<'a> {
     /// Wraps `enif_make_unique_integer`.
     pub fn make_unique_integer(self, properties: NifUniqueInteger) -> TypedTerm<'a> {
         let raw = unsafe {
-            wrapper::term::make_unique_integer(self.as_ptr(), properties)
+            crate::enif::make_unique_integer(self.as_ptr(), properties)
         };
         Term::new(self, raw).resolve()
     }
@@ -417,7 +457,7 @@ impl<'a> Env<'a> {
     ///
     /// Wraps `enif_hash`.
     pub fn hash(self, algorithm: NifHash, term: impl AsNifTerm<'a>, salt: u64) -> u64 {
-        wrapper::term::hash(algorithm, term.as_nif_term(), salt)
+        unsafe { crate::enif::hash(algorithm, term.as_nif_term(), salt) }
     }
 
     /// Check if the calling process is still alive.
@@ -425,28 +465,54 @@ impl<'a> Env<'a> {
     /// Returns `true` if the process that invoked this NIF is still alive.
     /// Wraps `enif_is_current_process_alive`.
     pub fn is_current_process_alive(self) -> bool {
-        unsafe { wrapper::pid::is_current_process_alive(self.as_ptr()) }
+        unsafe { crate::enif::is_current_process_alive(self.as_ptr()) != 0 }
+    }
+
+    /// The current logical CPU's execution time since some arbitrary point in
+    /// the past, in `erlang:timestamp/0` format (`enif_cpu_time`).
+    ///
+    /// Returns `Err(Raised)` (`badarg`) if the OS does not support fetching
+    /// CPU time.
+    pub fn cpu_time(self) -> Result<TypedTerm<'a>, Raised<'a>> {
+        let raw = unsafe { crate::enif::cpu_time(self.as_ptr()) };
+        Ok(self.check_raised(raw)?.resolve())
     }
 
     /// Raise an exception with the given reason term.
     ///
-    /// The returned value must be returned from the NIF function via
-    /// `.as_raw()`. It is **not** a valid term — do not inspect or resolve it.
-    /// Wraps `enif_raise_exception`.
-    pub fn raise(self, reason: impl AsNifTerm<'a>) -> Term<'a> {
-        let raw =
-            unsafe { wrapper::exception::raise_exception(self.as_ptr(), reason.as_nif_term()) };
-        Term::new(self, raw)
+    /// Always returns `Err(Raised)`, generic over the success type so it fits
+    /// any position — the idiom is `return env.raise_exception(reason)` (the
+    /// success type is inferred from the NIF's return type). Wraps
+    /// `enif_raise_exception`.
+    pub fn raise_exception<T>(self, reason: impl AsNifTerm<'a>) -> Result<T, Raised<'a>> {
+        let marker = unsafe { crate::enif::raise_exception(self.as_ptr(), reason.as_nif_term()) };
+        Err(Raised::new(Term::new(self, marker)))
     }
 
     /// Raise a `badarg` error.
     ///
-    /// The returned value must be returned from the NIF function via
-    /// `.as_raw()`. It is **not** a valid term — do not inspect or resolve it.
-    /// Wraps `enif_make_badarg`.
-    pub fn raise_badarg(self) -> Term<'a> {
-        let raw = unsafe { wrapper::exception::make_badarg(self.as_ptr()) };
-        Term::new(self, raw)
+    /// Always returns `Err(Raised)`, generic over the success type so it fits
+    /// any position: `return env.make_badarg()`, a `let`-`else` arm, or
+    /// `decode(t).or_else(|_| env.make_badarg())?`. Wraps `enif_make_badarg`.
+    pub fn make_badarg<T>(self) -> Result<T, Raised<'a>> {
+        let marker = unsafe { crate::enif::make_badarg(self.as_ptr()) };
+        Err(Raised::new(Term::new(self, marker)))
+    }
+
+    /// Convert the raw result of a possibly-raising operation into a `Result`.
+    ///
+    /// If the environment has a pending exception, returns `Err(Raised)` — the
+    /// exception is already set, so the only valid next step is to propagate it
+    /// (with `?`). Otherwise returns `Ok` wrapping `term`.
+    ///
+    /// This is how to safely call a `raw`-surface enif function that may raise:
+    /// pass its returned term straight through `check_raised`.
+    pub fn check_raised(self, term: NifTerm) -> Result<Term<'a>, Raised<'a>> {
+        if unsafe { crate::enif::has_pending_exception(self.as_ptr(), std::ptr::null_mut()) } != 0 {
+            Err(Raised::new(Term::new(self, term)))
+        } else {
+            Ok(Term::new(self, term))
+        }
     }
 
     /// Reschedule the current NIF to run `fp` with the given arguments.
@@ -455,8 +521,9 @@ impl<'a> Env<'a> {
     /// `sys::NIF_DIRTY_JOB_NORMAL`, `sys::NIF_DIRTY_JOB_CPU_BOUND`, or
     /// `sys::NIF_DIRTY_JOB_IO_BOUND`.
     ///
-    /// The return value of this function must be returned directly from
-    /// the NIF.
+    /// The success value must be returned directly from the NIF. If
+    /// `fun_name` cannot be converted to an atom the BEAM raises `badarg`,
+    /// surfaced here as `Err(Raised)`.
     ///
     /// # Safety
     ///
@@ -475,9 +542,9 @@ impl<'a> Env<'a> {
         ) -> crate::sys::NifTerm,
         argc: i32,
         argv: *const crate::sys::NifTerm,
-    ) -> TypedTerm<'a> {
+    ) -> Result<TypedTerm<'a>, Raised<'a>> {
         let raw = unsafe {
-            wrapper::schedule::schedule_nif(
+            crate::enif::schedule_nif(
                 self.as_ptr(),
                 fun_name.as_ptr(),
                 flags,
@@ -486,7 +553,8 @@ impl<'a> Env<'a> {
                 argv,
             )
         };
-        Term::new(self, raw).resolve()
+        // Guard the resolve(): term_type on a raised env would itself be UB.
+        Ok(self.check_raised(raw)?.resolve())
     }
 
     /// Enable delayed halt: the VM waits for currently-running NIF calls to

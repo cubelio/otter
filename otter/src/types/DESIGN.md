@@ -243,7 +243,7 @@ struct Integer<'a> { term: NifTerm, env: Env<'a> }
 
 ### Internals
 
-The wrapper uses platform-conditional compilation. On 64-bit systems,
+The `enif.rs` binding uses platform-conditional compilation. On 64-bit systems,
 `enif_get_long`/`enif_make_long` are 64-bit and equivalent to the `_int64`
 variants. On 32-bit systems, the explicit `_int64` functions are used instead.
 

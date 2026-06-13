@@ -1,5 +1,4 @@
 pub mod sys;
-pub(crate) mod wrapper;
 // The raw 1:1 unsafe enif surface. Public escape hatch under the `raw` feature;
 // otherwise crate-private (the safe layer uses it via crate:: paths regardless).
 #[cfg(feature = "raw")]
@@ -90,7 +89,7 @@ macro_rules! __declare_atoms_inner {
     };
 }
 
-/// Initialize all atoms declared with [`declare_atoms!`].
+/// Initialize all atoms declared with [`declare_atoms!`](crate::declare_atoms).
 ///
 /// Must be called from the NIF `on_load` callback.
 ///

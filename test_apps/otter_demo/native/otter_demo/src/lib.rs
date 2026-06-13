@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock};
 
 use otter::env::{Env, OwnedEnv};
 use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
-use otter::term::{Term, TypedTerm};
+use otter::term::{Term, TypedTerm, Raised};
 use otter::types::{Atom, Binary, BinaryBuilder, Float, Integer, List, Map, Pid, Reference, Tuple};
 
 otter::declare_atoms![
@@ -355,8 +355,17 @@ fn test_tuple(env: Env) -> Atom {
 // Float decode → f64 → Float encode roundtrip.
 
 #[otter::nif]
-fn double_float<'a>(env: Env<'a>, val: Float<'a>) -> Float<'a> {
+fn double_float<'a>(env: Env<'a>, val: Float<'a>) -> Result<Float<'a>, Raised<'a>> {
     Float::from_f64(env, f64::from(val) * 2.0)
+}
+
+// --- nan_float/0 --------------------------------------------------------
+// make_double on a non-finite value raises badarg on the env; the Raised
+// witness propagates out and the BEAM raises it on return.
+
+#[otter::nif]
+fn nan_float<'a>(env: Env<'a>) -> Result<Float<'a>, Raised<'a>> {
+    env.make_double(f64::NAN)
 }
 
 // --- test_pid/0 ---------------------------------------------------------
@@ -384,16 +393,16 @@ fn new_ref<'a>(env: Env<'a>) -> Reference<'a> {
 }
 
 // --- divide/2 -----------------------------------------------------------
-// Result<T, E> return type — Err is raised as an exception.
+// Result<T, Raised> return type — raising goes through env.raise_exception,
+// which yields the Raised that `?` propagates out as the exception.
 
 #[otter::nif]
-fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Atom> {
+fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
     let b_val = i64::try_from(b).unwrap();
     if b_val == 0 {
-        Err(otter::atom![division_by_zero])
-    } else {
-        Ok(Integer::from_i64(env, i64::try_from(a).unwrap() / b_val))
+        return env.raise_exception(otter::atom![division_by_zero]);
     }
+    Ok(Integer::from_i64(env, i64::try_from(a).unwrap() / b_val))
 }
 
 // --- dirty_cpu_thread_type/0 --------------------------------------------
@@ -420,6 +429,24 @@ fn send_from_thread(env: Env) -> Atom {
         });
     });
     otter::atom![ok]
+}
+
+// --- send_to/2 ----------------------------------------------------------
+// In-NIF send: copy a term from the caller env into a pid's mailbox.
+
+#[otter::nif]
+fn send_to<'a>(env: Env<'a>, to: Pid, msg: TypedTerm<'a>) -> Atom {
+    env.send(&to, msg);
+    otter::atom![ok]
+}
+
+// --- cpu_time/0 ---------------------------------------------------------
+// enif_cpu_time returns an erlang:timestamp()-format tuple, or raises badarg
+// if the OS cannot provide it.
+
+#[otter::nif]
+fn cpu_time<'a>(env: Env<'a>) -> Result<TypedTerm<'a>, Raised<'a>> {
+    env.cpu_time()
 }
 
 // --- HashMap resource ---------------------------------------------------
@@ -495,10 +522,13 @@ otter::init!("otter_demo__nif", [
     test_map,
     test_tuple,
     double_float,
+    nan_float,
     test_pid,
     new_ref,
     divide,
     dirty_cpu_thread_type,
     send_from_thread,
+    send_to,
+    cpu_time,
     panicking_resource_new,
 ], load = on_load);
