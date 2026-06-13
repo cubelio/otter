@@ -475,9 +475,14 @@ impl<'a> Env<'a> {
     ///
     /// Returns `Err(Raised)` (`badarg`) if the OS does not support fetching
     /// CPU time.
-    pub fn cpu_time(self) -> Result<Term<'a>, Raised<'a>> {
+    pub fn cpu_time(self) -> Result<Tuple<'a>, Raised<'a>> {
         let raw = unsafe { crate::enif::cpu_time(self.as_ptr()) };
-        self.check_raised(raw)
+        let term = self.check_raised(raw)?;
+        debug_assert!(
+            matches!(term.resolve(), Some(TypedTerm::Tuple(_))),
+            "enif_cpu_time produced a non-tuple term",
+        );
+        Ok(Tuple { term: term.term, env: term.env })
     }
 
     /// Raise an exception with the given reason term.

@@ -449,7 +449,7 @@ fn send_to<'a>(env: Env<'a>, to: Pid, msg: TypedTerm<'a>) -> Atom {
 // if the OS cannot provide it.
 
 #[otter::nif]
-fn cpu_time<'a>(env: Env<'a>) -> Result<Term<'a>, Raised<'a>> {
+fn cpu_time<'a>(env: Env<'a>) -> Result<Tuple<'a>, Raised<'a>> {
     env.cpu_time()
 }
 
