@@ -155,7 +155,7 @@ pub enum TypedTerm<'a> {
 
 `TypedTerm` and `Term` implement `PartialEq`/`Eq` (via `enif_is_identical`) and `PartialOrd`/`Ord` (via `enif_compare`).
 
-All concrete types implement `From<T> for TypedTerm<'a>`, so `let t: TypedTerm = atom.into()` works. `Term` converts via `From` as well (calls `resolve()`).
+All concrete types implement `From<T> for TypedTerm<'a>`, so `let t: TypedTerm = atom.into()` works. `Term` converts via `TryFrom` (calls `resolve()`), failing with `CodecError::UnknownTermType` for a term type this otter build does not recognize.
 
 **Level 3 — concrete types:** Type is known. Data is still on the BEAM heap. Accessor methods pull data out on demand.
 

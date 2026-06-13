@@ -50,42 +50,32 @@ impl<'a> Term<'a> {
     /// Exactly one NIF call regardless of variant. Binary-tagged terms
     /// surface as [`TypedTerm::Bitstring`]; call [`Bitstring::is_binary`] or
     /// [`Bitstring::try_into_binary`] to refine.
-    pub fn resolve(self) -> TypedTerm<'a> {
-        match self.env.term_type(self) {
-            NifTermType::Atom => {
-                TypedTerm::Atom(Atom::from_raw(self.term))
-            }
-            NifTermType::Bitstring => {
-                TypedTerm::Bitstring(Bitstring { term: self.term, env: self.env })
-            }
-            NifTermType::Float => {
-                TypedTerm::Float(Float { term: self.term, env: self.env })
-            }
-            NifTermType::Fun => {
-                TypedTerm::Fun(Fun { term: self.term, env: self.env })
-            }
-            NifTermType::Integer => {
-                TypedTerm::Integer(Integer { term: self.term, env: self.env })
-            }
-            NifTermType::List => {
-                TypedTerm::List(List { term: self.term, env: self.env })
-            }
-            NifTermType::Map => {
-                TypedTerm::Map(Map { term: self.term, env: self.env })
-            }
-            NifTermType::Pid => {
-                TypedTerm::Pid(Pid { term: self.term })
-            }
-            NifTermType::Port => {
-                TypedTerm::Port(Port { term: self.term })
-            }
-            NifTermType::Reference => {
-                TypedTerm::Reference(Reference { term: self.term, env: self.env })
-            }
-            NifTermType::Tuple => {
-                TypedTerm::Tuple(Tuple { term: self.term, env: self.env })
-            }
-        }
+    ///
+    /// `None` if the term's type is one this otter build does not recognize (a
+    /// type added by a newer OTP). The term is still a valid [`Term`] — the
+    /// caller already holds it — so callers that want to pass it through can
+    /// continue to use the original `Term`.
+    pub fn resolve(self) -> Option<TypedTerm<'a>> {
+        Some(match self.env.term_type(self)? {
+            NifTermType::Atom      => TypedTerm::Atom(Atom::from_raw(self.term)),
+            NifTermType::Bitstring => TypedTerm::Bitstring(Bitstring { term: self.term, env: self.env }),
+            NifTermType::Float     => TypedTerm::Float(Float { term: self.term, env: self.env }),
+            NifTermType::Fun       => TypedTerm::Fun(Fun { term: self.term, env: self.env }),
+            NifTermType::Integer   => TypedTerm::Integer(Integer { term: self.term, env: self.env }),
+            NifTermType::List      => TypedTerm::List(List { term: self.term, env: self.env }),
+            NifTermType::Map       => TypedTerm::Map(Map { term: self.term, env: self.env }),
+            NifTermType::Pid       => TypedTerm::Pid(Pid { term: self.term }),
+            NifTermType::Port      => TypedTerm::Port(Port { term: self.term }),
+            NifTermType::Reference => TypedTerm::Reference(Reference { term: self.term, env: self.env }),
+            NifTermType::Tuple     => TypedTerm::Tuple(Tuple { term: self.term, env: self.env }),
+        })
+    }
+
+    /// The raw `enif_term_type` code for this term, including any value a newer
+    /// OTP may return that [`resolve`](Self::resolve) maps to `None`.
+    #[cfg(feature = "raw")]
+    pub fn term_type_raw(self) -> std::ffi::c_int {
+        unsafe { crate::enif::term_type(self.env.as_ptr(), self.term) }
     }
 }
 
@@ -197,9 +187,12 @@ impl<'a> TypedTerm<'a> {
     }
 }
 
-impl<'a> From<Term<'a>> for TypedTerm<'a> {
-    fn from(raw: Term<'a>) -> TypedTerm<'a> {
-        raw.resolve()
+impl<'a> TryFrom<Term<'a>> for TypedTerm<'a> {
+    type Error = CodecError;
+    /// Fails with [`CodecError::UnknownTermType`] if the term's type is one
+    /// this otter build does not recognize (a type added by a newer OTP).
+    fn try_from(raw: Term<'a>) -> Result<TypedTerm<'a>, CodecError> {
+        raw.resolve().ok_or(CodecError::UnknownTermType)
     }
 }
 
@@ -268,7 +261,7 @@ impl<'a> Decoder<'a> for Term<'a> {
 
 impl<'a> Decoder<'a> for TypedTerm<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        Ok(term.resolve())
+        TypedTerm::try_from(term)
     }
 }
 
@@ -415,8 +408,13 @@ impl<'a> Raised<'a> {
 
 impl<'a> Env<'a> {
     /// The dynamic type of `term` (`enif_term_type`).
-    pub fn term_type(self, term: impl AsNifTerm<'a>) -> NifTermType {
-        unsafe { crate::enif::term_type(self.as_ptr(), term.as_nif_term()) }
+    ///
+    /// `None` if the BEAM returns a term-type code this otter build does not
+    /// recognize (a type added by a newer OTP). For the raw code, enable the
+    /// `raw` feature and use `Term::term_type_raw`.
+    pub fn term_type(self, term: impl AsNifTerm<'a>) -> Option<NifTermType> {
+        let code = unsafe { crate::enif::term_type(self.as_ptr(), term.as_nif_term()) };
+        NifTermType::from_raw(code)
     }
 
     /// Copy `src` (which may belong to another environment) into this one,
@@ -443,11 +441,15 @@ impl<'a> Env<'a> {
     /// `NifUniqueInteger::MONOTONIC`. Use `NifUniqueInteger(0)` for an arbitrary unique integer.
     ///
     /// Wraps `enif_make_unique_integer`.
-    pub fn make_unique_integer(self, properties: NifUniqueInteger) -> TypedTerm<'a> {
+    pub fn make_unique_integer(self, properties: NifUniqueInteger) -> Integer<'a> {
         let raw = unsafe {
             crate::enif::make_unique_integer(self.as_ptr(), properties)
         };
-        Term::new(self, raw).resolve()
+        debug_assert!(
+            matches!(Term::new(self, raw).resolve(), Some(TypedTerm::Integer(_))),
+            "enif_make_unique_integer produced a non-integer term",
+        );
+        Integer { term: raw, env: self }
     }
 
     /// Hash a term using the specified algorithm.
@@ -473,9 +475,9 @@ impl<'a> Env<'a> {
     ///
     /// Returns `Err(Raised)` (`badarg`) if the OS does not support fetching
     /// CPU time.
-    pub fn cpu_time(self) -> Result<TypedTerm<'a>, Raised<'a>> {
+    pub fn cpu_time(self) -> Result<Term<'a>, Raised<'a>> {
         let raw = unsafe { crate::enif::cpu_time(self.as_ptr()) };
-        Ok(self.check_raised(raw)?.resolve())
+        self.check_raised(raw)
     }
 
     /// Raise an exception with the given reason term.
@@ -542,7 +544,7 @@ impl<'a> Env<'a> {
         ) -> crate::sys::NifTerm,
         argc: i32,
         argv: *const crate::sys::NifTerm,
-    ) -> Result<TypedTerm<'a>, Raised<'a>> {
+    ) -> Result<Term<'a>, Raised<'a>> {
         let raw = unsafe {
             crate::enif::schedule_nif(
                 self.as_ptr(),
@@ -553,8 +555,7 @@ impl<'a> Env<'a> {
                 argv,
             )
         };
-        // Guard the resolve(): term_type on a raised env would itself be UB.
-        Ok(self.check_raised(raw)?.resolve())
+        self.check_raised(raw)
     }
 
     /// Enable delayed halt: the VM waits for currently-running NIF calls to

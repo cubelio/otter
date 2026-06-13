@@ -13,7 +13,7 @@ NifTerm (u64 machine word)
   │
   ├─ Term<'a>     zero cost, no type check
   │    │
-  │    └─ .resolve()  one enif_term_type call
+  │    └─ .resolve()  one enif_term_type call → Option (None = unknown type)
   │         │
   │         └─ TypedTerm<'a>   typed enum (Atom | Bitstring | ... | Tuple)
   │              │
@@ -41,7 +41,8 @@ All other types' `Encoder` impls call `enif_make_copy` to copy the term into
 the destination environment.
 
 All concrete types implement `From<T> for TypedTerm<'a>`, enabling `let t: TypedTerm = atom.into()`.
-`Term` converts to `TypedTerm` via `From` (calls `resolve()`).
+`Term` converts via `TryFrom` (calls `resolve()`); it fails with `CodecError::UnknownTermType`
+when the term's type is one this otter build does not recognize.
 
 
 ## Codec Traits

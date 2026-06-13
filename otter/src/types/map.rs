@@ -1,7 +1,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifMapIterator, NifMapIteratorEntry, NifTerm};
-use crate::term::{Term, TypedTerm, AsNifTerm};
+use crate::term::{Term, AsNifTerm};
 
 /// An Erlang map. Immutable — all mutations return a new map.
 #[derive(Clone, Copy)]
@@ -21,8 +21,9 @@ impl<'a> Map<'a> {
         self.env.get_map_size(self).unwrap_or(0)
     }
 
-    /// Look up `key`. Returns `None` if the key is absent.
-    pub fn get(self, key: impl AsNifTerm<'a>) -> Option<TypedTerm<'a>> {
+    /// Look up `key`. Returns `None` if the key is absent. The value is an
+    /// unresolved [`Term`]; call [`Term::resolve`] or a decoder to type it.
+    pub fn get(self, key: impl AsNifTerm<'a>) -> Option<Term<'a>> {
         self.env.get_map_value(self, key)
     }
 
@@ -68,7 +69,7 @@ pub struct MapIterator<'a> {
 }
 
 impl<'a> Iterator for MapIterator<'a> {
-    type Item = (TypedTerm<'a>, TypedTerm<'a>);
+    type Item = (Term<'a>, Term<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.exhausted {
@@ -83,7 +84,7 @@ impl<'a> Iterator for MapIterator<'a> {
                 // Advance for the next call. Return value is informational only
                 // — we rely on get_pair returning None to detect exhaustion.
                 self.env.map_iterator_next(&mut self.iter);
-                Some((k.resolve(), v.resolve()))
+                Some((k, v))
             }
         }
     }
@@ -160,13 +161,13 @@ impl<'a> Env<'a> {
         self,
         map: impl AsNifTerm<'a>,
         key: impl AsNifTerm<'a>,
-    ) -> Option<TypedTerm<'a>> {
+    ) -> Option<Term<'a>> {
         let mut value: NifTerm = 0;
         if unsafe {
             crate::enif::get_map_value(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut value)
                 != 0
         } {
-            Some(Term::new(self, value).resolve())
+            Some(Term::new(self, value))
         } else {
             None
         }

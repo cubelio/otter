@@ -72,11 +72,11 @@ Terms are resolved lazily. Each step costs one NIF call, and you only pay for wh
 ```
 NifTerm          bare machine word, no metadata
   -> Term     + Env and lifetime, zero work
-    -> TypedTerm      + type tag (one enif_term_type call)
+    -> Option<TypedTerm>   + type tag (one enif_term_type call)
       -> data    extraction methods on concrete types
 ```
 
-`Term` is what you receive from the BEAM. Call `.resolve()` to get a `TypedTerm` (typed enum). Call methods like `i64::try_from(integer)` or `.as_bytes()` to extract actual data. Each step is explicit.
+`Term` is what you receive from the BEAM. Call `.resolve()` to get an `Option<TypedTerm>` (typed enum) — `None` only if the term's type is one this otter build does not recognize (a type added by a newer OTP); the `Term` you called it on is still valid to use. Call methods like `i64::try_from(integer)` or `.as_bytes()` to extract actual data. Each step is explicit.
 
 ### Env and Lifetimes
 

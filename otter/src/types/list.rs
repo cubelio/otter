@@ -3,7 +3,7 @@ use std::ffi::{c_char, c_uint};
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifCharEncoding, NifTerm};
-use crate::term::{Term, TypedTerm, AsNifTerm};
+use crate::term::{Term, AsNifTerm};
 
 /// An Erlang list term.
 ///
@@ -118,7 +118,7 @@ impl<'a> List<'a> {
 pub struct ListIterator<'a> {
     current: NifTerm,
     env: Env<'a>,
-    tail: Option<TypedTerm<'a>>,
+    tail: Option<Term<'a>>,
 }
 
 impl<'a> Iterator for ListIterator<'a> {
@@ -134,7 +134,7 @@ impl<'a> Iterator for ListIterator<'a> {
             Some(head)
         } else {
             // Not a cons cell — this is the terminal.
-            self.tail = Some(current.resolve());
+            self.tail = Some(current);
             None
         }
     }
@@ -152,14 +152,13 @@ impl<'a> IntoIterator for List<'a> {
 }
 
 impl<'a> ListIterator<'a> {
-    /// The terminal value of the list walk.
+    /// The terminal value of the list walk, as an unresolved [`Term`].
     ///
-    /// For proper lists this is `TypedTerm::List` (nil / `[]`).
-    /// For improper lists this is whatever term was in the final tail
-    /// position (e.g. `TypedTerm::Integer`, `TypedTerm::Atom`, etc.).
+    /// For proper lists this is nil (`[]`). For improper lists it is whatever
+    /// term was in the final tail position. Call [`Term::resolve`] to type it.
     ///
     /// Returns `None` if the iterator has not yet been exhausted.
-    pub fn tail(&self) -> Option<TypedTerm<'a>> {
+    pub fn tail(&self) -> Option<Term<'a>> {
         self.tail
     }
 }

@@ -90,7 +90,7 @@ impl<'b> Encoder for Float<'b> {
 
 impl<'a> Decoder<'a> for Float<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.term_type(term) == NifTermType::Float {
+        if term.env.term_type(term) == Some(NifTermType::Float) {
             Ok(Float { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

@@ -274,6 +274,31 @@ pub enum NifTermType {
     Tuple     = 11,
 }
 
+impl NifTermType {
+    /// Map a raw `enif_term_type` return code to a known variant.
+    ///
+    /// Returns `None` for any code outside the canonical 1..=11 — the C header
+    /// reserves the right to add term types and defines a `-1` sentinel, so an
+    /// unrecognized code must never be transmuted into this enum (that would be
+    /// undefined behavior). Callers surface the `None` as an unknown term type.
+    pub fn from_raw(code: c_int) -> Option<Self> {
+        match code {
+            1  => Some(Self::Atom),
+            2  => Some(Self::Bitstring),
+            3  => Some(Self::Float),
+            4  => Some(Self::Fun),
+            5  => Some(Self::Integer),
+            6  => Some(Self::List),
+            7  => Some(Self::Map),
+            8  => Some(Self::Pid),
+            9  => Some(Self::Port),
+            10 => Some(Self::Reference),
+            11 => Some(Self::Tuple),
+            _  => None,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Character encoding
 // ---------------------------------------------------------------------------

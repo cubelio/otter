@@ -94,7 +94,7 @@ fn reverse_binary<'a>(env: Env<'a>, bin: Binary<'a>) -> Binary<'a> {
 fn sum_list<'a>(env: Env<'a>, list: List<'a>) -> Integer<'a> {
     let sum: i64 = list.iter()
         .filter_map(|raw| match raw.resolve() {
-            TypedTerm::Integer(i) => Some(i64::try_from(i).unwrap()),
+            Some(TypedTerm::Integer(i)) => Some(i64::try_from(i).unwrap()),
             _ => None,
         })
         .sum();
@@ -242,7 +242,7 @@ fn reverse_list<'a>(_env: Env<'a>, list: List<'a>) -> TypedTerm<'a> {
 // Return the tail of an iterated list (tests ListIterator::tail).
 
 #[otter::nif]
-fn list_tail<'a>(_env: Env<'a>, list: List<'a>) -> TypedTerm<'a> {
+fn list_tail<'a>(_env: Env<'a>, list: List<'a>) -> Term<'a> {
     let mut iter = list.iter();
     while iter.next().is_some() {}
     iter.tail().unwrap()
@@ -303,8 +303,8 @@ fn test_map(env: Env) -> Atom {
     assert_eq!(m.size(), 1);
 
     // get
-    match m.get(k1).unwrap() {
-        TypedTerm::Integer(i) => assert_eq!(i64::try_from(i).unwrap(), 1),
+    match m.get(k1).unwrap().resolve() {
+        Some(TypedTerm::Integer(i)) => assert_eq!(i64::try_from(i).unwrap(), 1),
         _ => panic!("expected integer"),
     }
     assert!(m.get(Atom::intern(env, "missing").unwrap()).is_none());
@@ -312,8 +312,8 @@ fn test_map(env: Env) -> Atom {
     // update existing key
     let v2 = Integer::from_i64(env, 2);
     let m = m.update(k1, v2).unwrap();
-    match m.get(k1).unwrap() {
-        TypedTerm::Integer(i) => assert_eq!(i64::try_from(i).unwrap(), 2),
+    match m.get(k1).unwrap().resolve() {
+        Some(TypedTerm::Integer(i)) => assert_eq!(i64::try_from(i).unwrap(), 2),
         _ => panic!("expected integer"),
     }
 
@@ -345,8 +345,8 @@ fn test_tuple(env: Env) -> Atom {
 
     assert_eq!(t.len(), 2);
     assert!(!t.is_empty());
-    assert!(t.element(0) == a);
-    assert!(t.element(1) == b);
+    assert!(t.element(0).resolve() == Some(a));
+    assert!(t.element(1).resolve() == Some(b));
 
     let empty = Tuple::from_terms(env, std::iter::empty::<TypedTerm>());
     assert_eq!(empty.len(), 0);
@@ -449,7 +449,7 @@ fn send_to<'a>(env: Env<'a>, to: Pid, msg: TypedTerm<'a>) -> Atom {
 // if the OS cannot provide it.
 
 #[otter::nif]
-fn cpu_time<'a>(env: Env<'a>) -> Result<TypedTerm<'a>, Raised<'a>> {
+fn cpu_time<'a>(env: Env<'a>) -> Result<Term<'a>, Raised<'a>> {
     env.cpu_time()
 }
 

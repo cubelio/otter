@@ -134,7 +134,7 @@ impl<'b> Encoder for Integer<'b> {
 
 impl<'a> Decoder<'a> for Integer<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.term_type(term) == NifTermType::Integer {
+        if term.env.term_type(term) == Some(NifTermType::Integer) {
             Ok(Integer { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

@@ -42,16 +42,16 @@ impl Monitor {
     /// Convert this monitor to a term.
     ///
     /// Wraps `enif_make_monitor_term`.
-    pub fn to_term<'a>(self, env: Env<'a>) -> TypedTerm<'a> {
+    pub fn to_term<'a>(self, env: Env<'a>) -> Term<'a> {
         env.make_monitor_term(&self.0)
     }
 }
 
 impl<'a> Env<'a> {
     /// Create a term from a monitor handle (`enif_make_monitor_term`).
-    pub fn make_monitor_term(self, mon: &NifMonitor) -> TypedTerm<'a> {
+    pub fn make_monitor_term(self, mon: &NifMonitor) -> Term<'a> {
         let raw = unsafe { crate::enif::make_monitor_term(self.as_ptr(), mon) };
-        Term::new(self, raw).resolve()
+        Term::new(self, raw)
     }
 }
 

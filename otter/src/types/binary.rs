@@ -2,7 +2,7 @@ use std::str::Utf8Error;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::{NifBinary, NifTerm, NifTermType};
-use crate::term::{Term, TypedTerm, AsNifTerm};
+use crate::term::{Term, AsNifTerm};
 
 /// A byte-aligned binary (`enif_is_binary` returned true).
 ///
@@ -377,10 +377,11 @@ impl Binary<'_> {
     /// Deserialize a term from the external binary format.
     ///
     /// If `safe` is true, encoded atoms that don't already exist in the atom
-    /// table are rejected. Returns `None` on decode failure.
+    /// table are rejected. Returns `None` on decode failure. The decoded value
+    /// is an unresolved [`Term`]; call [`Term::resolve`] or a decoder to type it.
     ///
     /// Wraps `enif_binary_to_term`.
-    pub fn to_term<'a>(&self, env: Env<'a>, safe: bool) -> Option<TypedTerm<'a>> {
+    pub fn to_term<'a>(&self, env: Env<'a>, safe: bool) -> Option<Term<'a>> {
         env.binary_to_term(self.as_bytes(), safe)
     }
 }
@@ -443,8 +444,9 @@ impl<'a> Env<'a> {
 
     /// Deserialize a term from the external binary format
     /// (`enif_binary_to_term`). If `safe`, encoded atoms not already in the
-    /// atom table are rejected. `None` on decode failure.
-    pub fn binary_to_term(self, data: &[u8], safe: bool) -> Option<TypedTerm<'a>> {
+    /// atom table are rejected. `None` on decode failure. The decoded value is
+    /// an unresolved [`Term`]; call [`Term::resolve`] or a decoder to type it.
+    pub fn binary_to_term(self, data: &[u8], safe: bool) -> Option<Term<'a>> {
         let opts = if safe { crate::sys::NIF_BIN2TERM_SAFE } else { 0 };
         let mut term: NifTerm = 0;
         let consumed = unsafe {
@@ -453,7 +455,7 @@ impl<'a> Env<'a> {
         if consumed == 0 {
             None
         } else {
-            Some(Term::new(self, term).resolve())
+            Some(Term::new(self, term))
         }
     }
 }
@@ -483,7 +485,7 @@ impl<'a> Decoder<'a> for Bitstring<'a> {
         // In BEAM every binary is a bitstring, so `Bitstring::decode` accepts
         // both byte-aligned binaries and sub-byte bitstrings. Use `Binary` if
         // you want the byte-aligned refinement.
-        if term.env.term_type(term) == NifTermType::Bitstring {
+        if term.env.term_type(term) == Some(NifTermType::Bitstring) {
             Ok(Bitstring { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

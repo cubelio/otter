@@ -7,7 +7,7 @@ Initial release.
 ### otter (core library)
 
 - All 12 Erlang term types: Atom, Integer, Float, Binary, Bitstring, List, Tuple, Map, Pid, Port, Reference, Fun
-- Three-level term resolution: Term (zero work) → TypedTerm (one `enif_term_type` call) → concrete-type extraction
+- Three-level term resolution: Term (zero work) → TypedTerm (one `enif_term_type` call) → concrete-type extraction. `enif_term_type` is read as a raw `c_int` and never transmuted into the term-type enum, so a term type added by a future OTP is handled safely — `Term::resolve` returns `Option<TypedTerm>` (`None` for an unrecognized type) and `TypedTerm: TryFrom<Term>` fails with `CodecError::UnknownTermType` — rather than undefined behavior. Building accessors (`Tuple::element`, `Map::get`/`iter`, `ListIterator::tail`, `binary_to_term`, `make_monitor_term`, `cpu_time`, `schedule_nif`) return raw `Term`, classifying lazily; the raw code is available via `Term::term_type_raw` under the `raw` feature
 - Compile-time lifetime safety via invariant `Env<'a>` constructed from a stack borrow
 - `Encoder`/`Decoder` traits for all types and `ResourceArc`; `Encoder::encode` returns `Term<'a>` to avoid an extra `enif_term_type` call on every encoded return
 - Env-as-receiver safe layer: every `enif_foo(env, …)` is exposed as `env.foo(…)` (e.g. `env.make_tuple`, `env.is_binary`, `env.get_map_value`), with `enif.rs` the sole `unsafe`/`funcs()` floor (`pub` under the `raw` feature). Per-type constructors (`Atom::intern`, `Binary::from_bytes`, …) delegate to these

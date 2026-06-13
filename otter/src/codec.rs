@@ -18,6 +18,9 @@ pub enum CodecError {
     WrongType,
     /// An integer term did not fit the requested Rust integer type.
     IntegerOverflow,
+    /// The term's type code is one this otter build does not recognize — a
+    /// term type added by a newer OTP than otter knows about.
+    UnknownTermType,
 }
 
 impl std::fmt::Display for CodecError {
@@ -25,6 +28,7 @@ impl std::fmt::Display for CodecError {
         match self {
             CodecError::WrongType        => write!(f, "wrong term type"),
             CodecError::IntegerOverflow  => write!(f, "integer overflow"),
+            CodecError::UnknownTermType  => write!(f, "unknown term type"),
         }
     }
 }

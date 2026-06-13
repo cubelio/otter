@@ -3,7 +3,7 @@ use std::ffi::{c_int, c_uint};
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
 use crate::sys::NifTerm;
-use crate::term::{Term, TypedTerm, AsNifTerm};
+use crate::term::{Term, AsNifTerm};
 
 /// An Erlang tuple.
 #[derive(Clone, Copy)]
@@ -23,18 +23,19 @@ impl<'a> Tuple<'a> {
         self.len() == 0
     }
 
-    /// Return the element at zero-based index `i`.
+    /// Return the element at zero-based index `i` as an unresolved [`Term`].
     ///
-    /// Panics if `i >= self.len()`. The elements point into the BEAM heap and
-    /// are valid for lifetime `'a`.
-    pub fn element(self, i: usize) -> TypedTerm<'a> {
+    /// Panics if `i >= self.len()`. The element points into the BEAM heap and
+    /// is valid for lifetime `'a`. Call [`Term::resolve`] or a decoder to type
+    /// it.
+    pub fn element(self, i: usize) -> Term<'a> {
         let elems = self.env.get_tuple(self).unwrap();
         assert!(
             i < elems.len(),
             "Tuple::element index {i} out of bounds (arity {})",
             elems.len()
         );
-        Term::new(self.env, elems[i]).resolve()
+        Term::new(self.env, elems[i])
     }
 
     /// Construct a tuple from any iterable of term-like values.
