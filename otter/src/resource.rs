@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::sys::{NifEnv, NifEvent, NifMonitor, NifPid, NifResourceType, NifResourceTypeInit};
-use crate::term::{Term, TypedTerm};
+use crate::term::{Term, AsNifTerm};
 use crate::types::LocalPid;
 
 // ---------------------------------------------------------------------------
@@ -477,19 +477,19 @@ impl<'a, T: Resource> Decoder<'a> for ResourceArc<T> {
 /// `call_data` must match what the dyncall callback expects.
 ///
 /// Wraps `enif_dynamic_resource_call`.
-pub unsafe fn dynamic_resource_call(
-    env: Env<'_>,
-    mod_name: TypedTerm<'_>,
-    name: TypedTerm<'_>,
-    rsrc: TypedTerm<'_>,
+pub unsafe fn dynamic_resource_call<'a>(
+    env: Env<'a>,
+    mod_name: impl AsNifTerm<'a>,
+    name: impl AsNifTerm<'a>,
+    rsrc: impl AsNifTerm<'a>,
     call_data: *mut c_void,
 ) -> i32 {
     unsafe {
         crate::enif::dynamic_resource_call(
             env.as_ptr(),
-            mod_name.as_raw(),
-            name.as_raw(),
-            rsrc.as_raw(),
+            mod_name.as_nif_term(),
+            name.as_nif_term(),
+            rsrc.as_nif_term(),
             call_data,
         )
     }

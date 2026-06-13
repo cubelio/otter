@@ -6,7 +6,7 @@
 use crate::env::Env;
 use crate::resource::{Resource, ResourceArc};
 use crate::sys::{NifEvent, NifSelectFlags};
-use crate::term::TypedTerm;
+use crate::term::AsNifTerm;
 use crate::types::LocalPid;
 
 pub use crate::sys::{
@@ -25,13 +25,13 @@ pub use crate::sys::{
 /// Returns a bitmask of `SELECT_*` result flags.
 ///
 /// Wraps `enif_select`.
-pub fn select<T: Resource>(
-    env: Env<'_>,
+pub fn select<'a, T: Resource>(
+    env: Env<'a>,
     event: NifEvent,
     flags: NifSelectFlags,
     obj: &ResourceArc<T>,
     pid: &LocalPid,
-    ref_term: TypedTerm<'_>,
+    ref_term: impl AsNifTerm<'a>,
 ) -> i32 {
     unsafe {
         crate::enif::select(
@@ -40,7 +40,7 @@ pub fn select<T: Resource>(
             flags,
             obj.raw_ptr(),
             &pid.pid,
-            ref_term.as_raw(),
+            ref_term.as_nif_term(),
         )
     }
 }
@@ -51,13 +51,13 @@ pub fn select<T: Resource>(
 /// the standard `{select, ...}` tuple.
 ///
 /// Wraps `enif_select_x`.
-pub fn select_x<T: Resource>(
-    env: Env<'_>,
+pub fn select_x<'a, T: Resource>(
+    env: Env<'a>,
     event: NifEvent,
     flags: NifSelectFlags,
     obj: &ResourceArc<T>,
     pid: &LocalPid,
-    msg: TypedTerm<'_>,
+    msg: impl AsNifTerm<'a>,
     msg_env: Option<Env<'_>>,
 ) -> i32 {
     let msg_env_ptr = msg_env.map(|e| e.as_ptr()).unwrap_or(std::ptr::null_mut());
@@ -68,7 +68,7 @@ pub fn select_x<T: Resource>(
             flags,
             obj.raw_ptr(),
             &pid.pid,
-            msg.as_raw(),
+            msg.as_nif_term(),
             msg_env_ptr,
         )
     }

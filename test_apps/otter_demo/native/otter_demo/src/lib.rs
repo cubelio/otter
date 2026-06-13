@@ -46,7 +46,7 @@ fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
 // TypedTerm in, TypedTerm out — zero-cost passthrough.
 
 #[otter::nif]
-fn echo<'a>(_env: Env<'a>, val: TypedTerm<'a>) -> TypedTerm<'a> {
+fn echo<'a>(_env: Env<'a>, val: Term<'a>) -> Term<'a> {
     val
 }
 
@@ -457,7 +457,7 @@ fn send_from_thread(env: Env) -> Atom {
 // In-NIF send: copy a term from the caller env into a pid's mailbox.
 
 #[otter::nif]
-fn send_to<'a>(env: Env<'a>, to: LocalPid, msg: TypedTerm<'a>) -> Atom {
+fn send_to<'a>(env: Env<'a>, to: LocalPid, msg: Term<'a>) -> Atom {
     env.send(&to, msg);
     otter::atom![ok]
 }
@@ -550,9 +550,8 @@ fn select_resource_new(_env: Env) -> ResourceArc<FdResource> {
 #[otter::nif]
 fn select_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
     let pid = LocalPid::self_(env);
-    let ref_term = TypedTerm::Reference(Reference::new(env));
     let flags = otter::select::select(
-        env, arc.a.as_raw_fd(), NifSelectFlags::READ, &arc, &pid, ref_term,
+        env, arc.a.as_raw_fd(), NifSelectFlags::READ, &arc, &pid, Reference::new(env),
     );
     Integer::from_i64(env, flags as i64)
 }
@@ -560,9 +559,8 @@ fn select_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a
 #[otter::nif]
 fn select_stop<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
     let pid = LocalPid::self_(env);
-    let ref_term = TypedTerm::Reference(Reference::new(env));
     let flags = otter::select::select(
-        env, arc.a.as_raw_fd(), NifSelectFlags::STOP, &arc, &pid, ref_term,
+        env, arc.a.as_raw_fd(), NifSelectFlags::STOP, &arc, &pid, Reference::new(env),
     );
     Integer::from_i64(env, flags as i64)
 }
@@ -576,7 +574,7 @@ fn select_stop_count<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<
 // writes to its peer so the fd becomes readable — the BEAM then delivers
 // `msg` (not the default {select,...} tuple) to the calling process.
 #[otter::nif]
-fn select_x_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>, msg: TypedTerm<'a>) -> Integer<'a> {
+fn select_x_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>, msg: Term<'a>) -> Integer<'a> {
     use std::io::Write;
     let pid = LocalPid::self_(env);
     // CUSTOM_MSG is required for select_x to deliver `msg` itself; without it

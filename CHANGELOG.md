@@ -22,7 +22,7 @@ Initial release.
 - `OwnedEnv::send` for building and sending terms from non-scheduler threads; closure-based, lifetime-bound
 - Pre-declared atoms via `declare_atoms!` / `init_atoms!` / `atom!` macros — single atomic load per retrieval, no NIF call
 - `time` (monotonic, offset, unit conversion), `system` (thread type), and `select` / `select_x` (I/O event multiplexing) modules
-- `AsNifTerm<'a>` sealed trait for polymorphic term arguments (`Atom`, `Integer`, `TypedTerm`, `Term`, etc., and `&T` where `T: AsNifTerm<'a>`); lifetime parameter rejects cross-env terms at compile time
+- `AsNifTerm<'a>` sealed trait for polymorphic term arguments (`Atom`, `Integer`, `TypedTerm`, `Term`, etc., and `&T` where `T: AsNifTerm<'a>`); lifetime parameter rejects cross-env terms at compile time. Every term *input* takes `impl AsNifTerm<'a>` uniformly — including `select`/`select_x` and `dynamic_resource_call`, which previously imposed `TypedTerm`
 - Minimum NIF version 2.17 (OTP 26); optional `nif_2_18` feature for OTP 29
 - Unix-only by construction (`compile_error!` on non-Unix targets)
 
