@@ -595,7 +595,7 @@ fn select_x_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>, msg: Term<'
 
 #[otter::nif]
 fn port_send<'a>(env: Env<'a>, port: LocalPort, data: Binary<'a>) -> Atom {
-    if env.port_command(&port, env, data) {
+    if env.port_command(&port, data) {
         otter::atom![ok]
     } else {
         otter::atom![error]

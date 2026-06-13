@@ -122,9 +122,9 @@ pub struct OwnedEnv {
 
 impl OwnedEnv {
     pub fn new() -> OwnedEnv;
-    pub fn send<F>(&mut self, pid: &Pid, f: F) -> bool
+    pub fn send<F>(&mut self, pid: &LocalPid, f: F) -> bool
     where F: FnOnce(Env<'_>) -> TypedTerm<'_>;
-    pub fn port_command<F>(&mut self, port: &Port, f: F) -> bool   // same closure shape
+    pub fn port_command<F>(&mut self, port: &LocalPort, f: F) -> bool   // same closure shape
     where F: FnOnce(Env<'_>) -> TypedTerm<'_>;
     pub fn clear(&mut self);
 }

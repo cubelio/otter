@@ -139,20 +139,20 @@ impl<'a> Env<'a> {
 
     /// Send a command to local port `port` (`enif_port_command`).
     ///
-    /// `msg_env` owns `msg` and need not be `self` — BEAM copies `msg` from
-    /// `msg_env` into the port's mailbox. Returns `true` if the command was
-    /// accepted.
-    pub fn port_command<'b>(
-        self,
-        port: &LocalPort,
-        msg_env: Env<'b>,
-        msg: impl AsNifTerm<'b>,
-    ) -> bool {
+    /// `msg` is a term in this (caller) env and is copied into the port. This
+    /// is the in-NIF form, mirroring [`Env::send`]: `enif_port_command`
+    /// requires its `msg_env` to be process-independent or NULL, and the call
+    /// env is neither, so NULL (copy-from-caller) is the only correct choice.
+    /// From a non-scheduler thread, build the command in an `OwnedEnv` and use
+    /// [`OwnedEnv::port_command`](crate::env::OwnedEnv::port_command) instead.
+    ///
+    /// Returns `true` if the command was accepted.
+    pub fn port_command(self, port: &LocalPort, msg: impl AsNifTerm<'a>) -> bool {
         unsafe {
             crate::enif::port_command(
                 self.as_ptr(),
                 &port.port,
-                msg_env.as_ptr(),
+                std::ptr::null_mut(),
                 msg.as_nif_term(),
             ) != 0
         }

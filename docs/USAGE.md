@@ -463,7 +463,7 @@ let Some(local) = port.to_local() else { ... };
 let port = LocalPort::whereis(env, name_atom);
 
 // Send a command — takes a &LocalPort
-let ok: bool = env.port_command(&local, env, msg_term);
+let ok: bool = env.port_command(&local, msg_term);
 ```
 
 ### Fun

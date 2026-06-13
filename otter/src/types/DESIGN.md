@@ -548,7 +548,7 @@ struct LocalPort { port: NifPort }                 // validated local — no lif
 | `Port::to_local(self) → Option<LocalPort>` | Refine to local; `None` if external | `enif_get_local_port` |
 | `LocalPort::whereis(env, name) → Option<LocalPort>` | Look up by registered name | `enif_whereis_port` |
 | `LocalPort::is_alive(self, env) → bool` | Check if port is alive | `enif_is_port_alive` |
-| `Env::port_command(&LocalPort, msg_env, msg) → bool` | Send command to port | `enif_port_command` |
+| `Env::port_command(&LocalPort, msg) → bool` | Send command to port (in-NIF; NULL msg_env) | `enif_port_command` |
 
 ### Internals
 

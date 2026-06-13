@@ -120,9 +120,16 @@ impl<'a> Env<'a> {
     }
 
     /// The pid of the calling process (`enif_self`).
+    ///
+    /// Panics if called on an env that is not process-bound (a resource
+    /// callback, an `OwnedEnv`, the load env) — `enif_self` returns NULL there
+    /// and there is no calling process, so there is no self pid to return.
     pub fn self_pid(self) -> LocalPid {
         let mut out = NifPid { pid: 0 };
-        unsafe { crate::enif::self_(self.as_ptr(), &mut out) };
+        // enif_self returns NULL outside a process-bound env; producing a
+        // Pid{0} there would be an invalid term word (UB on later use).
+        let ok = unsafe { !crate::enif::self_(self.as_ptr(), &mut out).is_null() };
+        assert!(ok, "self_pid requires the calling process's env (a process-bound NIF env)");
         LocalPid { pid: out }
     }
 
