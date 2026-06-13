@@ -22,6 +22,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([send_to/2, cpu_time/0]).
 -export([panicking_resource_new/0]).
 -export([select_resource_new/0, select_register/1, select_stop/1, select_stop_count/1]).
+-export([monitor_resource_new/0, monitor_pid/2, monitor_down_count/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -193,3 +194,25 @@ select_stop(_R) -> exit(nif_not_loaded).
 -doc "Number of times the resource's `stop` callback has run.".
 -spec select_stop_count(reference()) -> non_neg_integer().
 select_stop_count(_R) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Resource monitor — down callback
+
+-doc """
+Returns a resource for exercising `enif_monitor_process`. See the
+`monitor_down` test in `otter_demo__nif_test`.
+""".
+-spec monitor_resource_new() -> reference().
+monitor_resource_new() -> exit(nif_not_loaded).
+
+-doc """
+Monitors `Pid` via the resource. When `Pid` exits, the resource's `down`
+callback runs. Returns `ok` if the monitor was established, `error`
+otherwise.
+""".
+-spec monitor_pid(reference(), pid()) -> ok | error.
+monitor_pid(_R, _Pid) -> exit(nif_not_loaded).
+
+-doc "Number of times the resource's `down` callback has run.".
+-spec monitor_down_count(reference()) -> non_neg_integer().
+monitor_down_count(_R) -> exit(nif_not_loaded).

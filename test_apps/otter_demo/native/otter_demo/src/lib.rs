@@ -554,11 +554,51 @@ fn select_stop_count<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<
     Integer::from_i64(env, arc.stop_count.load(Ordering::Relaxed) as i64)
 }
 
+// --- monitor / down callback --------------------------------------------
+// A resource that monitors a process via ResourceArc::monitor. When the
+// monitored process exits, the BEAM dispatches to Resource::down on a
+// scheduler thread; down() bumps a counter the Erlang side polls. Mirrors
+// the select-stop test for the other resource extern "C" callback.
+struct MonitorResource {
+    down_count: AtomicUsize,
+}
+
+static MONITOR_RESOURCE_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
+
+impl Resource for MonitorResource {
+    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
+        &MONITOR_RESOURCE_TYPE
+    }
+
+    fn down<'a>(&'a self, _env: Env<'a>, _pid: Pid, _monitor: otter::resource::Monitor) {
+        self.down_count.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[otter::nif]
+fn monitor_resource_new(_env: Env) -> ResourceArc<MonitorResource> {
+    ResourceArc::from(MonitorResource { down_count: AtomicUsize::new(0) })
+}
+
+#[otter::nif]
+fn monitor_pid<'a>(env: Env<'a>, arc: ResourceArc<MonitorResource>, pid: Pid) -> Atom {
+    match arc.monitor(Some(env), &pid) {
+        Some(_) => otter::atom![ok],
+        None => otter::atom![error],
+    }
+}
+
+#[otter::nif]
+fn monitor_down_count<'a>(env: Env<'a>, arc: ResourceArc<MonitorResource>) -> Integer<'a> {
+    Integer::from_i64(env, arc.down_count.load(Ordering::Relaxed) as i64)
+}
+
 fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);
     otter::resource::register_resource_type::<HashMapResource>(env);
     otter::resource::register_resource_type::<PanickingResource>(env);
     otter::resource::register_resource_type::<FdResource>(env);
+    otter::resource::register_resource_type::<MonitorResource>(env);
     true
 }
 
@@ -599,4 +639,7 @@ otter::init!("otter_demo__nif", [
     select_register,
     select_stop,
     select_stop_count,
+    monitor_resource_new,
+    monitor_pid,
+    monitor_down_count,
 ], load = on_load);

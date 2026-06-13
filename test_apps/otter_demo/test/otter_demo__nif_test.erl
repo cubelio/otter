@@ -215,3 +215,23 @@ wait_for_stop(R, N) ->
     C when C >= 1 -> ok;
     _ -> timer:sleep(10), wait_for_stop(R, N - 1)
   end.
+
+%% test-01 — resource monitor down callback. Monitoring a process via the
+%% resource and letting it exit must dispatch to Resource::down, not a NULL
+%% pointer. Monitor a blocking process, kill it, poll the down counter.
+-spec monitor_down_test() -> _.
+monitor_down_test() ->
+  R = otter_demo__nif:monitor_resource_new(),
+  Pid = spawn(fun () -> receive die -> ok end end),
+  ?assertEqual(ok, otter_demo__nif:monitor_pid(R, Pid)),
+  exit(Pid, kill),
+  ?assertEqual(ok, wait_for_down(R, 100)),
+  ?assertEqual(1, otter_demo__nif:monitor_down_count(R)).
+
+-spec wait_for_down(reference(), non_neg_integer()) -> ok | timeout.
+wait_for_down(_R, 0) -> timeout;
+wait_for_down(R, N) ->
+  case otter_demo__nif:monitor_down_count(R) of
+    C when C >= 1 -> ok;
+    _ -> timer:sleep(10), wait_for_down(R, N - 1)
+  end.
