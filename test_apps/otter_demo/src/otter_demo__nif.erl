@@ -25,6 +25,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([select_x_register/2]).
 -export([monitor_resource_new/0, monitor_pid/2, monitor_down_count/1]).
 -export([test_time/0, test_consume_timeslice/0]).
+-export([port_send/2]).
 
 %%------------------------------------------------------------------------------
 
@@ -237,3 +238,10 @@ test_time() -> exit(nif_not_loaded).
 -doc "Drives enif_consume_timeslice to exhaustion. Returns ok if reported used up.".
 -spec test_consume_timeslice() -> ok | error.
 test_consume_timeslice() -> exit(nif_not_loaded).
+
+-doc """
+Sends `Data` to `Port` via `enif_port_command`. The calling process must
+own the port. Returns `ok` if the command was accepted, `error` otherwise.
+""".
+-spec port_send(port(), binary()) -> ok | error.
+port_send(_Port, _Data) -> exit(nif_not_loaded).

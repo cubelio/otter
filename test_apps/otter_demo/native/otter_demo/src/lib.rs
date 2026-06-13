@@ -8,7 +8,7 @@ use otter::env::{Env, OwnedEnv};
 use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
 use otter::sys::NifSelectFlags;
 use otter::term::{Term, TypedTerm, Raised};
-use otter::types::{Atom, Binary, BinaryBuilder, Float, Integer, List, Map, Pid, Reference, Tuple};
+use otter::types::{Atom, Binary, BinaryBuilder, Float, Integer, List, Map, Pid, Port, Reference, Tuple};
 
 otter::declare_atoms![
     ok, error,
@@ -572,6 +572,20 @@ fn select_x_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>, msg: TypedT
     Integer::from_i64(env, flags as i64)
 }
 
+// --- port_send/2 --------------------------------------------------------
+// Send a command to a port via enif_port_command. The caller process owns
+// the port (opened by the test), so the command is permitted; the binary is
+// copied into the port's input. Returns ok if accepted.
+
+#[otter::nif]
+fn port_send<'a>(env: Env<'a>, port: Port, data: Binary<'a>) -> Atom {
+    if env.port_command(&port, env, data) {
+        otter::atom![ok]
+    } else {
+        otter::atom![error]
+    }
+}
+
 // --- test_time/0 --------------------------------------------------------
 // Exercise the time module: monotonic_time, time_offset, convert_time_unit
 // across the TimeUnit variants.
@@ -700,4 +714,5 @@ otter::init!("otter_demo__nif", [
     monitor_down_count,
     test_time,
     test_consume_timeslice,
+    port_send,
 ], load = on_load);

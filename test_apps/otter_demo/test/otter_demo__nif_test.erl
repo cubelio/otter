@@ -258,3 +258,27 @@ select_x_test() ->
   after 2000 ->
     ?assert(false)
   end.
+
+%% test-01 — Port::command and the Port decode arm. Open a cat -u port
+%% (unbuffered, so the echo is deterministic), check the port decodes via
+%% type_of/test_debug, send a command through enif_port_command, and receive
+%% the echo. Skipped with a warning if cat is not on PATH.
+-spec port_command_test() -> _.
+port_command_test() ->
+  case os:find_executable("cat") of
+    false ->
+      io:format(user, "~n*** port_command_test SKIPPED: 'cat' not found on PATH~n", []);
+    Cat ->
+      Port = open_port({spawn_executable, Cat}, [binary, stream, {args, ["-u"]}]),
+      %% Port decode arm.
+      ?assertEqual(port,         otter_demo__nif:type_of(Port)),
+      ?assertEqual(<<"Port">>,   otter_demo__nif:test_debug(Port)),
+      %% enif_port_command — caller owns the port, so the command is accepted.
+      ?assertEqual(ok, otter_demo__nif:port_send(Port, <<"ping\n">>)),
+      receive
+        {Port, {data, <<"ping\n">>}} -> ok
+      after 2000 ->
+        ?assert(false)
+      end,
+      port_close(Port)
+  end.
