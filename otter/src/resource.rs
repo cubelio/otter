@@ -11,7 +11,7 @@ use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::sys::{NifEnv, NifEvent, NifMonitor, NifPid, NifResourceType, NifResourceTypeInit};
 use crate::term::{Term, TypedTerm};
-use crate::types::Pid;
+use crate::types::LocalPid;
 
 // ---------------------------------------------------------------------------
 // ResourceTypeHandle
@@ -112,8 +112,9 @@ pub trait Resource: Sized + Send + Sync + 'static {
     fn destructor(self, _env: Env<'_>) {}
 
     /// Called when a process monitored via [`ResourceArc::monitor`] exits.
-    /// The default is a no-op.
-    fn down<'a>(&'a self, _env: Env<'a>, _pid: Pid, _monitor: Monitor) {}
+    /// The default is a no-op. The exiting process is always local (only local
+    /// processes can be monitored), so `pid` is a [`LocalPid`].
+    fn down<'a>(&'a self, _env: Env<'a>, _pid: LocalPid, _monitor: Monitor) {}
 
     /// Called when the BEAM stops monitoring an event that was selected on
     /// this resource via [`select`](crate::select::select) — either an
@@ -178,7 +179,7 @@ unsafe extern "C" fn down_callback<T: Resource>(
         let marker = ();
         // SAFETY: env is valid for the duration of this callback.
         let env = unsafe { Env::new(&marker, env, EnvKind::Callback) };
-        let pid = Pid { term: unsafe { (*pid).pid } };
+        let pid = LocalPid { pid: unsafe { *pid } };
         let monitor = Monitor(unsafe { *mon });
         unsafe { (*inner).down(env, pid, monitor) };
     }));
@@ -348,12 +349,11 @@ impl<T: Resource> ResourceArc<T> {
     ///
     /// `env` may be `None` when calling from a non-NIF thread (e.g. a dirty
     /// scheduler callback). Pass `Some(env)` from a normal NIF call.
-    pub fn monitor(&self, env: Option<Env<'_>>, pid: &Pid) -> Option<Monitor> {
+    pub fn monitor(&self, env: Option<Env<'_>>, pid: &LocalPid) -> Option<Monitor> {
         let env_ptr = env.map(|e| e.as_ptr()).unwrap_or(std::ptr::null_mut());
-        let nif_pid = NifPid { pid: pid.term };
         let mut mon = NifMonitor([0u8; 32]);
         let rc = unsafe {
-            crate::enif::monitor_process(env_ptr, self.raw, &nif_pid, &mut mon)
+            crate::enif::monitor_process(env_ptr, self.raw, &pid.pid, &mut mon)
         };
         if rc == 0 { Some(Monitor(mon)) } else { None }
     }

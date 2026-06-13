@@ -146,7 +146,7 @@ impl OwnedEnv {
 pub enum TypedTerm<'a> {
     Atom(Atom), Bitstring(Bitstring<'a>), Float(Float<'a>),
     Fun(Fun<'a>), Integer(Integer<'a>), List(List<'a>),
-    Map(Map<'a>), Pid(Pid), Port(Port),
+    Map(Map<'a>), Pid(Pid<'a>), Port(Port<'a>),
     Reference(Reference<'a>), Tuple(Tuple<'a>),
 }
 ```
@@ -165,15 +165,15 @@ Construction is always free. Extraction is on demand. Every concrete type is `Ni
 
 ### Lifetime rules
 
-- `Atom`, `Pid`, `Port` — no lifetime. Tagged immediates, valid anywhere.
-- `Integer<'a>`, `Float<'a>`, `Binary<'a>`, `Bitstring<'a>`, `Fun<'a>`, `List<'a>`, `Map<'a>`, `Reference<'a>`, `Tuple<'a>` — carry `'a` because values may live on the BEAM heap.
+- `Atom`, `LocalPid`, `LocalPort` — no lifetime. Tagged immediates (an atom; an internal pid/port validated via `enif_get_local_pid`/`_port`), valid anywhere.
+- `Integer<'a>`, `Float<'a>`, `Binary<'a>`, `Bitstring<'a>`, `Fun<'a>`, `List<'a>`, `Map<'a>`, `Reference<'a>`, `Tuple<'a>`, `Pid<'a>`, `Port<'a>` — carry `'a` because values may live on the BEAM heap. `Pid<'a>`/`Port<'a>` are pids/ports of *unestablished* locality: an external (remote-node) one is heap-boxed, so they must not outlive `'a`. Refine to a storable `LocalPid`/`LocalPort` with `to_local()`.
 - `Bitstring` and `Fun` carry `env` for lifetime only — no NIF inspection functions exist for them. These fields have `#[allow(dead_code)]`.
 
 ### `AsNifTerm<'a>` — universal term input
 
 Functions that accept a term as input use `impl AsNifTerm<'a>` instead of `TypedTerm<'a>`. This sealed trait is implemented for all otter term types (`Atom`, `Binary`, `Integer`, `List`, `TypedTerm`, `Term`, etc.) and for `&T` where `T: AsNifTerm<'a>`. It extracts the underlying `NifTerm` without allocating or copying.
 
-The lifetime parameter binds the term to a specific env: an `impl AsNifTerm<'a>` argument only accepts terms whose env is `'a`. Env-portable types (`Atom`, `Pid`, `Port`) implement `AsNifTerm<'a>` for every `'a` and so satisfy any call site. Env-bound types (`Term<'a>`, `Binary<'a>`, etc.) only implement it for their own lifetime, so cross-env terms are rejected at compile time. BEAM treats cross-env terms as undefined behavior; this constraint is load-bearing for soundness.
+The lifetime parameter binds the term to a specific env: an `impl AsNifTerm<'a>` argument only accepts terms whose env is `'a`. Env-portable types (`Atom`, `LocalPid`, `LocalPort`) implement `AsNifTerm<'a>` for every `'a` and so satisfy any call site. Env-bound types (`Term<'a>`, `Binary<'a>`, `Pid<'a>`, `Port<'a>`, etc.) only implement it for their own lifetime, so cross-env terms are rejected at compile time. BEAM treats cross-env terms as undefined behavior; this constraint is load-bearing for soundness.
 
 This means you can pass concrete types directly — no `.encode(env)` needed:
 

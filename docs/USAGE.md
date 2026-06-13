@@ -144,7 +144,7 @@ fn add(env: Env, a: Integer, b: Integer) -> Integer { ... }
 fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> { ... }
 ```
 
-Types without lifetimes (`Atom`, `Pid`, `Port`) don't need this.
+Types without lifetimes (`Atom`, `LocalPid`, `LocalPort`) don't need this.
 
 ### The `init!` Macro
 
@@ -408,37 +408,47 @@ let empty = Map::new(env);
 
 // Iterate
 for (key, value) in map.iter() {
-    // key and value are TypedTerm<'a>
+    // key and value are Term<'a> — call .resolve() to type them
 }
 ```
 
 ### Pid
 
-No lifetime — pids are tagged immediates.
+`Pid<'a>` is a pid of unestablished locality, tied to its env: an external
+(remote-node) pid is heap-boxed, so it must not outlive `'a`. It supports
+identity and encoding. To *act* on the process, refine it to a `LocalPid`
+(`Copy`, no lifetime, storable) with `to_local()` — only local processes can
+be sent to, monitored, or checked. NIF arguments can be decoded directly as
+`LocalPid` (an external pid then fails with badarg).
 
 ```rust
-let TypedTerm::Pid(pid) = term else { ... };
+let TypedTerm::Pid(pid) = term else { ... };   // pid: Pid<'a>
+let Some(local) = pid.to_local() else { ... }; // None if external
 
-// Current process
-let self_pid = Pid::self_(env);
+// Current process — always local
+let self_pid = LocalPid::self_(env);
 
-// Liveness check
-let alive: bool = pid.is_alive(env);
+// Liveness check / registered-name lookup
+let alive: bool = local.is_alive(env);
+let pid = LocalPid::whereis(env, name_atom);
 
-// Registered name lookup
-let pid = Pid::whereis(env, name_atom);
+// Send (in-NIF) takes a &LocalPid
+env.send(&local, msg_term);
 ```
 
 ### Port
 
+Symmetric to `Pid`: `Port<'a>` (any port) refines to `LocalPort` via
+`to_local()`; `enif_port_command`/`enif_is_port_alive` take a local port.
+
 ```rust
-let TypedTerm::Port(port) = term else { ... };
+let TypedTerm::Port(port) = term else { ... };   // port: Port<'a>
+let Some(local) = port.to_local() else { ... };
 
-// Registered name lookup
-let port = Port::whereis(env, name_atom);
+let port = LocalPort::whereis(env, name_atom);
 
-// Send a command
-let ok: bool = port.command(env, msg_term);
+// Send a command — takes a &LocalPort
+let ok: bool = env.port_command(&local, env, msg_term);
 ```
 
 ### Fun
@@ -747,7 +757,7 @@ use std::thread;
 
 #[otter::nif]
 fn start_worker(env: Env) -> Atom {
-    let pid = Pid::self_(env);
+    let pid = LocalPid::self_(env);
     thread::spawn(move || {
         let mut owned = OwnedEnv::new();
         let result = do_heavy_work();

@@ -33,9 +33,11 @@ Types that reference data on the BEAM heap carry a lifetime `'a` tied to the
 `Env<'a>` that owns that heap. This prevents terms from escaping the NIF call
 that created them.
 
-Three types have no lifetime: `Atom`, `Pid`, `Port`. These are global or
-carry their identity in the term word itself. Their `Encoder` impls return the
-term directly rather than copying.
+Three types have no lifetime: `Atom`, `LocalPid`, `LocalPort`. These are global
+or carry their identity in the term word itself (an internal pid/port is a
+tagged immediate). Their `Encoder` impls return the term directly rather than
+copying. `Pid<'a>`/`Port<'a>` — pids/ports of unestablished locality — *do*
+carry `'a`, because an external one is heap-boxed (see the Pid section).
 
 All other types' `Encoder` impls call `enif_make_copy` to copy the term into
 the destination environment.
@@ -485,28 +487,37 @@ sufficient; the exhaustion check uses `get_pair` returning `None`).
 ### Otter API
 
 ```rust
-struct Pid { term: NifTerm }  // no lifetime — pids are self-contained
+struct Pid<'a> { term: NifTerm, env: Env<'a> }   // unestablished locality — env-bound
+struct LocalPid { pid: NifPid }                   // validated local — no lifetime, Copy
 ```
 
-| Method | Does | Calls |
+| Type / Method | Does | Calls |
 |---|---|---|
-| `self_(env) → Pid` | Get calling process PID | `enif_self` |
-| `is_alive(self, env) → bool` | Check if process is alive | `enif_is_process_alive` |
-| `whereis(env, name) → Option<Pid>` | Look up by registered name | `enif_whereis_pid` |
-| `as_nif_pid(self, env) → Option<NifPid>` | Convert to `NifPid` for `OwnedEnv::send`; `None` for distributed pids | `enif_get_local_pid` |
+| `Pid::to_local(self) → Option<LocalPid>` | Refine to local; `None` if external | `enif_get_local_pid` |
+| `LocalPid::self_(env) → LocalPid` | Calling process PID (always local) | `enif_self` |
+| `LocalPid::whereis(env, name) → Option<LocalPid>` | Look up by registered name | `enif_whereis_pid` |
+| `LocalPid::is_alive(self, env) → bool` | Check if process is alive | `enif_is_process_alive` |
+| `Env::send(&LocalPid, msg) → bool` | In-NIF send | `enif_send` |
 
-`is_current_process_alive` is exposed on `Env`, not `Pid`.
+`is_current_process_alive` is exposed on `Env`.
 
 ### Internals
 
-`Pid` has no lifetime because the term word encodes the process identity
-directly (for local pids). `as_nif_pid` extracts the `ErlNifPid` struct needed
-by `enif_send`. It returns `None` for external (distributed) pids, which
-cannot be used with the local send API.
+A *local* pid's term word is a tagged immediate that encodes the process
+identity directly — so `LocalPid` (validated via `enif_get_local_pid` /
+`enif_self` / `enif_whereis_pid`) is lifetime-free, `Copy`, and safe to store.
+An *external* (remote-node) pid is a heap-boxed term whose word is a heap
+pointer; storing it past the env would dangle, so `Pid<'a>` carries `'a` and
+cannot be stored. `LocalPid` holds the `ErlNifPid` directly, so the operations
+that require an internal pid (`enif_send`, `enif_monitor_process`,
+`enif_select`, `enif_is_process_alive`) take `&LocalPid` and never build an
+`ErlNifPid` from an unvalidated term — the soundness fix for the
+external-pid/UAF gap (assessment finding `audit-03`).
 
 ### Not Exposed
 
-`enif_is_pid` (handled by `enif_term_type`).
+`enif_is_pid` is on `Env` (`is_pid`); type identification also goes through
+`enif_term_type`.
 
 ---
 
@@ -526,24 +537,28 @@ cannot be used with the local send API.
 ### Otter API
 
 ```rust
-struct Port { term: NifTerm }  // no lifetime
+struct Port<'a> { term: NifTerm, env: Env<'a> }   // unestablished locality — env-bound
+struct LocalPort { port: NifPort }                 // validated local — no lifetime, Copy
 ```
 
-| Method | Does | Calls |
+| Type / Method | Does | Calls |
 |---|---|---|
-| `whereis(env, name) → Option<Port>` | Look up by registered name | `enif_whereis_port` |
-| `command(self, env, msg) → bool` | Send command to port | `enif_port_command` |
+| `Port::to_local(self) → Option<LocalPort>` | Refine to local; `None` if external | `enif_get_local_port` |
+| `LocalPort::whereis(env, name) → Option<LocalPort>` | Look up by registered name | `enif_whereis_port` |
+| `LocalPort::is_alive(self, env) → bool` | Check if port is alive | `enif_is_port_alive` |
+| `Env::port_command(&LocalPort, msg_env, msg) → bool` | Send command to port | `enif_port_command` |
 
 ### Internals
 
-Like `Pid`, `Port` carries no lifetime. `command` passes `NULL` for the
-options pointer (no options are currently defined by the NIF API).
+Mirrors `Pid`: a local port is an immediate (`LocalPort`, validated via
+`enif_get_local_port` / `enif_whereis_port`, lifetime-free and `Copy`), an
+external port is heap-boxed (`Port<'a>`, env-bound). `enif_port_command` and
+`enif_is_port_alive` require an internal port, so they take `&LocalPort`.
 
 ### Not Exposed
 
-`enif_is_port` (handled by `enif_term_type`), `enif_get_local_port` (not
-needed unless interacting with port drivers at the C level),
-`enif_is_port_alive` (could be added if needed).
+`enif_is_port` is on `Env` (`is_port`); type identification also goes through
+`enif_term_type`.
 
 ---
 

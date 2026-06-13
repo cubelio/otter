@@ -4,7 +4,8 @@ use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::sys::{NifHash, NifTerm, NifTermType, NifUniqueInteger};
 use crate::types::{
-    Atom, Binary, Bitstring, Float, Fun, Integer, List, Map, Pid, Port, Reference, Tuple,
+    Atom, Binary, Bitstring, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid, Port,
+    Reference, Tuple,
 };
 
 // ---------------------------------------------------------------------------
@@ -64,8 +65,8 @@ impl<'a> Term<'a> {
             NifTermType::Integer   => TypedTerm::Integer(Integer { term: self.term, env: self.env }),
             NifTermType::List      => TypedTerm::List(List { term: self.term, env: self.env }),
             NifTermType::Map       => TypedTerm::Map(Map { term: self.term, env: self.env }),
-            NifTermType::Pid       => TypedTerm::Pid(Pid { term: self.term }),
-            NifTermType::Port      => TypedTerm::Port(Port { term: self.term }),
+            NifTermType::Pid       => TypedTerm::Pid(Pid { term: self.term, env: self.env }),
+            NifTermType::Port      => TypedTerm::Port(Port { term: self.term, env: self.env }),
             NifTermType::Reference => TypedTerm::Reference(Reference { term: self.term, env: self.env }),
             NifTermType::Tuple     => TypedTerm::Tuple(Tuple { term: self.term, env: self.env }),
         })
@@ -102,8 +103,8 @@ pub enum TypedTerm<'a> {
     Integer(Integer<'a>),
     List(List<'a>),
     Map(Map<'a>),
-    Pid(Pid),
-    Port(Port),
+    Pid(Pid<'a>),
+    Port(Port<'a>),
     Reference(Reference<'a>),
     Tuple(Tuple<'a>),
 }
@@ -222,11 +223,11 @@ impl<'a> From<List<'a>> for TypedTerm<'a> {
 impl<'a> From<Map<'a>> for TypedTerm<'a> {
     fn from(v: Map<'a>) -> TypedTerm<'a> { TypedTerm::Map(v) }
 }
-impl<'a> From<Pid> for TypedTerm<'a> {
-    fn from(v: Pid) -> TypedTerm<'a> { TypedTerm::Pid(v) }
+impl<'a> From<Pid<'a>> for TypedTerm<'a> {
+    fn from(v: Pid<'a>) -> TypedTerm<'a> { TypedTerm::Pid(v) }
 }
-impl<'a> From<Port> for TypedTerm<'a> {
-    fn from(v: Port) -> TypedTerm<'a> { TypedTerm::Port(v) }
+impl<'a> From<Port<'a>> for TypedTerm<'a> {
+    fn from(v: Port<'a>) -> TypedTerm<'a> { TypedTerm::Port(v) }
 }
 impl<'a> From<Reference<'a>> for TypedTerm<'a> {
     fn from(v: Reference<'a>) -> TypedTerm<'a> { TypedTerm::Reference(v) }
@@ -311,8 +312,10 @@ impl sealed::Sealed for Fun<'_> {}
 impl sealed::Sealed for Integer<'_> {}
 impl sealed::Sealed for List<'_> {}
 impl sealed::Sealed for Map<'_> {}
-impl sealed::Sealed for Pid {}
-impl sealed::Sealed for Port {}
+impl sealed::Sealed for Pid<'_> {}
+impl sealed::Sealed for LocalPid {}
+impl sealed::Sealed for Port<'_> {}
+impl sealed::Sealed for LocalPort {}
 impl sealed::Sealed for Reference<'_> {}
 impl sealed::Sealed for Tuple<'_> {}
 impl sealed::Sealed for Term<'_> {}
@@ -323,10 +326,18 @@ impl<T: sealed::Sealed + ?Sized> sealed::Sealed for &T {}
 impl<'a> AsNifTerm<'a> for Atom {
     fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl<'a> AsNifTerm<'a> for Pid {
+// LocalPid/LocalPort hold internal (immediate) ids, valid in any env.
+impl<'a> AsNifTerm<'a> for LocalPid {
+    fn as_nif_term(&self) -> NifTerm { self.pid.pid }
+}
+impl<'a> AsNifTerm<'a> for LocalPort {
+    fn as_nif_term(&self) -> NifTerm { self.port.port_id }
+}
+// Env-bound: a pid/port of unestablished locality is tied to its env.
+impl<'a> AsNifTerm<'a> for Pid<'a> {
     fn as_nif_term(&self) -> NifTerm { self.term }
 }
-impl<'a> AsNifTerm<'a> for Port {
+impl<'a> AsNifTerm<'a> for Port<'a> {
     fn as_nif_term(&self) -> NifTerm { self.term }
 }
 

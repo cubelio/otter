@@ -10,14 +10,14 @@ help: the trait `Encoder` is not implemented for `NotEncodable`
 10 | struct NotEncodable;
    | ^^^^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `Encoder`:
+             LocalPid
+             LocalPort
              ResourceArc<T>
              Result<T, Raised<'r>>
              Term<'b>
              TypedTerm<'b>
              otter::types::Atom
              otter::types::Binary<'b>
-             otter::types::Bitstring<'b>
-             otter::types::Float<'b>
            and $N others
 note: required by a bound in `__otter_assert_encoder`
   --> tests/ui/fail_return_not_encoder.rs:12:1

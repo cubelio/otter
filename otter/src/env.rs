@@ -2,9 +2,9 @@
 
 use std::marker::PhantomData;
 
-use crate::sys::{NifEnv, NifPid, NifPort};
+use crate::sys::NifEnv;
 use crate::term::TypedTerm;
-use crate::types::{Pid, Port};
+use crate::types::{LocalPid, LocalPort};
 
 // ---------------------------------------------------------------------------
 // EnvKind
@@ -129,7 +129,7 @@ impl OwnedEnv {
     /// When calling from outside a NIF call (e.g. an OS thread), `enif_send`
     /// is called with a null caller environment, which is the correct usage
     /// for non-scheduler threads.
-    pub fn send<F>(&mut self, pid: &Pid, f: F) -> bool
+    pub fn send<F>(&mut self, pid: &LocalPid, f: F) -> bool
     where
         F: FnOnce(Env<'_>) -> TypedTerm<'_>,
     {
@@ -137,10 +137,9 @@ impl OwnedEnv {
         // SAFETY: self.env is valid; marker ties the lifetime to this frame.
         let env = unsafe { Env::new(&marker, self.env, EnvKind::ProcessIndependent) };
         let term = f(env).as_raw();
-        let nif_pid = NifPid { pid: pid.term };
         // null caller_env = sending from outside a NIF call / scheduler thread.
         let ok = unsafe {
-            crate::enif::send(std::ptr::null_mut(), &nif_pid, self.env, term) != 0
+            crate::enif::send(std::ptr::null_mut(), &pid.pid, self.env, term) != 0
         };
         // enif_send always invalidates msg_env; clear our state to match.
         self.clear();
@@ -155,7 +154,7 @@ impl OwnedEnv {
     /// command was accepted.
     ///
     /// [`send`]: OwnedEnv::send
-    pub fn port_command<F>(&mut self, port: &Port, f: F) -> bool
+    pub fn port_command<F>(&mut self, port: &LocalPort, f: F) -> bool
     where
         F: FnOnce(Env<'_>) -> TypedTerm<'_>,
     {
@@ -163,10 +162,9 @@ impl OwnedEnv {
         // SAFETY: self.env is valid; marker ties the lifetime to this frame.
         let env = unsafe { Env::new(&marker, self.env, EnvKind::ProcessIndependent) };
         let term = f(env).as_raw();
-        let nif_port = NifPort { port_id: port.term };
         // null caller_env = issuing the command from outside a NIF call.
         let ok = unsafe {
-            crate::enif::port_command(std::ptr::null_mut(), &nif_port, self.env, term) != 0
+            crate::enif::port_command(std::ptr::null_mut(), &port.port, self.env, term) != 0
         };
         // port_command invalidates msg_env like send; clear our state to match.
         self.clear();

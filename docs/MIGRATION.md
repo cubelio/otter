@@ -359,8 +359,8 @@ impl Resource for MyResource {
         // all references gone — clean up
     }
 
-    fn down<'a>(&'a self, _env: Env<'a>, _pid: Pid, _monitor: Monitor) {
-        // monitored process exited
+    fn down<'a>(&'a self, _env: Env<'a>, _pid: LocalPid, _monitor: Monitor) {
+        // monitored process exited (always a local process)
     }
 }
 ```
@@ -386,7 +386,7 @@ std::thread::spawn(move || {
 ```rust
 use otter::env::OwnedEnv;
 
-let pid = Pid::self_(env);
+let pid = LocalPid::self_(env);
 std::thread::spawn(move || {
     let mut owned = OwnedEnv::new();
     // `result` is pre-declared via `declare_atoms![result]` at module scope.

@@ -8,7 +8,7 @@ use otter::env::{Env, OwnedEnv};
 use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
 use otter::sys::NifSelectFlags;
 use otter::term::{Term, TypedTerm, Raised};
-use otter::types::{Atom, Binary, BinaryBuilder, Float, Integer, List, Map, Pid, Port, Reference, Tuple};
+use otter::types::{Atom, Binary, BinaryBuilder, Float, Integer, List, LocalPid, LocalPort, Map, Reference, Tuple};
 
 otter::declare_atoms![
     ok, error,
@@ -373,16 +373,15 @@ fn nan_float<'a>(env: Env<'a>) -> Result<Float<'a>, Raised<'a>> {
 }
 
 // --- test_pid/0 ---------------------------------------------------------
-// Exercise Pid::self_, is_alive, as_nif_pid, whereis.
+// Exercise LocalPid::self_, is_alive, whereis.
 
 #[otter::nif]
-fn test_pid(env: Env) -> Pid {
-    let pid = Pid::self_(env);
+fn test_pid(env: Env) -> LocalPid {
+    let pid = LocalPid::self_(env);
     assert!(pid.is_alive(env));
-    assert!(pid.as_nif_pid(env).is_some());
 
     // whereis — 'init' is always registered
-    let init = Pid::whereis(env, Atom::intern(env, "init").unwrap());
+    let init = LocalPid::whereis(env, Atom::intern(env, "init").unwrap());
     assert!(init.is_some());
 
     pid
@@ -425,7 +424,7 @@ fn dirty_cpu_thread_type(_env: Env) -> Atom {
 
 #[otter::nif]
 fn send_from_thread(env: Env) -> Atom {
-    let pid = Pid::self_(env);
+    let pid = LocalPid::self_(env);
     std::thread::spawn(move || {
         let mut owned = OwnedEnv::new();
         owned.send(&pid, |_env| {
@@ -439,7 +438,7 @@ fn send_from_thread(env: Env) -> Atom {
 // In-NIF send: copy a term from the caller env into a pid's mailbox.
 
 #[otter::nif]
-fn send_to<'a>(env: Env<'a>, to: Pid, msg: TypedTerm<'a>) -> Atom {
+fn send_to<'a>(env: Env<'a>, to: LocalPid, msg: TypedTerm<'a>) -> Atom {
     env.send(&to, msg);
     otter::atom![ok]
 }
@@ -531,7 +530,7 @@ fn select_resource_new(_env: Env) -> ResourceArc<FdResource> {
 
 #[otter::nif]
 fn select_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
-    let pid = Pid::self_(env);
+    let pid = LocalPid::self_(env);
     let ref_term = TypedTerm::Reference(Reference::new(env));
     let flags = otter::select::select(
         env, arc.a.as_raw_fd(), NifSelectFlags::READ, &arc, &pid, ref_term,
@@ -541,7 +540,7 @@ fn select_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a
 
 #[otter::nif]
 fn select_stop<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
-    let pid = Pid::self_(env);
+    let pid = LocalPid::self_(env);
     let ref_term = TypedTerm::Reference(Reference::new(env));
     let flags = otter::select::select(
         env, arc.a.as_raw_fd(), NifSelectFlags::STOP, &arc, &pid, ref_term,
@@ -560,7 +559,7 @@ fn select_stop_count<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<
 #[otter::nif]
 fn select_x_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>, msg: TypedTerm<'a>) -> Integer<'a> {
     use std::io::Write;
-    let pid = Pid::self_(env);
+    let pid = LocalPid::self_(env);
     // CUSTOM_MSG is required for select_x to deliver `msg` itself; without it
     // the BEAM sends the default {select,...} tuple with msg nested as the ref.
     let flags = otter::select::select_x(
@@ -578,7 +577,7 @@ fn select_x_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>, msg: TypedT
 // copied into the port's input. Returns ok if accepted.
 
 #[otter::nif]
-fn port_send<'a>(env: Env<'a>, port: Port, data: Binary<'a>) -> Atom {
+fn port_send<'a>(env: Env<'a>, port: LocalPort, data: Binary<'a>) -> Atom {
     if env.port_command(&port, env, data) {
         otter::atom![ok]
     } else {
@@ -639,7 +638,7 @@ impl Resource for MonitorResource {
         &MONITOR_RESOURCE_TYPE
     }
 
-    fn down<'a>(&'a self, _env: Env<'a>, _pid: Pid, _monitor: otter::resource::Monitor) {
+    fn down<'a>(&'a self, _env: Env<'a>, _pid: LocalPid, _monitor: otter::resource::Monitor) {
         self.down_count.fetch_add(1, Ordering::Relaxed);
     }
 }
@@ -650,7 +649,7 @@ fn monitor_resource_new(_env: Env) -> ResourceArc<MonitorResource> {
 }
 
 #[otter::nif]
-fn monitor_pid<'a>(env: Env<'a>, arc: ResourceArc<MonitorResource>, pid: Pid) -> Atom {
+fn monitor_pid<'a>(env: Env<'a>, arc: ResourceArc<MonitorResource>, pid: LocalPid) -> Atom {
     match arc.monitor(Some(env), &pid) {
         Some(_) => otter::atom![ok],
         None => otter::atom![error],
