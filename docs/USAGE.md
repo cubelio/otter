@@ -677,6 +677,8 @@ To call a `raw`-surface enif function that may raise and handle it the same way,
 
 Resources let you own Rust data from the BEAM side. The BEAM manages the lifetime via reference counting — when no Erlang term references the resource, the destructor runs.
 
+> **Hot upgrade caveat.** A resource's Rust payload is not assumed to survive a code upgrade across non-identical builds. Outside the `raw` feature, otter never assumes two builds share an allocator or a datatype layout — see `docs/UPGRADE.md` and `otter/DESIGN.md` "Core safety invariant".
+
 ### Defining a resource
 
 ```rust

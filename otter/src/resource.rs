@@ -100,6 +100,14 @@ impl Eq for Monitor {}
 ///
 /// The `init!` macro will generate this boilerplate automatically in a future
 /// release.
+///
+/// ## Hot upgrade
+///
+/// A resource's `T` is *not* assumed to survive a hot code upgrade across
+/// non-identical builds. When a second build of the library takes over this
+/// resource type, otter (outside the `raw` feature) must not assume it can
+/// interpret or drop a `T` the previous build allocated — different compiler,
+/// allocator, or layout. This is a core safety invariant; see `docs/UPGRADE.md`.
 pub trait Resource: Sized + Send + Sync + 'static {
     /// Returns the static storage slot for this type's registered handle.
     ///

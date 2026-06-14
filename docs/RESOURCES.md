@@ -158,6 +158,8 @@ Resources live outside the `Env<'a>` lifetime system. A resource outlives any si
 
 This means you cannot store `TypedTerm<'a>` or `Binary<'a>` inside a resource — those are borrowed from the NIF call's environment and become invalid when the NIF returns. To store term data in a resource, copy it into an owned Rust type first (e.g. `Vec<u8>`, `String`, `i64`).
 
+**Across a hot code upgrade**, that owned payload is *not* assumed to survive: a second build taking over the resource type must not assume it can interpret or free data the previous build allocated (different compiler, allocator, or layout). Outside the `raw` feature this is a core safety invariant — see `docs/UPGRADE.md`. The module and the resource *type* survive reload; the Rust-typed *payload* is the part under the ABI constraint.
+
 ---
 
 ## Erlang-side usage

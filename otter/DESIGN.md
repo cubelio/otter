@@ -8,6 +8,26 @@
 
 ---
 
+## Core safety invariant: no cross-build ABI assumptions
+
+Erlang's defining feature is upgrading a running system in place. A NIF library must survive that: a *second* build of the library can be loaded beside the first and inherit its live state (resource objects, `priv_data`). The two builds may be produced by different compiler versions, with different allocators, and need not be byte-identical source.
+
+Therefore, **outside the `raw` feature, otter must never assume any of the following across the hot-upgrade boundary:**
+
+1. **Allocator / drop compatibility** — that memory allocated (or a value dropped) by one build can be freed (or have its `Drop` glue run) by the other. Custom global allocators, and even toolchain differences in how the default allocator handles alignment, make this unsound.
+2. **Std datatype layout** — that `Vec`, `String`, `Mutex`, … have the same in-memory layout in both builds. `#[repr(Rust)]` layout is unspecified across compiler versions.
+3. **Same-source layout** — that *identical source* compiled by two different Rust implementations (or the same one with layout randomization) produces layout-compatible structs.
+
+**The upgrade boundary is a foreign-ABI boundary.** This governs every piece of Rust state that can outlive a single code version:
+
+- `priv_data` passed through `load`/`upgrade`/`unload`,
+- resource payloads inherited via resource-type takeover,
+- the data behind any datatype handed to Erlang from a NIF (a resource handed back *is* such state).
+
+Code that relies on ABI compatibility between builds is unsound in safe otter and belongs only behind the `raw` feature, where the user takes responsibility. The safe path must make the no-assumptions hold *by construction* — enif-backed allocation (one shared VM allocator) plus an ABI fingerprint checked at the cross-build read site. See `docs/UPGRADE.md` for the full treatment.
+
+---
+
 ## Layer Structure
 
 ```
@@ -349,6 +369,8 @@ Wraps `NifMonitor`. Implements `PartialEq`/`Eq` via `enif_compare_monitors`. Has
 
 Explicit. `register_resource_type::<T>(env)` must be called from the load callback (`EnvKind::Init`). The BEAM-side resource type identifier is derived from `std::any::type_name::<T>()` (the fully-qualified Rust type path), guaranteeing uniqueness within the per-NIF-library resource type table. For backward-compatibility with an existing external identifier use `register_resource_type_named::<T>(env, name)`. Panics if called from wrong context or called twice.
 
+Resource payloads inherited across a hot upgrade fall under the **core safety invariant** above: a second build taking over a resource type must not assume it can interpret or drop a `T` allocated by the previous build. See `docs/UPGRADE.md`.
+
 ### `dynamic_resource_call`
 
 Module-level function wrapping `enif_dynamic_resource_call`.
@@ -394,5 +416,5 @@ Requires a `ResourceArc<T>` — the BEAM ties I/O event lifecycle to resource ob
 - **`NifUntaggedEnum`** — structural dispatch belongs in user code.
 - **Convenience wrappers** — no built-in `IoData`, no pre-assembled type hierarchies.
 - **Thread spawning** — not a core NIF concept. Use `OwnedEnv::send` for messaging from OS threads spawned via standard Rust threading.
-- **Raw memory allocation** (`enif_alloc`/`enif_free`) — use Rust's allocator.
+- **Raw memory allocation** (`enif_alloc`/`enif_free`) — use Rust's allocator for ordinary per-call work. (Exception, planned: state that must survive a hot upgrade is allocated from the BEAM allocator so it is freeable across builds — see the core safety invariant and `docs/UPGRADE.md`.)
 - **NIF threading primitives** (`enif_mutex_*`, `enif_cond_*`, etc.) — use `std::sync`.
