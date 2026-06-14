@@ -16,10 +16,13 @@ the failure modes, because the most dangerous ones are invisible in Rust source.
 > `otter/DESIGN.md` "Core safety invariant" and the root `CLAUDE.md`. §7–8 below are
 > the detailed justification and what the safe path therefore requires.
 
-> **Status.** The mechanism described here (a generated `upgrade` callback and
-> takeover-aware resource registration) is the subject of issue `audit-02`. The
-> *semantics* in this document are the BEAM's, and are stable; the otter API
-> surface that exposes them is noted as **planned** where it is not yet shipped.
+> **Status.** otter exposes upgrade support in **three tiers** (§8): tier 1 (the safe
+> default — module and resource-*type* survival, no cross-build payload survival) is
+> the subject of issue `audit-02`; tier 2 is the `raw` escape hatch; tier 3 (the
+> fingerprint + `EnifAlloc` sandbox that recovers payload survival safely) is planned.
+> The BEAM *semantics* in this document are stable and, where noted "verified", checked
+> against `erts/emulator/beam/erl_nif.c`; the otter API surface is **planned** where it
+> is not yet shipped.
 
 ---
 
@@ -63,9 +66,13 @@ When the new module instance loads its NIF library, it may load **a different
   empty).
 
 Both paths invoke `upgrade`. The difference matters because otter's resource-type
-handle lives in a static (see §6): in the different-`.so` case the new image's
-static starts empty and must be *populated* by takeover; in the same-`.so` case
-it is already populated and is *overwritten*. One mechanism must cover both.
+handle lives in a static (see §6): in the different-`.so` case the new image's static
+starts empty and is populated by the upgrade's registration; in the same-`.so` case the
+static is *shared* (already populated by the first load), yet the upgrade's registration
+must still re-run `enif_init_resource_type` to transfer type *ownership* to the new
+instance — and re-store the (takeover-preserved) handle. One mechanism — an
+unconditional enif call on every `load`/`upgrade`, writing a plain mutable handle cell —
+covers both.
 
 ---
 
@@ -127,9 +134,10 @@ library is mapped:
 
 When the originating library unloads, every such pointer dangles — even though the
 surrounding heap bytes are still readable. **Reading the bytes is not the same as
-the bytes still pointing at live code.** This single fact is the reason resource
-types need *takeover* (§6): a resource's destructor is a code pointer into the
-library that created it.
+the bytes still pointing at live code.** This single fact is why a resource type's
+destructor — itself a code pointer into the library that created it — forces the BEAM
+to either keep the old library mapped until its objects drain (clean separation) or
+transfer the destructor to the new build (takeover). Both are developed in §5–6.
 
 ---
 
@@ -153,6 +161,40 @@ Lifecycle:
 
 Because the two slots belong to two distinct instances, the *clean and default*
 ownership pattern is: **each instance frees its own.**
+
+### otter's model: otter owns the slot (planned)
+
+The lifecycle above is the raw enif contract. **otter does not hand the bare
+`void*` to the user; otter owns it and points it at an `OtterPrivData` struct**, of
+which the user's state is one field:
+
+```rust
+struct OtterPrivData {
+    types: ResourceRegistry,   // this instance's *mut NifResourceType pointers (see §6)
+    user:  Priv<P> | *mut c_void,  // the user's state — typed lens (safe) or faithful void* (raw)
+    // optional: a second user-managed void* blob, controlled exactly like the raw slot
+}
+```
+
+This is deliberate, and it is *why otter needs no `static`s* for cross-version
+state. Two consequences:
+
+- **The resource-type registry lives here, not in a `static`.** `priv_data` is
+  genuinely per-instance even when the `.so` (and its file-scope statics) are shared
+  on a same-`.so` reload — so each module instance carries its *own* type pointers,
+  set at its own `load`/`upgrade`. That is exactly the per-instance isolation this
+  section's BEAM note prescribes, and it removes the one shared `static` otter would
+  otherwise have. (See §6 for how the registry is populated.)
+- **The faithful `void**` mirror survives as a *field*, not the whole slot.** The
+  user's `load` still sets `new.user`; `upgrade` still reads (and may null) `old.user`
+  for takeover; `unload` still frees it. otter allocates/frees the enclosing
+  `OtterPrivData`; the user owns the lifecycle of their field exactly as before. The
+  `raw` tier exposes that field as a bare `void*`; the safe tier exposes a typed
+  `Priv<P>` lens. tier 3 (§8) fingerprints and `EnifAlloc`-backs the whole struct as
+  one unit.
+
+The cost is that reading `priv_data` needs a module-bound env (`enif_priv_data`),
+which propagates to resource creation — see §5.
 
 ### The flows, enumerated
 
@@ -213,59 +255,128 @@ When library A creates a `ResourceArc<T>`:
 - Any heap the `T` *owns* (e.g. a `Vec`'s backing buffer) is a **separate Rust-heap
   allocation** reached through a pointer inside the struct.
 
-### Takeover and postponed unload
+### Creation requires an env (planned)
 
-The BEAM's upgrade mechanism for resources is a **managed transfer of ownership**,
-not a copy:
+Because the type registry lives in `priv_data` (§4) rather than a `static`, obtaining
+the `*mut NifResourceType` to allocate or decode a resource goes through
+`enif_priv_data(env)` — so it needs a module-bound env:
 
-- `enif_init_resource_type(... CREATE | TAKEOVER ...)` in the new library **takes
-  over** the existing type and inherits all its objects. The **new** library's
-  destructor is thereafter called for those objects.
-- **Unloading the old library is postponed** as long as resource objects with a
-  destructor in it exist. So there is never a window where a live object's
-  destructor points into an unmapped `.so`.
+- **In a NIF or callback**: always have one. Construction becomes `env.make_resource(val)`
+  (replacing the env-less `ResourceArc::from(val)`); decoding already holds an env.
+- **Off-thread / `OwnedEnv`**: a spawned thread has no module-bound env, and
+  `enif_priv_data` does not work on an `OwnedEnv`. So a worker captures the handle
+  *before* spawning — `let h = env.resource_handle::<T>();` — and creates with `h` on
+  the thread. The capability is preserved; it is just made explicit, consistent with
+  otter's "capture what you need, no ambient magic" stance.
 
-This is the "drain" that production hot-upgrade relies on: objects stay put in host
-(BEAM) memory, and only *responsibility* (the destructor — a code pointer) moves
-from A to B. No per-object copy occurs.
+### Two upgrade paths: takeover vs. clean separation
+
+The BEAM offers two sound ways to handle a resource type across an upgrade, and which
+one otter uses is decided by the registered name (§6, §8):
+
+**Takeover** — *a managed transfer of ownership, not a copy.*
+`enif_init_resource_type(... CREATE | TAKEOVER ...)` under a name that *matches* the
+old type inherits all its objects; the **new** library's destructor is thereafter
+called for them. This is only sound when the new build can interpret and drop the old
+build's payload — i.e. an ABI-compatible build (§7). Verified mechanics: takeover sets
+`type->owner = new_lib` and releases the old library's `dynlib_refc`, so **the old
+library can unmap even while its old objects are still alive** — which is exactly why a
+taken-over payload must contain no pointers into the old image.
+
+**Clean separation** — *registering under a name that does **not** match creates a
+fresh type and leaves the old one alone.* This is the safe default (tier 1). The old
+type, its objects, and its destructor stay with the old library, and the BEAM keeps
+that library mapped until they drain. Verified mechanics: each live object holds a
+reference on `type->refc` (incremented per object); at purge (`unload_nif`,
+5311–5328) the type is *not* freed while objects remain, so its `dynlib_refc` on the
+old library is not released and `close_dynlib` is deferred. When the last object is
+GC'd, the dtor runs **with `type->owner` still the old library** — the old build drops
+its own payload — and only then is the library unmapped. No cross-build drop ever
+occurs; the cost is that old handles are inert to the new code (a fresh type identity).
 
 ### What survives, concretely
 
-Take a resource wrapping `Mutex<Vec<u8>>` created by A, after B takes over:
+Take a resource wrapping `Mutex<Vec<u8>>` created by build A:
 
-- **The resource object** (and the `Mutex`/`Vec` *structs* inside it) — BEAM memory,
-  refcount intact, the Erlang-side term still references it. **Survives
-  unconditionally.** `enif_get_resource` in B succeeds because takeover preserved
-  the type identity.
-- **The `Vec`'s backing buffer** — Rust heap. Readable by B (survives even A's
-  unload, being libc-heap memory). Freed correctly by B's inherited destructor
-  **iff A and B share the global allocator** (§3).
-- **The `Mutex` itself** — see §7.
+- **Under clean separation (tier-1 cross-build default):** the object is *not* adopted
+  by B at all. `enif_get_resource` in B fails (B registered a different type identity),
+  so B never interprets A's `Mutex`/`Vec`. A's own destructor frees it when the handle
+  is GC'd. **Nothing crosses — and nothing can corrupt**, because no allocator or layout
+  is shared. The handle must be re-acquired after the upgrade.
+- **Under takeover (same byte-identical image, or `raw`/tier-3):**
+  - The resource object and the `Mutex`/`Vec` *structs* — BEAM memory, refcount intact;
+    `enif_get_resource` in B succeeds because takeover preserved the type identity.
+  - The `Vec`'s backing buffer — Rust heap; readable by B, freed correctly by B's
+    inherited destructor **iff A and B share the global allocator** (§3) — which holds
+    unconditionally only for the byte-identical image, otherwise requires tier-3
+    `EnifAlloc`.
+  - The `Mutex` itself — see §7.
 
 ---
 
 ## 6. Type registration with a reloadable NIF
 
-For a resource type to be takeable-over, registration must:
+### What erl_nif actually does (verified against erts source)
 
-1. Run inside `load` **and** `upgrade` (the only callbacks where
-   `enif_init_resource_type` is legal), and
-2. Pass `ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER` — create on first load, take over
-   on every subsequent one — which is also what fixes registration being called
-   twice when two Erlang modules load the same `.so`.
+`open_resource_type` (`erts/emulator/beam/erl_nif.c`) keys every type on the pair
+**`(module_atom, name)`** — `module_am` comes from the loading module, `name` is the
+string otter passes. The create-vs-takeover decision is then purely a function of
+whether that pair is already registered:
 
-The handle the call returns (`*mut ErlNifResourceType`) must be stored in a slot
-that is **writable**, not write-once: the different-`.so` upgrade case populates a
-fresh-empty slot, the same-`.so` case overwrites an existing one. A write-once cell
-(`OnceLock`) panics on the second registration — the second half of `audit-02`.
+- **Not found** + `CREATE` → a new type is allocated (`op = CREATE`).
+- **Not found** + no `CREATE` → returns `NULL` (failure).
+- **Found** + `TAKEOVER` → the existing type is taken over (`op = TAKEOVER`).
+- **Found** + no `TAKEOVER` → returns **`NULL`** — *`CREATE`-only on an existing name
+  fails.* This is what makes a naive reload (or a second registration of the same name)
+  blow up.
 
-> **Planned (audit-02).** otter's resource-type handle moves from
-> `OnceLock<ResourceTypeHandle>` to a writable atomic cell, registration switches
-> to `CREATE | TAKEOVER` with store-not-set semantics, and the `init!` macro
-> generates a non-`NULL` `upgrade` callback (its extra `old_priv_data` argument is
-> threaded but, by default, ignored). The user's `load` function is re-run on
-> upgrade, which re-registers each type — now an idempotent takeover rather than a
-> panic.
+Two consequences settle otter's design:
+
+1. **The name is the entire ABI-compatibility lever.** Since the key is `(module,
+   name)` and the module atom is fixed, *the name otter registers under decides whether
+   an upgrade takes over the old type or creates a fresh one.* This is what tiers 1 and
+   3 (§8) exploit: a per-build-unique name never matches across builds (→ fresh type,
+   clean separation), a fingerprint name matches exactly when takeover is sound.
+2. **Takeover transfers ownership, and that transfer is mandatory on a same-`.so`
+   reload.** `prepare_opened_rt` sets `type->owner = new_lib` on takeover. The new
+   instance *must* re-run registration in `upgrade` for two reasons at once: it
+   populates the new instance's own registry (§4) with the type pointer, **and** it
+   moves ownership forward so that when the old library is purged, `unload_nif`
+   (5311–5328) *skips* the type (`owner` no longer matches it) instead of freeing it
+   out from under the new instance and any still-outstanding objects. So registration's
+   enif call **must run in `upgrade`**, unconditionally.
+
+### otter's registration (settled — `audit-02`)
+
+- **Separate `load` / `upgrade` (/ `unload`) functions.** The user writes them
+  explicitly — *not* a single `load` re-run on upgrade. `load` holds one-time side
+  effects that must not repeat (priv_data, threads, fds); `upgrade` is the distinct
+  callback the BEAM requires (and the only one with `old_priv_data`). `init!` generates
+  a non-`NULL` `upgrade` wrapper that dispatches to the user's `upgrade` fn.
+- **The user calls `register_resource_type::<T>` in *both* `load` and `upgrade`** (the
+  C idiom). otter does not auto-collect a type list — registration stays explicit.
+- **Flag by callback:** `CREATE` in `load`, `CREATE | TAKEOVER` in `upgrade`. `load`
+  runs only when no old code of this module exists, so it can never legitimately collide
+  — `CREATE`-only there is the *strict* choice (a collision is a real error, not
+  silently absorbed). `upgrade` is where takeover is both possible and needed.
+- **`EnvKind`** gains an `Upgrade` variant (`Init` → `Load`); it gates *call legality*
+  (registration is legal only from `load`/`upgrade`) and selects the flag. It does not
+  otherwise branch the logic.
+- **The handle is stored in the per-instance registry inside `priv_data` (§4), not a
+  `static`.** Each `register_resource_type::<T>` call writes the returned
+  `*mut NifResourceType` into *this instance's* `OtterPrivData.types`, keyed by `T`
+  (its `TypeId`); `ResourceArc` reads it back via `env → enif_priv_data → registry`.
+  Because `priv_data` is per-instance, and the registry is built entirely within
+  `load`/`upgrade` (before any NIF call on that instance) and read-only thereafter,
+  there is **no `static`, no shared cell, and no atomics** — and the same-`.so`
+  shared-static hazard disappears outright, since each instance owns its registry.
+
+This supersedes the earlier `OnceLock`/`AtomicPtr` static-cell design and removes the
+`Resource` trait's `resource_type_handle()` static accessor: the type pointer is reached
+through the env-bound registry, not a global. The old `OnceLock::set().expect()` (the
+second half of `audit-02`) panicked on the second registration; the per-instance
+registry instead records the freshly returned handle in each instance's own slot — and
+the enif call still runs every time, for the ownership transfer above.
 
 ---
 
@@ -327,45 +438,118 @@ the mechanism.**
 
 ---
 
-## 8. Guidance
+## 8. Tiers of upgrade support
 
-It is tempting to note that the common operational case — recompile the same crate
-with the same pinned toolchain, no custom allocator, `l(Mod)` — *appears* to work end
-to end: the module survives, types take over, inline state persists, Rust-heap
-payloads are freed correctly. **otter does not treat this as a supported safe path.**
-It works only by making the three assumptions the paradigm forbids; nothing in the
-source signals the dependency, and a toolchain or allocator change between releases
-breaks it silently. Relying on it is therefore a **`raw`-feature posture** — available
-to users who opt out of the safety guarantee and take responsibility — not the default.
+otter exposes hot upgrade at **three tiers**. They differ only in *how much state is
+allowed to cross the upgrade boundary* and *what guarantees that crossing is sound*.
+All three ride the same BEAM mechanics (§5–6); the single knob that distinguishes
+them is the **name a resource type is registered under** (and, for `priv_data`,
+whether a layout fingerprint is checked).
 
-The safe path makes cross-build survival hold *without* any ABI assumption, by two
-requirements working together (the tier-3 sandbox; **planned**, to be designed
-alongside `audit-02`):
+### Tier 1 — module and resource-*type* survival (the safe default)
 
-- **enif-backed allocation.** Any state that crosses the upgrade boundary is allocated
-  from the BEAM allocator — a single VM-wide instance reached through the same shared
-  free function in every build — not the Rust global heap. This neutralizes the
-  allocator assumption: the bytes are always safely freeable by the other build, even
-  after the originating library unloads.
-- **ABI fingerprinting.** The data carries a fingerprint of its layout, checked at the
-  one cross-build read site (`old_priv_data` in `upgrade`, and takeover of a resource
-  payload). Match → safe to interpret and drop with the new build's code. Mismatch →
-  the new build must not interpret it; the only safe action is to free the raw bytes
-  (which enif-backing always permits) and rebuild from Erlang-side state.
+**Survives:** the module reloads, and resource *types* survive — so new resources
+work and the same-image reload keeps existing handles valid. **Does not survive:**
+Rust-typed resource *payloads* and `priv_data` are not carried across a *cross-build*
+upgrade.
 
-Together these make the no-assumptions paradigm hold by construction: the allocator
-requirement covers assumption (a); the fingerprint covers (b) and (c).
+The mechanism is the BEAM's own `(module, name)` resource lookup (§6, verified against
+erts source). otter registers each type under a **per-build-unique name** — in effect
+a *maximally conservative fingerprint that compares equal only for the byte-identical
+library image* — and registers with `CREATE` in `load`, `CREATE | TAKEOVER` in
+`upgrade`. The lookup then routes each case automatically:
 
-Until that mechanism ships, **cross-build survival of Rust-typed state is supported
-only behind `raw`**, where the user accepts the ABI contract. The non-`raw` default is
-the safe, conservative one: the module and resource *types* survive reload (the
-`audit-02` machinery), but Rust-typed resource payloads and `priv_data` are not
-assumed to survive a non-ABI-identical upgrade.
+- **Same `.so` reloaded in place** (`l(Mod)`): same build ⟹ same name ⟹ the lookup
+  matches ⟹ **takeover**. Sound, because the two instances are the *identical image* —
+  same layout, same allocator, same code. Ownership transfers to the new instance and
+  existing objects keep working. (The enif call must run on this path to perform that
+  ownership transfer — see §6.)
+- **Different `.so`** (a recompiled release, even of identical source): different build
+  ⟹ different name ⟹ no match ⟹ **a fresh type is created**. The old type, still owned
+  by the old library, is untouched; its objects drain through the *old* library's own
+  destructor, which the BEAM keeps mapped until the last one dies (§5, verified). Old
+  handles become inert to the new code — recreate them. This is `code_change`
+  semantics: pre-upgrade state is not carried in place.
 
-And one rule that holds regardless: **state that crosses an upgrade must not embed
-code pointers** (`Box<dyn Trait>`, function pointers, `&'static` references into the
-library image) — those dangle the moment the originating library unloads, independent
-of allocator or layout.
+No ABI assumption is ever made: the *only* case that takes over — and therefore drops
+the old build's payloads with the new build's code — is the one where the builds are
+byte-identical. Every other case degrades to clean separation. This is the non-`raw`
+default and what `audit-02` ships.
+
+**Why payloads can't cross here.** Because a cross-build upgrade creates a *fresh*
+type, a `ResourceArc<Mutex<Vec<u8>>>` created by the old build simply fails to decode
+under the new build's type (`enif_get_resource` mismatch, §5). The data is cleanly
+destroyed by the old build; the new build never interprets it. There is no allocator
+or layout hazard *precisely because nothing is shared.*
+
+**Where the type pointers live.** otter owns `priv_data` (§4) and keeps each instance's
+resource-type registry *there*, not in a `static` — so even the same-`.so` reload, which
+shares file-scope statics, still gives each instance its own type pointers, set at its
+own `load`/`upgrade`. The trade is that resource creation needs a module-bound env
+(§5).
+
+### Tier 2 — raw `void**` callbacks (`raw` feature)
+
+Full enif fidelity, fully unsafe. The user writes `load` / `upgrade` / `unload` and
+gets their state as a raw `void*` — the `user` field of otter's per-instance struct
+(§4), with full `void**`-style semantics (set in `load`, carry or null in `upgrade`,
+free in `unload`). They may register types under a *stable* name with `TAKEOVER` to
+keep payload and `priv_data` continuity, accepting the ABI contract (§7) as their
+responsibility. otter makes no safety guarantee on this path; it is the documented
+escape hatch for users who pin their toolchain and own the consequences.
+
+> **Open:** whether a pure-`raw` NIF that registers *no* otter resource types gets the
+> literal enif `priv_data` slot (otter stepping back entirely), or always the nested
+> `user` field. Leaning toward otter owning the slot uniformly, for one model.
+
+### Tier 3 — the safe sandbox (planned)
+
+Recovers continuity *without* any ABI assumption, by replacing tier 1's crude
+byte-identical fingerprint with a **real ABI fingerprint** over **enif-allocated,
+code-pointer-free** payloads. Two pieces working together:
+
+- **Fingerprint *as* the resource type name.** Register each type under a name derived
+  from a fingerprint of its layout. Then `CREATE | TAKEOVER` self-dispatches through
+  the *same* `(module, name)` lookup with **no manual check**: matching fingerprint ⟹
+  provably ABI-compatible ⟹ sound takeover (continuity preserved); differing
+  fingerprint ⟹ clean separation. The VM performs the ABI-compatibility test for free.
+  **Tier 1 is literally this mechanism with the fingerprint pinned to "byte-identical";
+  tier 3 widens the equal-set to "provably ABI-compatible."** Same code path, the
+  conservatism knob turned from maximal to precise.
+- **enif-backed allocation.** Every allocation a crossable payload owns, *transitively*,
+  comes from the VM allocator (an `EnifAlloc` ZST over `allocator-api2`, since
+  `allocator_api` is nightly), so the new build can free the old build's bytes through
+  the one shared free path — neutralizing the allocator assumption even after the old
+  library unloads.
+
+The fingerprint and `EnifAlloc` apply to the whole `OtterPrivData` struct (§4) — the
+registry plus the user payload — as one enif-allocated, fingerprinted unit. The
+resource-type registry rides the `(module, name)` name-matching automatically; the
+**user payload** has no name-matching to ride on, so tier 3 checks the fingerprint
+**manually** at the single cross-build read site (`old_priv_data` in `upgrade`): match
+→ interpret and adopt; mismatch → free the raw (enif-allocated) bytes and rebuild from
+Erlang-side state.
+
+**Fingerprint soundness conditions** (each verified in §5–7):
+
+- **Conservative and asymmetric.** Over-declaring *difference* is safe (it falls back
+  to clean separation); over-declaring *sameness* is catastrophic (unsound takeover).
+  When in doubt the fingerprint must *differ*. It therefore folds in `rustc` version,
+  codegen flags, and target — not just structural layout, since `#[repr(Rust)]` layout
+  is undefined across compilations.
+- **No image-relative pointers.** A payload containing `fn`, `dyn`, or `&'static` has
+  identical *layout* across builds but pointer *values* into the originating image;
+  takeover unmaps that image while the objects are still live (§5, verified), so the
+  pointers dangle. A layout fingerprint cannot see this — so participating types must
+  be restricted to self-contained data. `abi_stable`'s `StableAbi` derive both computes
+  the layout fingerprint *and* enforces this restriction; use its **derive, not its
+  containers** (its containers use the global allocator and embed dealloc vtables that
+  dangle on unload).
+
+Until tier 3 ships, **cross-build survival of Rust-typed state lives only behind `raw`**
+(tier 2). And one rule holds at every tier: **state that crosses an upgrade must not
+embed code pointers** — they dangle the moment the originating library unloads,
+independent of allocator or layout.
 
 ---
 
@@ -375,3 +559,6 @@ of allocator or layout.
 - `otter/DESIGN.md` — layering and the safe-layer architecture.
 - erl_nif reference: `_oss/otp-doc-29.0.2/erts-17.0.2/doc/html/erl_nif.md`
   (`load` / `upgrade` / `unload`, `enif_init_resource_type`, `enif_priv_data`).
+- erl_nif source (the "verified" mechanics): `~/dev/erlang/otp/erts/emulator/beam/erl_nif.c`
+  — `open_resource_type` (≈2659), `prepare_opened_rt`/`steal_resource_type` (≈2582,
+  2769), the resource dtor path (≈2978), and `unload_nif` (≈5300).

@@ -49,6 +49,8 @@ otter::init!("my_module", [new, put, get], load = on_load);
 
 The `OnceLock<ResourceTypeHandle>` static is a one-time slot that `register_resource_type` fills. It stores the BEAM's internal type pointer so that `ResourceArc` can look it up later.
 
+> **Planned change (`audit-02`).** This `static` handle slot is being replaced by a *per-instance registry inside otter-owned `priv_data`*, so that hot code upgrade is sound and each module instance carries its own type pointers (no shared static). Resource creation will then take an env (`env.make_resource(val)`) instead of being env-less. See `docs/UPGRADE.md` §4 and §6.
+
 `register_resource_type::<T>(env)` derives the BEAM-side resource type identifier from `std::any::type_name::<T>()` — the fully-qualified Rust type path (e.g. `"my_crate::MyMap"`). This guarantees uniqueness within the NIF library, since BEAM's resource type table is per-library and rustc's `type_name` for distinct types produces distinct strings. If you need to register under a specific external name (e.g., for backward compatibility with a pre-existing resource type identifier), use `register_resource_type_named::<T>(env, name)`.
 
 ### 3. Create an instance
