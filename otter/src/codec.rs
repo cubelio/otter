@@ -64,6 +64,15 @@ pub trait Encoder {
 /// To raise from a NIF, produce a `Raised` via [`Env::raise_exception`] /
 /// [`Env::make_badarg`] (e.g. `env.raise_exception(reason)?`) and let it
 /// propagate; the error type of a NIF's `Result` must be `Raised`.
+///
+/// This impl exists for the **return position only**. When the env has a
+/// pending exception the encoded `Err` is the non-value marker (the BEAM
+/// convention for "raised"), which is meaningful solely as a NIF's direct
+/// return. Encoding an `Err` anywhere else — e.g. embedding
+/// `result.encode(env)` inside a tuple, list, or map — diverts that marker
+/// into a value position and builds a term containing the non-value. Always
+/// propagate a `Result<T, Raised>` with `?` or `return`; never encode one
+/// mid-term.
 impl<'r, T: Encoder> Encoder for Result<T, Raised<'r>> {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         match self {
