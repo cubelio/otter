@@ -505,6 +505,17 @@ impl<'a> Env<'a> {
     /// success type is inferred from the NIF's return type). Wraps
     /// `enif_raise_exception`.
     pub fn raise_exception<T>(self, reason: impl AsNifTerm<'a>) -> Result<T, Raised<'a>> {
+        // Raising is only meaningful on a process-bound call env, whose pending
+        // exception the BEAM delivers when the NIF returns. On any other env
+        // (OwnedEnv, a resource callback, load/upgrade/unload) the underlying
+        // enif_raise_exception is a benign no-op — it writes a throwaway or
+        // never-consulted exception slot (verified against erts/erl_nif.c) — so
+        // the call silently accomplishes nothing. Catch that misuse in dev
+        // without escalating a harmless no-op to a production panic.
+        debug_assert!(
+            matches!(self.kind, EnvKind::ProcessBound),
+            "raise_exception on a non-process-bound env has no effect",
+        );
         let marker = unsafe { crate::enif::raise_exception(self.as_ptr(), reason.as_nif_term()) };
         Err(Raised::new(Term::new(self, marker)))
     }
@@ -515,6 +526,12 @@ impl<'a> Env<'a> {
     /// any position: `return env.make_badarg()`, a `let`-`else` arm, or
     /// `decode(t).or_else(|_| env.make_badarg())?`. Wraps `enif_make_badarg`.
     pub fn make_badarg<T>(self) -> Result<T, Raised<'a>> {
+        // See `raise_exception`: only a process-bound call env delivers the
+        // pending exception; on any other env this is a benign no-op.
+        debug_assert!(
+            matches!(self.kind, EnvKind::ProcessBound),
+            "make_badarg on a non-process-bound env has no effect",
+        );
         let marker = unsafe { crate::enif::make_badarg(self.as_ptr()) };
         Err(Raised::new(Term::new(self, marker)))
     }
