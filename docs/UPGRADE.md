@@ -535,7 +535,10 @@ code-pointer-free** payloads. Two pieces working together:
   comes from the VM allocator (an `EnifAlloc` ZST over `allocator-api2`, since
   `allocator_api` is nightly), so the new build can free the old build's bytes through
   the one shared free path — neutralizing the allocator assumption even after the old
-  library unloads.
+  library unloads. The `#[global_allocator]` half of this — `EnifAlloc: GlobalAlloc`,
+  opt-in via `otter::enif_global_allocator!()` — is **shipped** (`alloc.rs`, issue
+  `upgrade-04`); it routes *all* of a NIF's Rust allocations through `enif_alloc`. The
+  per-type *scoped* `allocator-api2` `Allocator` impl and the fingerprint remain planned.
 
 The fingerprint and `EnifAlloc` apply to the whole `PrivData` struct (§4) — the
 registry plus the user payload — as one enif-allocated, fingerprinted unit. The

@@ -12,6 +12,7 @@ pub mod codec;
 pub mod resource;
 pub mod priv_data;
 mod abi;
+pub mod alloc;
 pub mod time;
 pub mod system;
 pub mod select;

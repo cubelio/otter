@@ -892,6 +892,26 @@ match thread_type() {
 
 ---
 
+## enif-backed global allocator
+
+By default Rust allocations in your NIF use Rust's own global allocator. You can
+instead route them through the BEAM allocator (`enif_alloc`/`enif_free`) by
+installing otter's [`EnifAlloc`](https://docs.rs/otter) as the global allocator —
+invoke the macro once in your cdylib:
+
+```rust
+otter::enif_global_allocator!();
+```
+
+Why bother: `enif_free` is the one free path valid across two independently
+compiled builds of the library, so routing allocations through it is a building
+block for carrying state across a hot upgrade (see `docs/UPGRADE.md`). The macro
+is the only opt-in — `EnifAlloc` is otherwise inert and otter still links into
+ordinary binaries. Once installed, the crate links **only** as a BEAM-hosted
+cdylib (it direct-links `enif_alloc`/`enif_free`, which the VM resolves at load).
+
+---
+
 ## I/O Select
 
 For integrating OS-level I/O events (file descriptors, sockets) with the BEAM scheduler. Requires a resource to own the event lifecycle.
