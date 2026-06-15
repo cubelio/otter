@@ -272,8 +272,19 @@ pub use crate::sys::NifResourceFlags as ResourceFlags;
 /// single NIF library (BEAM's resource type table is per-library), since
 /// rustc's `type_name` for distinct types produces distinct strings in
 /// practice. For backward compatibility with an existing resource type
-/// identifier (or any case where the auto-derived string would be wrong),
-/// use [`register_tagged`].
+/// identifier, use [`register_tagged`].
+///
+/// ## Hot upgrade safety
+///
+/// The BEAM-side name is `"{type_name}#abi={hash}"`, where `{hash}` is a
+/// content hash of this library's own binary. A different build hashes
+/// differently, so its types take a *different* name and the BEAM does not
+/// take this build's resources over across an upgrade — upholding the
+/// no-cross-build-ABI invariant (a `T` from another build must not be
+/// interpreted here). A byte-identical reload of the same `.so` hashes the
+/// same, so self-takeover still works. To deliberately opt a type *into*
+/// cross-build takeover (promising its layout is stable), use
+/// [`register_tagged`].
 ///
 // NOTE: `std::any::type_name::<T>()` is documented as a "best-effort
 // description", not a uniqueness contract. Within one crate it is
@@ -286,23 +297,30 @@ pub use crate::sys::NifResourceFlags as ResourceFlags;
 // v2 collide. That requires a NIF to register `Resource` for a *dependency*
 // type that is duplicated across versions — an exotic case we accept rather
 // than guard. If it ever arises, the escape hatch is [`register_tagged`]
-// with an explicit unique name.
+// with distinct tags.
 pub fn register<T: Resource>(env: Env<'_>, flags: ResourceFlags) {
-    register_tagged::<T>(env, flags, std::any::type_name::<T>());
+    let name = format!("{}#abi={:016x}", std::any::type_name::<T>(), crate::abi::tag());
+    register_named::<T>(env, flags, &name);
 }
 
-/// Register resource type `T` with the BEAM under an explicit name.
+/// Register resource type `T` under a stable, ABI-versioned name, opting it
+/// into cross-build takeover during a hot upgrade.
 ///
-/// Use this when the auto-derived `type_name` string would be wrong — for
-/// example, when migrating a NIF library that previously registered the
-/// type under a different identifier and you need the BEAM-side resource
-/// type table to keep matching pre-existing resource terms (over a hot
-/// reload of the same library, etc.). For new code prefer [`register`] which
-/// is auto-named.
+/// The BEAM-side name is `"{type_name}#tag={tag}"` — no binary hash, so two
+/// builds that use the same `tag` register the *same* type and the later one
+/// takes the earlier's resources over. This is a per-type promise that the
+/// layout of `T` is stable across those builds (the analog of the `raw`
+/// feature, scoped to one type). Bump the `tag` when you make an incompatible
+/// change to force clean separation instead.
 ///
 /// Same calling-context rules as [`register`]: load/upgrade callback only,
 /// exactly once per type.
-pub fn register_tagged<T: Resource>(env: Env<'_>, flags: ResourceFlags, name: &str) {
+pub fn register_tagged<T: Resource>(env: Env<'_>, flags: ResourceFlags, tag: &str) {
+    let name = format!("{}#tag={}", std::any::type_name::<T>(), tag);
+    register_named::<T>(env, flags, &name);
+}
+
+fn register_named<T: Resource>(env: Env<'_>, flags: ResourceFlags, name: &str) {
     assert!(
         matches!(env.kind, EnvKind::Load | EnvKind::Upgrade),
         "register must be called from the NIF load or upgrade callback"

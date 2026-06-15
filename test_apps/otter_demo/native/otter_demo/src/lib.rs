@@ -706,5 +706,5 @@ otter::init!("otter_demo__nif", [
     test_consume_timeslice,
     port_send,
 ],
-resources = [HashMapResource, PanickingResource, FdResource, MonitorResource],
+resources = [HashMapResource: "v1", PanickingResource, FdResource, MonitorResource],
 load = on_load);
