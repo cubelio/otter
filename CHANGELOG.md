@@ -19,6 +19,11 @@ Hot code upgrade: every otter module is now a hot-upgradeable NIF library, and r
 
 - `otter::init!` now emits non-NULL `load`/`upgrade`/`unload` NIF callbacks for every module, so every otter NIF library is hot-upgradeable. New `init!` keys: `atoms = [...]`, `resources = [...]`, `load`/`upgrade`/`unload` and their `_raw` variants
 
+### rebar3_otter (rebar3 plugin)
+
+- **Breaking (umbrella projects).** `otter_crates` is now read per application: declare it in each app's own `rebar.config`, with `path` resolved relative to that app's directory, and the built `.so` is installed into that app's `priv/native/` (where `code:priv_dir(App)` resolves) instead of the project root. Single-app projects are unaffected
+- Artifact selection now matches the configured crate name against cargo's `target.name` (normalized `-`→`_`), so a `cdylib` *dependency* in the build graph can no longer be installed in place of the target crate
+
 ## 0.1.0
 
 Initial release.

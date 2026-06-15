@@ -24,7 +24,7 @@ build(CratePath, Name, Mode, Features, Target) ->
       Args = build_args(ManifestPath, Name, Mode, Features, Target),
       case run(Cargo, Args) of
         {0, Output} ->
-          case find_cdylib(Output) of
+          case find_cdylib(Output, Name) of
             {ok, _} = Ok -> Ok;
             error -> {error, {no_cdylib, Name}}
           end;
@@ -112,31 +112,42 @@ erts_include_dir() ->
 %%------------------------------------------------------------------------------
 %% Artifact detection
 
-%% Scan cargo's JSON stdout for a compiler-artifact message whose
-%% target kind list contains "cdylib". Return the first filename.
--spec find_cdylib(binary()) -> {ok, string()} | error.
-find_cdylib(Output) ->
+%% Scan cargo's JSON stdout for the compiler-artifact message belonging to
+%% the crate we asked for (a cdylib target whose name matches Name) and
+%% return its filename. Matching the target name — not just the first
+%% cdylib — keeps a cdylib *dependency* from shadowing the target crate.
+%% cargo underscores lib target names, so Name is normalized the same way.
+-spec find_cdylib(binary(), string()) -> {ok, string()} | error.
+find_cdylib(Output, Name) ->
   Lines = binary:split(Output, <<"\n">>, [global, trim_all]),
-  find_cdylib_line(Lines).
+  Target = list_to_binary(normalize_crate_name(Name)),
+  find_cdylib_line(Lines, Target).
 
--spec find_cdylib_line([binary()]) -> {ok, string()} | error.
-find_cdylib_line([]) ->
+-spec find_cdylib_line([binary()], binary()) -> {ok, string()} | error.
+find_cdylib_line([], _Target) ->
   error;
-find_cdylib_line([Line | Rest]) ->
+find_cdylib_line([Line | Rest], Target) ->
   try json:decode(Line) of
     #{<<"reason">> := <<"compiler-artifact">>,
-      <<"target">> := #{<<"kind">> := Kinds},
+      <<"target">> := #{<<"kind">> := Kinds, <<"name">> := TName},
       <<"filenames">> := [Path | _]} when is_list(Kinds) ->
-      case lists:member(<<"cdylib">>, Kinds) of
+      case lists:member(<<"cdylib">>, Kinds) andalso TName =:= Target of
         true  -> {ok, binary_to_list(Path)};
-        false -> find_cdylib_line(Rest)
+        false -> find_cdylib_line(Rest, Target)
       end;
     _ ->
-      find_cdylib_line(Rest)
+      find_cdylib_line(Rest, Target)
   catch
     _:_ ->
-      find_cdylib_line(Rest)
+      find_cdylib_line(Rest, Target)
   end.
+
+%% cargo replaces '-' with '_' in lib target names, so a package named
+%% `my-nif` builds the target `my_nif`. Normalize the configured name to
+%% match the target.name field cargo emits.
+-spec normalize_crate_name(string()) -> string().
+normalize_crate_name(Name) ->
+  lists:flatten(string:replace(Name, "-", "_", all)).
 
 %%------------------------------------------------------------------------------
 %% Helpers

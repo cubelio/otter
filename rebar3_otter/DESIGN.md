@@ -45,7 +45,7 @@ In `rebar.config`:
 {otter_crates, [
     #{
         name    => my_crate,          % must match Cargo.toml [package].name
-        path    => "native/my_crate", % path to crate relative to project root
+        path    => "native/my_crate", % path to crate relative to the app dir
         mode    => release,           % release | debug (default: release)
         features => [],               % list of Cargo features to enable
         target  => undefined          % cross-compile target or undefined
@@ -55,6 +55,14 @@ In `rebar.config`:
 
 Multiple crates are supported — each entry in `otter_crates` is compiled independently.
 
+`otter_crates` is read **per application**. Declare it in each app's own
+`rebar.config`; `path` is resolved relative to that app's directory and the
+built artifact is installed into the same app's `priv/native/`. In a single-app
+project the app dir is the project root, so nothing special is needed. In an
+umbrella project each app declares the crates it owns, and the `.so` lands where
+`code:priv_dir(App)` for that app resolves — a top-level `otter_crates` in an
+umbrella with no root app is not attached to any application and is ignored.
+
 ---
 
 ## Compile Provider (`otter_compile`, module `rebar3_otter__compile`)
@@ -63,7 +71,7 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
 
 ### Steps
 
-1. **Read and validate config** — parse `otter_crates` from `rebar.config` through `rebar3_otter__config:validate/1`, which checks required fields (`name`, `path`), normalizes optional fields (`mode`, `features`, `target`), rejects unknown keys, and produces a list of normalized crate maps. Validation errors halt the build with a formatted message via `rebar_api:abort/2` (the rebar3 pre-hook layer mangles `{error, _}` return values, so config errors take the abort path instead).
+1. **Read and validate config** — iterate `rebar_state:project_apps/1`; for each app read its own `otter_crates` (`rebar_app_info:get/3`) and pass it through `rebar3_otter__config:validate/1`, which checks required fields (`name`, `path`), normalizes optional fields (`mode`, `features`, `target`), rejects unknown keys, and produces a list of normalized crate maps. The app's directory (`rebar_app_info:dir/1`) is the base for both the crate `path` and the install location. Validation errors halt the build with a formatted message via `rebar_api:abort/2` (the rebar3 pre-hook layer mangles `{error, _}` return values, so config errors take the abort path instead).
 
 2. **Invoke cargo:**
    ```
@@ -77,14 +85,14 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
    ```
    `--message-format=json-render-diagnostics` causes cargo to emit one JSON object per line on stdout while rendering human-readable diagnostics to stderr. Cargo is invoked unconditionally — its own incremental check decides whether real work needs to happen, and no-ops cost ~50–200ms.
 
-3. **Parse artifact location** — scan cargo's JSON output for a line with `"reason": "compiler-artifact"` where the target `kind` list contains `"cdylib"`. Extract the path from `"filenames"`. This handles workspace layouts, custom `target-dir` settings, and cross-compilation output directories.
+3. **Parse artifact location** — scan cargo's JSON output for a `"reason": "compiler-artifact"` line whose target is a `"cdylib"` *and* whose `target.name` matches the configured crate name (normalized `-`→`_`, as cargo does for lib targets). Matching the name — not just the first cdylib — keeps a cdylib *dependency* in the build graph from shadowing the target crate. Extract the path from `"filenames"`. This handles workspace layouts, custom `target-dir` settings, and cross-compilation output directories.
 
 4. **Determine output filename** — platform-appropriate extension:
    - Linux: `<name>.so`
    - macOS: `<name>.so` (not `.dylib` — Erlang expects `.so` regardless)
    - Windows: `<name>.dll`
 
-5. **Copy artifact** to `priv/native/<name>.so`. Create `priv/native/` if it does not exist.
+5. **Copy artifact** to the owning app's `priv/native/<name>.so`. Create `priv/native/` if it does not exist.
 
 6. **Surface diagnostics** — cargo emits compiler errors and warnings on stderr (inherited from the child process), so they appear in the rebar3 build output directly without us needing to parse them.
 
@@ -100,7 +108,7 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
 
 Runs as a `pre_clean` hook.
 
-1. For each configured crate, remove `priv/native/<name>.so` if it exists.
+1. For each project app's configured crates, remove the app's `priv/native/<name>.so` if it exists.
 2. Run `cargo clean --manifest-path <path>/Cargo.toml` to remove the Rust build artifacts.
 
 ---
