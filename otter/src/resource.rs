@@ -254,6 +254,11 @@ unsafe extern "C" fn stop_callback<T: Resource>(
 // Registration
 // ---------------------------------------------------------------------------
 
+/// Flags controlling resource type registration. `CREATE` opens a new type;
+/// `CREATE | TAKEOVER` additionally takes over a matching type from a previous
+/// build of the library during a hot upgrade.
+pub use crate::sys::NifResourceFlags as ResourceFlags;
+
 /// Register resource type `T` with the BEAM, using the fully-qualified Rust
 /// type path as the identifier.
 ///
@@ -282,8 +287,8 @@ unsafe extern "C" fn stop_callback<T: Resource>(
 // type that is duplicated across versions — an exotic case we accept rather
 // than guard. If it ever arises, the escape hatch is [`register_tagged`]
 // with an explicit unique name.
-pub fn register<T: Resource>(env: Env<'_>) {
-    register_tagged::<T>(env, std::any::type_name::<T>());
+pub fn register<T: Resource>(env: Env<'_>, flags: ResourceFlags) {
+    register_tagged::<T>(env, flags, std::any::type_name::<T>());
 }
 
 /// Register resource type `T` with the BEAM under an explicit name.
@@ -297,9 +302,7 @@ pub fn register<T: Resource>(env: Env<'_>) {
 ///
 /// Same calling-context rules as [`register`]: load/upgrade callback only,
 /// exactly once per type.
-pub fn register_tagged<T: Resource>(env: Env<'_>, name: &str) {
-    use crate::sys::NifResourceFlags;
-
+pub fn register_tagged<T: Resource>(env: Env<'_>, flags: ResourceFlags, name: &str) {
     assert!(
         matches!(env.kind, EnvKind::Load | EnvKind::Upgrade),
         "register must be called from the NIF load or upgrade callback"
@@ -316,13 +319,13 @@ pub fn register_tagged<T: Resource>(env: Env<'_>, name: &str) {
         dyncall:  None,
     };
 
-    let mut tried = NifResourceFlags::CREATE;
+    let mut tried = flags;
     let type_ptr = unsafe {
         crate::enif::init_resource_type(
             env.as_ptr(),
             cname.as_ptr(),
             &init,
-            NifResourceFlags::CREATE,
+            flags,
             &mut tried,
         )
     };

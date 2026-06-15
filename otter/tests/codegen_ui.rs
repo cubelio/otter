@@ -16,4 +16,6 @@ fn codegen_ui() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/fail_missing_env.rs");
     t.compile_fail("tests/ui/fail_return_not_encoder.rs");
+    t.compile_fail("tests/ui/fail_init_duplicate_key.rs");
+    t.compile_fail("tests/ui/fail_init_unknown_key.rs");
 }

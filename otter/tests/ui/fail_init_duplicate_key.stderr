@@ -1,0 +1,5 @@
+error: duplicate `load`
+  --> tests/ui/fail_init_duplicate_key.rs:12:40
+   |
+12 | otter::init!("m", [f], load = on_load, load = on_load);
+   |                                        ^^^^

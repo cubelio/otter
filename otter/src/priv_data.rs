@@ -115,7 +115,7 @@ pub unsafe fn install_priv_data(slot: *mut *mut c_void) -> *mut PrivData {
 }
 
 /// Free a [`PrivData`] published by [`install_priv_data`] and clear the slot.
-/// Called when the user's load callback vetoes the load.
+/// Called when the user's load/upgrade callback vetoes.
 ///
 /// # Safety
 ///
@@ -126,4 +126,15 @@ pub unsafe fn discard_priv_data(slot: *mut *mut c_void, pd: *mut PrivData) {
         drop(Box::from_raw(pd));
         *slot = std::ptr::null_mut();
     }
+}
+
+/// Free a [`PrivData`] in the unload callback, which receives the pointer by
+/// value rather than through a slot.
+///
+/// # Safety
+///
+/// `pd` must have come from [`install_priv_data`] and must not have been freed
+/// already.
+pub unsafe fn free_priv_data(pd: *mut PrivData) {
+    unsafe { drop(Box::from_raw(pd)) };
 }

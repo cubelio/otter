@@ -1,0 +1,5 @@
+error: unknown init! key `load_raw` — expected `resources`, `load`, `upgrade`, or `unload`
+  --> tests/ui/fail_init_unknown_key.rs:13:24
+   |
+13 | otter::init!("m", [f], load_raw = on_load);
+   |                        ^^^^^^^^

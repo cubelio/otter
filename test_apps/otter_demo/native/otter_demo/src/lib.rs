@@ -656,10 +656,6 @@ fn monitor_down_count<'a>(env: Env<'a>, arc: ResourceArc<MonitorResource>) -> In
 
 fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);
-    otter::resource::register::<HashMapResource>(env);
-    otter::resource::register::<PanickingResource>(env);
-    otter::resource::register::<FdResource>(env);
-    otter::resource::register::<MonitorResource>(env);
     true
 }
 
@@ -709,4 +705,6 @@ otter::init!("otter_demo__nif", [
     test_time,
     test_consume_timeslice,
     port_send,
-], load = on_load);
+],
+resources = [HashMapResource, PanickingResource, FdResource, MonitorResource],
+load = on_load);

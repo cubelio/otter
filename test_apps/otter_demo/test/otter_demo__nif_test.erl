@@ -290,3 +290,27 @@ port_command_test() ->
       end,
       port_close(Port)
   end.
+
+%% audit-02 — the otter-generated upgrade/unload scaffolding. Reloading the
+%% stub module re-runs its -on_load, which calls erlang:load_nif while a
+%% previous version's library is still loaded; the BEAM drives the upgrade
+%% callback (resource types re-registered with TAKEOVER), not load. A
+%% pre-upgrade resource term must survive the takeover, and the upgraded
+%% library must keep working. Before this scaffolding the upgrade slot was
+%% NULL, making every otter module un-upgradeable.
+-spec upgrade_reload_test() -> _.
+upgrade_reload_test() ->
+  %% Create and populate a resource under the current code version.
+  HM = otter_demo__nif:hm_new(),
+  ?assertEqual(ok, otter_demo__nif:hm_put(<<"k">>, <<"v">>, HM)),
+  %% Reload the module: v1 becomes old code (its library still loaded), v2
+  %% becomes current and its on_load calls load_nif -> upgrade fires.
+  ?assertMatch({module, otter_demo__nif}, code:load_file(otter_demo__nif)),
+  %% The pre-upgrade resource term survives the type takeover...
+  ?assertEqual({ok, <<"v">>}, otter_demo__nif:hm_get(<<"k">>, HM)),
+  %% ...and the upgraded library creates and uses new resources.
+  HM2 = otter_demo__nif:hm_new(),
+  ?assertEqual(ok, otter_demo__nif:hm_put(<<"k2">>, <<"v2">>, HM2)),
+  ?assertEqual({ok, <<"v2">>}, otter_demo__nif:hm_get(<<"k2">>, HM2)),
+  %% Drop the now-old v1 code, running its unload (frees v1's PrivData).
+  code:purge(otter_demo__nif).
