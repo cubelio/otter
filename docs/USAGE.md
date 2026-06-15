@@ -772,7 +772,7 @@ impl Resource for MyState {
         // cleanup when reference count hits zero
     }
 
-    fn down<'a>(&'a self, _env: Env<'a>, _pid: Pid, _monitor: Monitor) {
+    fn down<'a>(&'a self, _env: Env<'a>, _pid: LocalPid, _monitor: Monitor) {
         // a monitored process went down
     }
 }

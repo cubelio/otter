@@ -128,7 +128,7 @@ otter = { git = "https://github.com/cubelio/otter.git" }
 **`native/my_nif/src/lib.rs`:**
 ```rust
 use otter::env::Env;
-use otter::term::TypedTerm;
+use otter::term::Term;
 use otter::types::Atom;
 
 otter::declare_atoms![world];

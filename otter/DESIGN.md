@@ -422,5 +422,5 @@ Requires a `ResourceArc<T>` — the BEAM ties I/O event lifecycle to resource ob
 - **`NifUntaggedEnum`** — structural dispatch belongs in user code.
 - **Convenience wrappers** — no built-in `IoData`, no pre-assembled type hierarchies.
 - **Thread spawning** — not a core NIF concept. Use `OwnedEnv::send` for messaging from OS threads spawned via standard Rust threading.
-- **Raw memory allocation** (`enif_alloc`/`enif_free`) — use Rust's allocator for ordinary per-call work. (Exception, planned: state that must survive a hot upgrade is allocated from the BEAM allocator so it is freeable across builds — see the core safety invariant and `docs/UPGRADE.md`.)
+- **Raw memory allocation** (`enif_alloc`/`enif_free`) — use Rust's allocator for ordinary per-call work. Opting *all* allocations onto the BEAM allocator is available via `otter::enif_global_allocator!()` (the `EnifAlloc` `#[global_allocator]`, `src/alloc.rs`), so cross-build state is freeable through the one shared path; a per-state *scoped* allocator and the ABI fingerprint that complete the safe sandbox remain planned — see the core safety invariant and `docs/UPGRADE.md`.
 - **NIF threading primitives** (`enif_mutex_*`, `enif_cond_*`, etc.) — use `std::sync`.

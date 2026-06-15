@@ -59,9 +59,9 @@ pub trait Decoder<'a>: Sized {
 }
 ```
 
-`CodecError` has two variants: `WrongType` and `IntegerOverflow`. The
-`#[otter::nif]` macro converts any `CodecError` into a `badarg` exception
-automatically.
+`CodecError` has three variants: `WrongType`, `IntegerOverflow`, and
+`UnknownTermType`. The `#[otter::nif]` macro converts any `CodecError` into a
+`badarg` exception automatically.
 
 Every type in this directory implements both traits. `Decoder` accepts only
 the matching `TypedTerm` variant and rejects everything else with `WrongType`.
@@ -93,13 +93,13 @@ struct Atom { term: NifTerm }  // no lifetime — atoms are global
 
 | Method | Does | Calls |
 |---|---|---|
-| `new(env, name) → Option<Atom>` | Create/intern atom from UTF-8 `&str` | `enif_make_new_atom_len` |
+| `intern(env, name) → Option<Atom>` | Create/intern atom from UTF-8 `&str` | `enif_make_new_atom_len` |
 | `try_existing(env, name) → Option<Atom>` | Look up without creating | `enif_make_existing_atom_len` |
 | `name(self, env) → String` | Read atom's name | `enif_get_atom_length` + `enif_get_atom` |
 
 ### Internals
 
-`new` calls `enif_make_new_atom_len` (NIF 2.17) which returns a success/fail
+`intern` calls `enif_make_new_atom_len` (NIF 2.17) which returns a success/fail
 int rather than creating atoms unconditionally. Returns `None` if the atom
 table is full. `name` does two calls: first to get the byte length, then to
 read into a buffer.
@@ -289,12 +289,14 @@ struct Float<'a> { term: NifTerm, env: Env<'a> }
 | Method | Does | Calls |
 |---|---|---|
 | `impl From<Float> for f64` | Extract the float value | `enif_get_double` |
-| `from_f64(env, val) → Float<'a>` | Construct from f64 | `enif_make_double` |
+| `from_f64(env, val) → Result<Float<'a>, Raised<'a>>` | Construct from f64; `Err(Raised)` if not finite | `enif_make_double` |
 
 ### Internals
 
 Erlang floats are IEEE 754 doubles. The C API and otter both use `f64`/`double`
-directly. There is no precision loss or conversion.
+directly. There is no precision loss or conversion. `from_f64` returns
+`Err(Raised)` for NaN and infinities — `enif_make_double` raises `badarg` on a
+non-finite value.
 
 ---
 
@@ -393,7 +395,7 @@ struct Tuple<'a> { term: NifTerm, env: Env<'a> }
 |---|---|---|
 | `len(self) → usize` | Arity | `enif_get_tuple` |
 | `is_empty(self) → bool` | Zero-element check | `enif_get_tuple` |
-| `element(self, i) → TypedTerm<'a>` | Element at zero-based index; panics if out of bounds | `enif_get_tuple` |
+| `element(self, i) → Term<'a>` | Element at zero-based index (unresolved); panics if out of bounds | `enif_get_tuple` |
 | `from_terms(env, impl IntoIterator<Item: AsNifTerm<'a>>) → Tuple<'a>` | Construct from iterable | `enif_make_tuple_from_array` |
 
 ### Internals
@@ -451,7 +453,7 @@ struct MapIterator<'a> { iter: Box<NifMapIterator>, env: Env<'a>, exhausted: boo
 | `remove(self, impl AsNifTerm<'a>) → Option<Map<'a>>` | Remove key; `None` if absent | `enif_make_map_remove` |
 | `iter(self) → MapIterator<'a>` | Forward iterator over key-value pairs | `enif_map_iterator_create` |
 
-`MapIterator` implements `Iterator<Item = (TypedTerm<'a>, TypedTerm<'a>)>` and `Drop`.
+`MapIterator` implements `Iterator<Item = (Term<'a>, Term<'a>)>` (unresolved key/value) and `Drop`.
 
 ### Internals
 
@@ -630,7 +632,7 @@ per design.
 
 | Type | Create | Inspect | Modify | Iterate | Encode/Decode |
 |---|---|---|---|---|---|
-| Atom | `new`, `try_existing` | `name` | — | — | yes |
+| Atom | `intern`, `try_existing` | `name` | — | — | yes |
 | Binary | `from_bytes`, `BinaryBuf` | `as_bytes`, `try_str`, `len` | `sub` | — | yes |
 | Bitstring | — | — | — | — | yes (pass-through) |
 | Integer | `from_i64`, `from_u64` | `TryFrom` for i64/u64/i128 | — | — | yes |
@@ -638,7 +640,7 @@ per design.
 | List | `from_terms`, `from_str`, `cons` | `node`, `iter`, `try_string`, `len`, `reverse` | — | `iter()` | yes |
 | Tuple | `from_terms` | `element`, `len` | — | — | yes |
 | Map | `new` | `get`, `size` | `put`, `update`, `remove` | `iter` | yes |
-| Pid | `self_`, `whereis` | `is_alive`, `as_nif_pid` | — | — | yes |
-| Port | `whereis` | — | `command` | — | yes |
+| Pid | `self_`, `whereis` | `to_local`, `is_alive` | — | — | yes |
+| Port | `whereis` | `to_local`, `is_alive` | `command` | — | yes |
 | Fun | — | — | — | — | yes (pass-through) |
 | Reference | `new` | — | — | — | yes |

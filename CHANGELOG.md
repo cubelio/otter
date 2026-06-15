@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+Hot code upgrade: every otter module is now a hot-upgradeable NIF library, and resource type registration moves into `init!`.
+
+### otter (core library)
+
+- **Breaking.** Resource registration is now declared in `init!`'s `resources = [...]` list rather than from a user `load` callback. `register`/`register_tagged` replace `register_resource_type`/`register_resource_type_named`; they require a `Load` or `Upgrade` env
+- **Breaking.** Resource creation is `env.make_resource(val)`; `ResourceArc::from(val)` is removed. `make_resource` is shorthand for `env.resource_handle::<T>().make(val)` and panics if `T` was never registered
+- **Breaking.** The `Resource` trait no longer carries a `resource_type_handle()` method; the registry lives in `priv_data`, keyed by type
+- **Breaking.** `EnvKind::Init` is renamed `EnvKind::Load`; `EnvKind::Upgrade` and `EnvKind::Unload` are added. `Env::kind` distinguishes the upgrade-lifecycle contexts so registration can be gated to `Load`/`Upgrade`
+- Per-build ABI tag in resource type names: `register` names the BEAM-side type `"{type_name}#abi={hash}"` (a per-build hash, so a different build never takes this build's resources across an upgrade); `register_tagged` names it `"{type_name}#tag={tag}"` (an explicit per-type cross-build promise)
+- Tier-2 `_raw` lifecycle callbacks (`load_raw`/`upgrade_raw`/`unload_raw`) behind the `raw` feature, handing the user the library's `priv_data` `void*` directly
+- Opt-in enif-backed global allocator via `otter::enif_global_allocator!()` (`EnifAlloc`, backed by `enif_alloc`/`enif_free`). Inert until installed — the macro is what pulls in the direct-linked symbols, so otter still links into ordinary non-BEAM binaries until you opt in
+
+### otter_codegen (proc macros)
+
+- `otter::init!` now emits non-NULL `load`/`upgrade`/`unload` NIF callbacks for every module, so every otter NIF library is hot-upgradeable. New `init!` keys: `resources = [...]`, `load`/`upgrade`/`unload` and their `_raw` variants
+
 ## 0.1.0
 
 Initial release.

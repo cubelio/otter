@@ -22,6 +22,6 @@ rebar3 eunit            # runs the smoke tests (test/otter_demo__nif_test.erl)
 rebar3 shell            # interactive — call otter_demo__nif:hello() etc.
 ```
 
-`rebar3 eunit` runs `otter_demo__nif_test:smoke_test_/0`, a test generator that returns one assertion per NIF. Each assertion runs as its own EUnit test, so a single failure does not mask the others.
+`rebar3 eunit` runs the tests in `otter_demo__nif_test`. The bulk live in `smoke_test_/0`, a test generator that returns one assertion per NIF; each assertion runs as its own EUnit test, so a single failure does not mask the others. Alongside it are standalone tests for the resource callbacks and upgrade path (`select_stop_test`, `select_x_test`, `monitor_down_test`, `port_command_test`, `upgrade_reload_test`).
 
 If the eunit cache gets confused after editing the NIF, `rm -rf _build/test` followed by `rebar3 eunit` clears it.

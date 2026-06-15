@@ -47,7 +47,7 @@ and `native/my_nifs/src/lib.rs` with a minimal NIF:
 
 ```rust
 use otter::env::Env;
-use otter::term::TypedTerm;
+use otter::term::Term;
 use otter::types::Atom;
 
 otter::declare_atoms![world];
@@ -128,12 +128,14 @@ You only depend on `otter`. The codegen macros are re-exported through it.
 - **Two-level term resolution** — `Term` (zero cost) → `TypedTerm` (one NIF call) → data extraction. Pay only for what you use.
 - **Compile-time lifetime safety** — `Env<'a>` ties every term to its NIF call. Terms cannot escape. No runtime checks.
 - **Pre-declared atoms** — `declare_atoms!` / `init_atoms!` / `atom!` for zero-cost atom retrieval (single atomic load)
-- **Resource types** — BEAM-managed Rust objects with destructors and process monitors
+- **Resource types** — BEAM-managed Rust objects with destructors and process monitors, registered via `init!`'s `resources = [...]`
+- **Hot code upgrade** — every otter module is hot-upgradeable; a per-build ABI tag on resource type names keeps a different build from unsafely taking over, with an opt-in stable tag (and `raw` callbacks) for state you carry across by hand
 - **OwnedEnv** — build and send terms from background threads
 - **Dirty schedulers** — `#[otter::nif(schedule = "DirtyCpu")]` / `"DirtyIo"`
 - **Result returns** — `Result<T, Raised>` where `Ok` encodes normally and `Err(Raised)` carries an already-pending exception out (raise via `env.raise_exception` / `env.make_badarg`)
 - **BinaryBuf** — growable binary buffer with `io::Write` support
 - **I/O select** — `enif_select` / `enif_select_x` for async I/O integration
+- **enif-backed global allocator** — opt-in `enif_global_allocator!()` routes Rust allocations through the BEAM allocator (`enif_alloc`/`enif_free`)
 - **Panic safety** — panics in NIF bodies are caught and converted to exceptions
 
 ## Requirements
