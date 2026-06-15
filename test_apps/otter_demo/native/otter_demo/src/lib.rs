@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 
 use otter::env::{Env, OwnedEnv};
-use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
+use otter::resource::{Resource, ResourceArc};
 use otter::sys::NifSelectFlags;
 use otter::term::{Term, TypedTerm, Raised};
 use otter::types::{Atom, Binary, BinaryBuf, Float, Integer, List, LocalPid, LocalPort, Map, Reference, Tuple};
@@ -279,9 +279,9 @@ fn atom_name<'a>(env: Env<'a>, a: Atom) -> Binary<'a> {
 // --- hm_new/0 -----------------------------------------------------------
 
 #[otter::nif]
-fn hm_new(_env: Env) -> ResourceArc<HashMapResource> {
+fn hm_new(env: Env) -> ResourceArc<HashMapResource> {
     eprintln!("[otter_demo] HashMapResource constructed");
-    ResourceArc::from(HashMapResource {
+    env.make_resource(HashMapResource {
         map: Mutex::new(HashMap::new()),
     })
 }
@@ -477,13 +477,7 @@ struct HashMapResource {
     map: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
 }
 
-static HASH_MAP_RESOURCE_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
-
 impl Resource for HashMapResource {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &HASH_MAP_RESOURCE_TYPE
-    }
-
     fn destructor(self, _env: Env<'_>) {
         eprintln!("[otter_demo] HashMapResource destructed ({} entries)", self.map.lock().unwrap().len());
     }
@@ -494,13 +488,7 @@ impl Resource for HashMapResource {
 // BEAM continue. See the panicking_destructor test in otter_demo__nif_test.
 struct PanickingResource;
 
-static PANICKING_RESOURCE_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
-
-impl Resource for PanickingResource {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &PANICKING_RESOURCE_TYPE
-    }
-}
+impl Resource for PanickingResource {}
 
 impl Drop for PanickingResource {
     fn drop(&mut self) {
@@ -509,8 +497,8 @@ impl Drop for PanickingResource {
 }
 
 #[otter::nif]
-fn panicking_resource_new(_env: Env) -> ResourceArc<PanickingResource> {
-    ResourceArc::from(PanickingResource)
+fn panicking_resource_new(env: Env) -> ResourceArc<PanickingResource> {
+    env.make_resource(PanickingResource)
 }
 
 // --- select / stop callback (audit-01 regression) -----------------------
@@ -529,22 +517,16 @@ struct FdResource {
     stop_count: AtomicUsize,
 }
 
-static FD_RESOURCE_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
-
 impl Resource for FdResource {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &FD_RESOURCE_TYPE
-    }
-
     fn stop(&self, _env: Env<'_>, _event: otter::sys::NifEvent, _is_direct_call: bool) {
         self.stop_count.fetch_add(1, Ordering::Relaxed);
     }
 }
 
 #[otter::nif]
-fn select_resource_new(_env: Env) -> ResourceArc<FdResource> {
+fn select_resource_new(env: Env) -> ResourceArc<FdResource> {
     let (a, b) = UnixStream::pair().expect("socketpair");
-    ResourceArc::from(FdResource { a, b, stop_count: AtomicUsize::new(0) })
+    env.make_resource(FdResource { a, b, stop_count: AtomicUsize::new(0) })
 }
 
 #[otter::nif]
@@ -648,21 +630,15 @@ struct MonitorResource {
     down_count: AtomicUsize,
 }
 
-static MONITOR_RESOURCE_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
-
 impl Resource for MonitorResource {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MONITOR_RESOURCE_TYPE
-    }
-
     fn down<'a>(&'a self, _env: Env<'a>, _pid: LocalPid, _monitor: otter::resource::Monitor) {
         self.down_count.fetch_add(1, Ordering::Relaxed);
     }
 }
 
 #[otter::nif]
-fn monitor_resource_new(_env: Env) -> ResourceArc<MonitorResource> {
-    ResourceArc::from(MonitorResource { down_count: AtomicUsize::new(0) })
+fn monitor_resource_new(env: Env) -> ResourceArc<MonitorResource> {
+    env.make_resource(MonitorResource { down_count: AtomicUsize::new(0) })
 }
 
 #[otter::nif]
@@ -680,10 +656,10 @@ fn monitor_down_count<'a>(env: Env<'a>, arc: ResourceArc<MonitorResource>) -> In
 
 fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);
-    otter::resource::register_resource_type::<HashMapResource>(env);
-    otter::resource::register_resource_type::<PanickingResource>(env);
-    otter::resource::register_resource_type::<FdResource>(env);
-    otter::resource::register_resource_type::<MonitorResource>(env);
+    otter::resource::register::<HashMapResource>(env);
+    otter::resource::register::<PanickingResource>(env);
+    otter::resource::register::<FdResource>(env);
+    otter::resource::register::<MonitorResource>(env);
     true
 }
 

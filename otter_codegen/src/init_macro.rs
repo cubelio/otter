@@ -79,13 +79,17 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
                 __otter_priv_data: *mut *mut ::std::ffi::c_void,
                 __otter_load_info: ::otter::__codegen::NifTerm,
             ) -> ::std::ffi::c_int {
-                let _ = __otter_priv_data;
+                // Publish PrivData before dispatching the user callback so that
+                // resource registration can populate it via enif_priv_data.
+                let __otter_pd = unsafe {
+                    ::otter::__codegen::install_priv_data(__otter_priv_data)
+                };
                 let __marker = ();
                 let __env = unsafe {
                     ::otter::__codegen::new_env(
                         &__marker,
                         __otter_load_env,
-                        ::otter::__codegen::EnvKind::Init,
+                        ::otter::__codegen::EnvKind::Load,
                     )
                 };
                 let __load_info_raw = ::otter::__codegen::new_raw_term(
@@ -93,15 +97,30 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
                 );
                 let __load_info = match ::otter::__codegen::Decoder::decode(__load_info_raw) {
                     Ok(v) => v,
-                    Err(_) => return ::otter::__codegen::LOAD_FAILED_DECODE,
+                    Err(_) => {
+                        unsafe {
+                            ::otter::__codegen::discard_priv_data(__otter_priv_data, __otter_pd)
+                        };
+                        return ::otter::__codegen::LOAD_FAILED_DECODE;
+                    }
                 };
                 let __result = ::std::panic::catch_unwind(
                     ::std::panic::AssertUnwindSafe(|| #load_fn(__env, __load_info))
                 );
                 match __result {
                     Ok(true) => ::otter::__codegen::LOAD_OK,
-                    Ok(false) => ::otter::__codegen::LOAD_FAILED_USER_FALSE,
-                    Err(_) => ::otter::__codegen::LOAD_FAILED_PANIC,
+                    Ok(false) => {
+                        unsafe {
+                            ::otter::__codegen::discard_priv_data(__otter_priv_data, __otter_pd)
+                        };
+                        ::otter::__codegen::LOAD_FAILED_USER_FALSE
+                    }
+                    Err(_) => {
+                        unsafe {
+                            ::otter::__codegen::discard_priv_data(__otter_priv_data, __otter_pd)
+                        };
+                        ::otter::__codegen::LOAD_FAILED_PANIC
+                    }
                 }
             }
         };

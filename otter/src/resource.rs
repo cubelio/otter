@@ -5,10 +5,11 @@
 //! handle; the corresponding Erlang-side value is a reference term.
 
 use std::ffi::{c_int, c_void};
-use std::sync::OnceLock;
+use std::marker::PhantomData;
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
+use crate::priv_data::{PrivData, ResourceRegistry};
 use crate::sys::{NifEnv, NifEvent, NifMonitor, NifPid, NifResourceType, NifResourceTypeInit};
 use crate::term::{Term, AsNifTerm};
 use crate::types::LocalPid;
@@ -17,16 +18,72 @@ use crate::types::LocalPid;
 // ResourceTypeHandle
 // ---------------------------------------------------------------------------
 
-/// Opaque handle to a registered resource type.
+/// A `Send` handle to a registered resource type `T`, obtained from
+/// [`Env::resource_handle`].
 ///
-/// Obtained from [`register_resource_type`] and stored in the static provided
-/// by each [`Resource`] implementation via `resource_type_handle`.
-pub struct ResourceTypeHandle(*mut NifResourceType);
+/// Holds the BEAM-side resource-type pointer so a resource can be created
+/// ([`make`](Self::make)) without consulting `enif_priv_data` — capture it
+/// inside a module-bound NIF call, then move it to an OS thread or
+/// [`OwnedEnv`](crate::env::OwnedEnv) where no module-bound env is available.
+pub struct ResourceTypeHandle<T: Resource> {
+    ptr: *mut NifResourceType,
+    _t:  PhantomData<fn() -> T>,
+}
 
 // SAFETY: NifResourceType is BEAM-internal data that lives for the lifetime
 // of the VM. Safe to share across threads once registered.
-unsafe impl Send for ResourceTypeHandle {}
-unsafe impl Sync for ResourceTypeHandle {}
+unsafe impl<T: Resource> Send for ResourceTypeHandle<T> {}
+unsafe impl<T: Resource> Sync for ResourceTypeHandle<T> {}
+
+impl<T: Resource> ResourceTypeHandle<T> {
+    /// Wrap `val` in a new resource object on the BEAM heap.
+    pub fn make(self, val: T) -> ResourceArc<T> {
+        // Allocate enough for T at its required alignment (see ResourceArc docs).
+        let alloc_size = std::mem::size_of::<T>() + std::mem::align_of::<T>() - 1;
+        let raw = unsafe { crate::enif::alloc_resource(self.ptr, alloc_size) };
+        assert!(!raw.is_null(), "enif_alloc_resource returned null");
+        let inner = align_ptr::<T>(raw);
+        unsafe { std::ptr::write(inner, val) };
+        ResourceArc { raw, inner }
+    }
+}
+
+/// Look up this build's resource registry from a module-bound env. Returns
+/// `None` if the library has no `PrivData` installed (no load callback).
+fn registry<'a>(env: Env<'a>) -> Option<&'a ResourceRegistry> {
+    let pd = unsafe { crate::enif::priv_data(env.as_ptr()) } as *const PrivData;
+    if pd.is_null() {
+        return None;
+    }
+    // SAFETY: pd points at this build's PrivData, leaked for the VM lifetime.
+    Some(unsafe { (*pd).registry() })
+}
+
+impl<'a> Env<'a> {
+    /// Obtain the [`ResourceTypeHandle`] for resource type `T`.
+    ///
+    /// Looks `T` up in this library's registry (via `enif_priv_data`), so the
+    /// env must be module-bound (a normal NIF call, or a load/upgrade env).
+    /// Panics if `T` was never registered. Capture the returned handle before
+    /// moving work to a thread or `OwnedEnv` that has no module-bound env.
+    pub fn resource_handle<T: Resource>(self) -> ResourceTypeHandle<T> {
+        let ptr = registry(self)
+            .and_then(|r| r.get::<T>())
+            .expect(
+                "resource type not registered — call \
+                 otter::resource::register::<T> in your load callback",
+            );
+        ResourceTypeHandle { ptr, _t: PhantomData }
+    }
+
+    /// Wrap `val` in a new resource object on the BEAM heap.
+    ///
+    /// Shorthand for `env.resource_handle::<T>().make(val)`. Panics if `T` was
+    /// never registered.
+    pub fn make_resource<T: Resource>(self, val: T) -> ResourceArc<T> {
+        self.resource_handle::<T>().make(val)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Monitor
@@ -79,27 +136,14 @@ impl Eq for Monitor {}
 /// before any `ResourceArc<T>` is created or decoded:
 ///
 /// ```ignore
-/// fn load(env: Env<'_>) {
-///     otter::resource::register_resource_type::<MyType>(env);
+/// fn load(env: Env<'_>, _info: Term<'_>) -> bool {
+///     otter::resource::register::<MyType>(env);
+///     true
 /// }
 /// ```
 ///
-/// ## Type handle storage
-///
-/// Implement `resource_type_handle` by declaring a module-level static:
-///
-/// ```ignore
-/// static MY_TYPE_HANDLE: OnceLock<otter::resource::ResourceTypeHandle> = OnceLock::new();
-///
-/// impl otter::resource::Resource for MyType {
-///     fn resource_type_handle() -> &'static OnceLock<otter::resource::ResourceTypeHandle> {
-///         &MY_TYPE_HANDLE
-///     }
-/// }
-/// ```
-///
-/// The `init!` macro will generate this boilerplate automatically in a future
-/// release.
+/// The registered type pointer lives in the library's private data, keyed by
+/// `TypeId`; `env.make_resource::<MyType>(..)` and decoding consult it.
 ///
 /// ## Hot upgrade
 ///
@@ -109,12 +153,6 @@ impl Eq for Monitor {}
 /// interpret or drop a `T` the previous build allocated — different compiler,
 /// allocator, or layout. This is a core safety invariant; see `docs/UPGRADE.md`.
 pub trait Resource: Sized + Send + Sync + 'static {
-    /// Returns the static storage slot for this type's registered handle.
-    ///
-    /// Declare a `static OnceLock<ResourceTypeHandle>` and return a reference
-    /// to it. Called by `ResourceArc` to look up the type pointer.
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle>;
-
     /// Called when the BEAM garbage collects the last reference to this
     /// resource. Takes ownership of `self`; the default drops it.
     fn destructor(self, _env: Env<'_>) {}
@@ -166,7 +204,7 @@ fn absorb_callback_panic(what: &str, result: std::thread::Result<()>) {
 unsafe extern "C" fn destructor_callback<T: Resource>(env: *mut NifEnv, obj: *mut c_void) {
     let inner = align_ptr::<T>(obj);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        // SAFETY: obj was written by From<T> and is not yet dropped.
+        // SAFETY: obj was written by ResourceTypeHandle::make and is not yet dropped.
         let val = unsafe { std::ptr::read(inner) };
         let marker = ();
         // SAFETY: env is valid for the duration of this callback.
@@ -219,11 +257,10 @@ unsafe extern "C" fn stop_callback<T: Resource>(
 /// Register resource type `T` with the BEAM, using the fully-qualified Rust
 /// type path as the identifier.
 ///
-/// Must be called exactly once per type, from the NIF load callback (an
-/// `EnvKind::Init` env). Panics if registration fails or is called twice.
-///
-/// Must be called from the NIF load callback before any `ResourceArc<T>` is
-/// constructed or decoded. Panics if called outside of the load callback.
+/// Must be called exactly once per type, from the NIF load (or upgrade)
+/// callback, before any `ResourceArc<T>` is created or decoded. Panics if
+/// registration fails, is called twice, or is called outside a load/upgrade
+/// env.
 ///
 /// The identifier is `std::any::type_name::<T>()`, e.g.
 /// `"my_crate::nifs::HashMapResource"`. This guarantees uniqueness within a
@@ -231,7 +268,7 @@ unsafe extern "C" fn stop_callback<T: Resource>(
 /// rustc's `type_name` for distinct types produces distinct strings in
 /// practice. For backward compatibility with an existing resource type
 /// identifier (or any case where the auto-derived string would be wrong),
-/// use [`register_resource_type_named`].
+/// use [`register_tagged`].
 ///
 // NOTE: `std::any::type_name::<T>()` is documented as a "best-effort
 // description", not a uniqueness contract. Within one crate it is
@@ -243,10 +280,10 @@ unsafe extern "C" fn stop_callback<T: Resource>(
 // their crate name identically, so `dep::Foo` from v1 and `dep::Foo` from
 // v2 collide. That requires a NIF to register `Resource` for a *dependency*
 // type that is duplicated across versions — an exotic case we accept rather
-// than guard. If it ever arises, the escape hatch is
-// `register_resource_type_named` with an explicit unique name.
-pub fn register_resource_type<T: Resource>(env: Env<'_>) {
-    register_resource_type_named::<T>(env, std::any::type_name::<T>());
+// than guard. If it ever arises, the escape hatch is [`register_tagged`]
+// with an explicit unique name.
+pub fn register<T: Resource>(env: Env<'_>) {
+    register_tagged::<T>(env, std::any::type_name::<T>());
 }
 
 /// Register resource type `T` with the BEAM under an explicit name.
@@ -255,17 +292,17 @@ pub fn register_resource_type<T: Resource>(env: Env<'_>) {
 /// example, when migrating a NIF library that previously registered the
 /// type under a different identifier and you need the BEAM-side resource
 /// type table to keep matching pre-existing resource terms (over a hot
-/// reload of the same library, etc.). For new code prefer
-/// [`register_resource_type`] which is auto-named.
+/// reload of the same library, etc.). For new code prefer [`register`] which
+/// is auto-named.
 ///
-/// Same calling-context rules as `register_resource_type`: load callback
-/// only, exactly once per type.
-pub fn register_resource_type_named<T: Resource>(env: Env<'_>, name: &str) {
+/// Same calling-context rules as [`register`]: load/upgrade callback only,
+/// exactly once per type.
+pub fn register_tagged<T: Resource>(env: Env<'_>, name: &str) {
     use crate::sys::NifResourceFlags;
 
     assert!(
-        env.kind == EnvKind::Init,
-        "register_resource_type must be called from the NIF load callback"
+        matches!(env.kind, EnvKind::Load | EnvKind::Upgrade),
+        "register must be called from the NIF load or upgrade callback"
     );
 
     let cname = std::ffi::CString::new(name)
@@ -295,10 +332,15 @@ pub fn register_resource_type_named<T: Resource>(env: Env<'_>, name: &str) {
         "enif_init_resource_type failed — ensure env is from the load callback"
     );
 
-    T::resource_type_handle()
-        .set(ResourceTypeHandle(type_ptr))
-        .map_err(|_| ())
-        .expect("resource type already registered");
+    // The load scaffolding installs PrivData before dispatching the user
+    // callback, so the slot is non-null here.
+    let pd = unsafe { crate::enif::priv_data(env.as_ptr()) } as *mut PrivData;
+    assert!(
+        !pd.is_null(),
+        "priv_data not installed — register must run inside otter's load scaffolding"
+    );
+    // SAFETY: single-threaded load/upgrade; pd is this build's PrivData.
+    unsafe { (*pd).registry_mut().insert::<T>(type_ptr) };
 }
 
 // ---------------------------------------------------------------------------
@@ -347,14 +389,6 @@ impl<T: Resource> ResourceArc<T> {
         self.raw
     }
 
-    fn type_ptr() -> *mut NifResourceType {
-        T::resource_type_handle()
-            .get()
-            .expect("ResourceArc: resource type not registered — \
-                     call register_resource_type::<T> in your load callback")
-            .0
-    }
-
     /// Monitor the process identified by `pid`.
     ///
     /// Returns `Some(Monitor)` on success. Returns `None` if the process is
@@ -388,21 +422,6 @@ impl<T: Resource> ResourceArc<T> {
 // ---------------------------------------------------------------------------
 // From<T>, Clone, Drop, Deref
 // ---------------------------------------------------------------------------
-
-impl<T: Resource> From<T> for ResourceArc<T> {
-    /// Wrap `val` in a new resource object on the BEAM heap.
-    ///
-    /// Panics if the resource type has not been registered.
-    fn from(val: T) -> ResourceArc<T> {
-        // Allocate enough for T at its required alignment.
-        let alloc_size = std::mem::size_of::<T>() + std::mem::align_of::<T>() - 1;
-        let raw = unsafe { crate::enif::alloc_resource(Self::type_ptr(), alloc_size) };
-        assert!(!raw.is_null(), "enif_alloc_resource returned null");
-        let inner = align_ptr::<T>(raw);
-        unsafe { std::ptr::write(inner, val) };
-        ResourceArc { raw, inner }
-    }
-}
 
 impl<T: Resource> Clone for ResourceArc<T> {
     fn clone(&self) -> ResourceArc<T> {
@@ -453,10 +472,9 @@ impl<'a, T: Resource> Decoder<'a> for ResourceArc<T> {
     /// resources of the wrong type — so we call it directly without a
     /// preliminary type-tag check.
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        let type_ptr = T::resource_type_handle()
-            .get()
-            .ok_or(CodecError::WrongType)?
-            .0;
+        let type_ptr = registry(term.env)
+            .and_then(|r| r.get::<T>())
+            .ok_or(CodecError::WrongType)?;
 
         let mut obj: *mut c_void = std::ptr::null_mut();
         if unsafe {

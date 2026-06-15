@@ -7,6 +7,7 @@ use std::ffi::c_int;
 
 pub use crate::codec::{CodecError, Decoder, Encoder};
 pub use crate::env::{Env, EnvKind};
+pub use crate::priv_data::{discard_priv_data, install_priv_data, PrivData};
 pub use crate::sys::{
     NifEnv, NifEntry, NifFunc, NifResourceTypeInit, NifTerm, NIF_FUNC_DIRTY_CPU,
     NIF_FUNC_DIRTY_IO, NIF_MAJOR_VERSION, NIF_MIN_ERTS_VERSION, NIF_MINOR_VERSION,

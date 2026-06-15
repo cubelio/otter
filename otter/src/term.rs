@@ -586,7 +586,7 @@ impl<'a> Env<'a> {
     /// Wraps `enif_set_option(ERL_NIF_OPT_DELAY_HALT)`.
     pub fn set_option_delay_halt(self) -> bool {
         assert!(
-            self.kind == EnvKind::Init,
+            self.kind == EnvKind::Load,
             "set_option_delay_halt must be called from the NIF load callback"
         );
         unsafe { crate::enif::set_option_delay_halt(self.as_ptr()) == 0 }
@@ -604,7 +604,7 @@ impl<'a> Env<'a> {
         callback: unsafe extern "C" fn(*mut std::ffi::c_void),
     ) -> bool {
         assert!(
-            self.kind == EnvKind::Init,
+            self.kind == EnvKind::Load,
             "set_option_on_halt must be called from the NIF load callback"
         );
         unsafe { crate::enif::set_option_on_halt(self.as_ptr(), callback) == 0 }
@@ -622,7 +622,7 @@ impl<'a> Env<'a> {
         callback: unsafe extern "C" fn(*mut std::ffi::c_void),
     ) -> bool {
         assert!(
-            self.kind == EnvKind::Init,
+            self.kind == EnvKind::Load,
             "set_option_on_unload_thread must be called from the NIF load callback"
         );
         unsafe { crate::enif::set_option_on_unload_thread(self.as_ptr(), callback) == 0 }

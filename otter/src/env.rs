@@ -14,15 +14,19 @@ use crate::types::{LocalPid, LocalPort};
 ///
 /// The BEAM uses different internal env types for different contexts. Otter
 /// tracks this so higher layers can enforce context-specific restrictions
-/// (e.g. only `Init` envs may register resource types).
+/// (e.g. only `Load`/`Upgrade` envs may register resource types).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum EnvKind {
     /// Standard NIF call environment.
     ProcessBound,
     /// Resource destructor, monitor, or select-stop callback environment.
     Callback,
-    /// Load callback environment. Only valid for resource type registration.
-    Init,
+    /// Load callback environment. Valid for resource type registration.
+    Load,
+    /// Upgrade callback environment. Valid for resource type registration.
+    Upgrade,
+    /// Unload callback environment.
+    Unload,
     /// Process-independent environment created with `enif_alloc_env`.
     ProcessIndependent,
 }
