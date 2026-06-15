@@ -158,12 +158,8 @@ With optional resource types and lifecycle callbacks (all keyword arguments
 after the NIF list are order-independent):
 
 ```rust
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::init_atoms!(env);  // initialize pre-declared atoms
-    true
-}
-
 otter::init!("my_module", [add, subtract],
+    atoms = [ok, error],        // interned automatically; see "Pre-Declared Atoms"
     resources = [MyResource],   // registered automatically; see "Resources"
     load = on_load);            // also: upgrade = f, unload = f
 ```
@@ -199,15 +195,11 @@ There is no structured channel back to Erlang for the decode-failure reason; the
 
 Atoms are tagged immediates — no lifetime needed. They are valid across environments.
 
-**Use `declare_atoms!` + `atom![…]` for literal atom names** — it interns each name exactly once at NIF load and retrieves it at use as a single atomic load, with no NIF call:
+**Declare literal atom names in `init!` and retrieve them with `atom![…]`** — each name is interned exactly once at NIF load and retrieved at use as a single atomic load, with no NIF call:
 
 ```rust
-otter::declare_atoms![ok, error, not_found, content_type = "content-type"];
-
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::init_atoms!(env);
-    true
-}
+otter::init!("my_module", [my_nif],
+    atoms = [ok, error, not_found, content_type = "content-type"]);
 
 // In any NIF — zero-cost retrieval:
 let ok = otter::atom![ok];
@@ -234,7 +226,7 @@ The BEAM atom table is global, has a fixed maximum size (default 1,048,576), and
 This is a well-known BEAM DoS vector. The rule:
 
 - **Never call `Atom::intern` on untrusted strings.** For input handling, use `Atom::try_existing` and treat `None` as "atom not recognized, reject input."
-- **For compile-time-known names, use `declare_atoms!`** rather than `Atom::intern`. Same atom, but with no chance of leaking growth from a mistaken hot-path call.
+- **For compile-time-known names, declare them in `init!`'s `atoms = [...]`** rather than calling `Atom::intern`. Same atom, but with no chance of leaking growth from a mistaken hot-path call.
 - `Atom::intern` returns `None` if the atom table is full or `name` is not valid UTF-8. The full case is a soft signal that something has been mishandled upstream — by the time you observe it, the VM is close to crashing.
 
 ### Integer
@@ -499,34 +491,21 @@ For atoms used frequently across NIFs, pre-declaration avoids repeated `Atom::in
 
 ### Step 1: Declare
 
-At module scope, list the atoms you need:
+List the atoms you need in the `atoms = [...]` argument of [`init!`](#registration), alongside your NIFs and resources:
 
 ```rust
-otter::declare_atoms![ok, error, not_found];
+otter::init!("my_module", [my_nif], atoms = [ok, error, not_found]);
 ```
 
 For atom names that are not valid Rust identifiers, use `ident = "name"` syntax:
 
 ```rust
-otter::declare_atoms![ok, error, content_type = "content-type"];
+otter::init!("my_module", [my_nif], atoms = [ok, error, content_type = "content-type"]);
 ```
 
-This generates a hidden `__otter_atoms` module containing one `StaticAtom` per entry and an `init` function.
+This generates a hidden `__otter_atoms` module containing one `StaticAtom` per entry, which the load scaffolding interns automatically — there is no separate initialization step to remember.
 
-### Step 2: Initialize
-
-Call `init_atoms!` from your `on_load` callback:
-
-```rust
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::init_atoms!(env);
-    true
-}
-
-otter::init!("my_module", [my_nif], load = on_load);
-```
-
-### Step 3: Use
+### Step 2: Use
 
 Retrieve any declared atom by name:
 
@@ -539,13 +518,12 @@ fn example(_env: Env) -> Atom {
 
 `atom!` returns an `Atom` — it works anywhere an `Atom` is expected.
 
-### What the macros generate
+### What the macro generates
 
-The macros generate code you could write by hand. Nothing is hidden:
+`init!` generates code you could write by hand. Nothing is hidden:
 
 ```rust
-// otter::declare_atoms![ok, error, content_type = "content-type"];
-// expands to:
+// atoms = [ok, error, content_type = "content-type"] expands to:
 mod __otter_atoms {
     use otter::types::atom::StaticAtom;
 
@@ -560,28 +538,25 @@ mod __otter_atoms {
     }
 }
 
-// otter::init_atoms!(env);  →  __otter_atoms::init(env);
-// otter::atom![ok]          →  __otter_atoms::ok.get()
+// otter::atom![ok]  →  __otter_atoms::ok.get()
 ```
 
-`StaticAtom::get()` is a single `AtomicUsize` load with `Relaxed` ordering. In debug builds, it panics if called before `init`.
+The generated load **and** upgrade callbacks call `__otter_atoms::init(env)` before dispatching your own `load`/`upgrade` callback, so the atoms are ready before any NIF runs. `StaticAtom::get()` is a single `AtomicUsize` load with `Relaxed` ordering; it panics (in release builds too) if called before init.
+
+### Hot upgrade
+
+Atom pre-declaration is upgrade-safe with no extra machinery. An atom term is a VM-global tagged immediate — an index into the global atom table, which never shrinks and outlives every code version. So each build owns its own `__otter_atoms` statics, and the scaffolding re-interns them in the **upgrade** callback exactly as it does in load. Re-interning hits the existing table entries (idempotent, cheap) and touches no cross-build state. Nothing is shared across the upgrade boundary, so atoms never participate in the ABI concerns that govern `priv_data` and resource payloads.
 
 ### Notes
 
-A few rules follow from what the macros expand to:
+A few rules follow from what the macro expands to:
 
-- **Initialize in `on_load`.** Call `init_atoms!(env)` before any NIF runs. Forgetting it panics on the first `atom![…]` call (release builds too — the check is unconditional). Calling it more than once is harmless; it re-interns the same names.
-- **One `declare_atoms!` per crate, in the module that hosts your `on_load` callback.** The generated `__otter_atoms` submodule has a fixed name, so a second `declare_atoms!` in the same module would collide. The atom system is a deliberately small convenience — declare all your literal atoms in one place; use `ident = "name"` to disambiguate when two atom *strings* would otherwise produce the same identifier.
-- **`atom![…]` and `init_atoms!` resolve `__otter_atoms` by ordinary name lookup, so it must be in scope.** In the module that invoked `declare_atoms!`, it's already in scope. To use the atoms from a sibling or descendant module, bring the module in with a `use` statement:
+- **Declaration lives in `init!`.** All your literal atoms go in one `atoms = [...]` list. The generated `__otter_atoms` module is emitted at the `init!` site (conventionally the crate root). For full manual control over the declaration site or interning timing, construct `StaticAtom`s yourself and call `init` from your `load`/`upgrade` callback.
+- **`atom![…]` resolves `__otter_atoms` by ordinary name lookup, so it must be in scope.** In the module that invokes `init!`, it's already in scope. To use the atoms from a sibling or descendant module, bring the module in with a `use` statement:
 
   ```rust
-  // lib.rs — declares atoms here, hosts on_load:
-  otter::declare_atoms![ok, error, not_found];
-
-  fn on_load(env: Env, _info: Term) -> bool {
-      otter::init_atoms!(env);
-      true
-  }
+  // lib.rs — invokes init! here:
+  otter::init!("my_module", [my_nif], atoms = [ok, error, not_found]);
   mod handlers;
 
   // handlers.rs — uses the atoms from a sibling module:
@@ -596,12 +571,12 @@ A few rules follow from what the macros expand to:
 - **Non-identifier names need `ident = "name"`.** For hyphens, leading digits, reserved words, non-ASCII — pick a valid identifier and map it to the string you want:
 
   ```rust
-  otter::declare_atoms![ok, content_type = "content-type"];
+  otter::init!("my_module", [my_nif], atoms = [ok, content_type = "content-type"]);
   let ct = otter::atom![content_type];  // the atom "content-type"
   ```
 
 - **Duplicates.** Two entries with the same identifier are a compile error. Two different identifiers mapped to the same string (`ok` and `okay = "ok"`) are fine — both intern the same BEAM atom and compare equal.
-- **Atom name length.** Erlang atoms cap at 255 characters; over-length names fail at `init_atoms!`, not mid-NIF.
+- **Atom name length.** Erlang atoms cap at 255 characters; over-length names fail at load, not mid-NIF.
 - **Thread- and env-safe.** `atom![…]` is safe from any scheduler thread, including dirty NIFs. The returned `Atom` is valid in any environment, including an `OwnedEnv`.
 
 ---
@@ -645,7 +620,7 @@ The NIF C API has exactly two exception mechanisms — `enif_make_badarg` and `e
 Otter models this with [`Raised<'a>`]: an opaque value that can only be produced by an operation that actually raised, so holding one is proof the env is already in the pending-exception state. You produce one with `Env::raise_exception` or `Env::make_badarg`, and propagate it out of the NIF:
 
 ```rust
-otter::declare_atoms![division_by_zero];
+// `division_by_zero` is declared in init!'s `atoms = [...]` list.
 
 #[otter::nif]
 fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
@@ -943,8 +918,6 @@ use otter::env::Env;
 use otter::term::TypedTerm;
 use otter::types::{Atom, Binary, BinaryBuf, Integer, List};
 
-otter::declare_atoms![world, ok];
-
 #[otter::nif]
 fn hello(_env: Env) -> Atom {
     otter::atom![world]
@@ -982,10 +955,6 @@ fn sum_list<'a>(env: Env<'a>, list: List<'a>) -> Integer<'a> {
     Integer::from_i64(env, sum)
 }
 
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::init_atoms!(env);
-    true
-}
-
-otter::init!("my_nifs", [hello, add, echo, reverse_binary, sum_list], load = on_load);
+otter::init!("my_nifs", [hello, add, echo, reverse_binary, sum_list],
+    atoms = [world, ok]);
 ```

@@ -27,6 +27,28 @@ impl Parse for ResourceEntry {
     }
 }
 
+/// A single entry in the `atoms = [...]` list: an identifier, optionally
+/// followed by `= "name"` when the BEAM atom name is not a valid Rust
+/// identifier. The identifier is the handle used with [`atom!`]; the name is
+/// what gets interned.
+struct AtomEntry {
+    ident: Ident,
+    name:  LitStr,
+}
+
+impl Parse for AtomEntry {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let ident: Ident = input.parse()?;
+        let name = if input.peek(Token![=]) {
+            input.parse::<Token![=]>()?;
+            input.parse::<LitStr>()?
+        } else {
+            LitStr::new(&ident.to_string(), ident.span())
+        };
+        Ok(AtomEntry { ident, name })
+    }
+}
+
 /// A `load`/`upgrade`/`unload` slot: unset, a tier-1 (plain) user fn, or a
 /// tier-2 (`_raw`) user fn that manages the `user_priv_data` `void*`.
 enum Callback {
@@ -38,6 +60,7 @@ enum Callback {
 struct InitInput {
     module_name: LitStr,
     nifs:        Vec<Path>,
+    atoms:       Vec<AtomEntry>,
     resources:   Vec<ResourceEntry>,
     load:        Callback,
     upgrade:     Callback,
@@ -56,6 +79,8 @@ impl Parse for InitInput {
             .into_iter()
             .collect();
 
+        let mut atoms = Vec::new();
+        let mut seen_atoms = false;
         let mut resources = Vec::new();
         let mut seen_resources = false;
         let mut load = Callback::None;
@@ -63,7 +88,7 @@ impl Parse for InitInput {
         let mut unload = Callback::None;
 
         // Remaining arguments are order-independent keyword entries:
-        //   resources = [..], load[_raw] = f, upgrade[_raw] = f, unload[_raw] = f
+        //   atoms = [..], resources = [..], load[_raw] = f, upgrade[_raw] = f, unload[_raw] = f
         while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
             if input.is_empty() {
@@ -72,6 +97,18 @@ impl Parse for InitInput {
             let key: Ident = input.parse()?;
             input.parse::<Token![=]>()?;
             match key.to_string().as_str() {
+                "atoms" => {
+                    if seen_atoms {
+                        return Err(Error::new_spanned(&key, "duplicate `atoms`"));
+                    }
+                    seen_atoms = true;
+                    let content;
+                    syn::bracketed!(content in input);
+                    atoms = content
+                        .parse_terminated(AtomEntry::parse, Token![,])?
+                        .into_iter()
+                        .collect();
+                }
                 "resources" => {
                     if seen_resources {
                         return Err(Error::new_spanned(&key, "duplicate `resources`"));
@@ -94,7 +131,7 @@ impl Parse for InitInput {
                     return Err(Error::new_spanned(
                         &key,
                         format!(
-                            "unknown init! key `{other}` — expected `resources`, \
+                            "unknown init! key `{other}` — expected `atoms`, `resources`, \
                              `load`, `upgrade`, `unload` (or their `_raw` variants)"
                         ),
                     ));
@@ -102,7 +139,7 @@ impl Parse for InitInput {
             }
         }
 
-        Ok(InitInput { module_name, nifs, resources, load, upgrade, unload })
+        Ok(InitInput { module_name, nifs, atoms, resources, load, upgrade, unload })
     }
 }
 
@@ -272,6 +309,46 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
         }
     };
 
+    // --- pre-declared atoms ---
+    //
+    // The `__otter_atoms` module holds one `StaticAtom` per declared name (the
+    // `atom!` macro retrieves them). They are interned in BOTH load and upgrade
+    // (see below): an atom term is a VM-global immediate, so each build owns its
+    // own statics and re-interns idempotently — no cross-build state, tier-1.
+    let atoms_module = if input.atoms.is_empty() {
+        quote! {}
+    } else {
+        let decls = input.atoms.iter().map(|a| {
+            let ident = &a.ident;
+            let name = &a.name;
+            quote! { pub static #ident: StaticAtom = StaticAtom::new(#name); }
+        });
+        let inits = input.atoms.iter().map(|a| {
+            let ident = &a.ident;
+            quote! { #ident.init(__otter_env); }
+        });
+        quote! {
+            #[doc(hidden)]
+            #[allow(non_upper_case_globals)]
+            pub mod __otter_atoms {
+                use ::otter::types::atom::StaticAtom;
+
+                #( #decls )*
+
+                pub fn init(__otter_env: ::otter::__codegen::Env<'_>) {
+                    #( #inits )*
+                }
+            }
+        }
+    };
+    // Interning call spliced into the load/upgrade scaffolding (empty when no
+    // atoms are declared, so the module need not exist).
+    let intern_atoms = if input.atoms.is_empty() {
+        quote! {}
+    } else {
+        quote! { __otter_atoms::init(__env); }
+    };
+
     // --- load / upgrade wrappers ---
     //
     // Both: install PrivData, register resources, dispatch the optional user
@@ -301,6 +378,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             let __pd = unsafe { ::otter::__codegen::install_priv_data(__otter_priv_data) };
             let __outcome = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
                 __otter_register(__env, ::otter::__codegen::ResourceFlags::CREATE);
+                #intern_atoms
                 #load_body
             }));
             match __outcome {
@@ -345,6 +423,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
                     ::otter::__codegen::ResourceFlags::CREATE
                         | ::otter::__codegen::ResourceFlags::TAKEOVER,
                 );
+                #intern_atoms
                 #upgrade_body
             }));
             match __outcome {
@@ -412,6 +491,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     // --- nif_init entry point ---
 
     Ok(quote! {
+        #atoms_module
         #register_fn
         #load_wrapper
         #upgrade_wrapper

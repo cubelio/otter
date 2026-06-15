@@ -25,7 +25,8 @@ One rule: **the first argument is the NIF call environment, and every remaining 
 - The first parameter does not count toward the NIF arity. Remaining parameters do.
 
 ```rust
-otter::declare_atoms![division_by_zero, integer, atom, other];
+// Atoms used below are declared in init!'s `atoms = [...]` list:
+//   atoms = [division_by_zero, integer, atom, other]
 
 // Every NIF takes Env first, even if it doesn't use it.
 #[otter::nif]
@@ -118,8 +119,8 @@ fn add(_env: Env, a: Integer, b: Integer) -> Integer { a + b }
 fn identity(_env: Env, val: TypedTerm) -> TypedTerm { val }
 
 // Result — Ok encodes and returns, Err raises as exception
-// `division_by_zero` is pre-declared via `declare_atoms![division_by_zero]`
-// at module scope (omitted here for brevity).
+// `division_by_zero` is declared in init!'s `atoms = [...]` list
+// (omitted here for brevity).
 #[otter::nif]
 fn divide(_env: Env, a: Integer, b: Integer) -> Result<Integer, Atom> {
     if i64::try_from(b)? == 0 {
@@ -152,10 +153,10 @@ otter::init!("my_module", [
     add,
     subtract,
     lookup,
-], resources = [MyResource], load = on_load);
+], atoms = [ok, error], resources = [MyResource], load = on_load);
 ```
 
-**The NIF list is explicit.** The user lists every NIF. This is consistent with how Erlang itself declares NIFs and makes the registration visible and auditable. The remaining arguments are order-independent keyword entries: `resources = [...]`, `load`, `upgrade`, `unload`.
+**The NIF list is explicit.** The user lists every NIF. This is consistent with how Erlang itself declares NIFs and makes the registration visible and auditable. The remaining arguments are order-independent keyword entries: `atoms = [...]`, `resources = [...]`, `load`, `upgrade`, `unload`.
 
 **Generated entry point:** `extern "C" fn nif_init() -> *const ErlNifEntry`
 (Unix only — otter is Unix-only at present; see the core `DESIGN.md`).
@@ -165,13 +166,20 @@ pointers via `dlsym`, then builds and leaks the `ErlNifEntry`.
 **`load`/`upgrade`/`unload` are always generated** (non-`NULL`), so every otter
 module is hot-upgradeable. Each `load`/`upgrade` wrapper installs otter-owned
 `PrivData`, registers the listed `resources` (`CREATE` in load,
-`CREATE | TAKEOVER` in upgrade), then dispatches the optional user callback —
-all under one `catch_unwind`. Any veto (user `false`, a `load_info` decode
-failure, or a panic) frees the `PrivData` and NULLs the slot, returning a
-distinct `LOAD_FAILED_*` code. `unload` dispatches the optional user callback
-(which cannot veto; a panic is absorbed) and frees the `PrivData`. The user
-`load`/`upgrade` fns receive `(Env, Term)` — the env and the `load_info` term
-from `erlang:load_nif/2` — and return `bool`; `unload` receives `(Env)`.
+`CREATE | TAKEOVER` in upgrade), interns the declared `atoms`, then dispatches
+the optional user callback — all under one `catch_unwind`. Any veto (user
+`false`, a `load_info` decode failure, or a panic) frees the `PrivData` and
+NULLs the slot, returning a distinct `LOAD_FAILED_*` code. `unload` dispatches
+the optional user callback (which cannot veto; a panic is absorbed) and frees
+the `PrivData`. The user `load`/`upgrade` fns receive `(Env, Term)` — the env
+and the `load_info` term from `erlang:load_nif/2` — and return `bool`; `unload`
+receives `(Env)`.
+
+**`atoms = [...]`** generates a hidden `__otter_atoms` module of `StaticAtom`s
+(retrieved via the `atom!` macro) and interns them in both load and upgrade.
+Because an atom term is a VM-global immediate, each build owns its own statics
+and re-interns idempotently — no cross-build state, so atom pre-declaration is
+upgrade-safe with no fingerprint or `PrivData` involvement (unlike resources).
 
 ---
 

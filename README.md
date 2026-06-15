@@ -47,22 +47,14 @@ and `native/my_nifs/src/lib.rs` with a minimal NIF:
 
 ```rust
 use otter::env::Env;
-use otter::term::Term;
 use otter::types::Atom;
-
-otter::declare_atoms![world];
-
-fn on_load(env: Env, _info: Term) -> bool {
-    otter::init_atoms!(env);
-    true
-}
 
 #[otter::nif]
 fn hello(_env: Env) -> Atom {
     otter::atom![world]
 }
 
-otter::init!("my_nifs", [hello], load = on_load);
+otter::init!("my_nifs", [hello], atoms = [world]);
 ```
 
 **4. Register the crate and build hooks in `rebar.config`** (the scaffolder
@@ -127,7 +119,7 @@ You only depend on `otter`. The codegen macros are re-exported through it.
 - **All 12 Erlang term types** — Atom, Integer, Float, Binary, Bitstring, List, Tuple, Map, Pid, Port, Reference, Fun
 - **Two-level term resolution** — `Term` (zero cost) → `TypedTerm` (one NIF call) → data extraction. Pay only for what you use.
 - **Compile-time lifetime safety** — `Env<'a>` ties every term to its NIF call. Terms cannot escape. No runtime checks.
-- **Pre-declared atoms** — `declare_atoms!` / `init_atoms!` / `atom!` for zero-cost atom retrieval (single atomic load)
+- **Pre-declared atoms** — `init!`'s `atoms = [...]` + `atom!` for zero-cost atom retrieval (single atomic load), interned at load and re-interned on upgrade
 - **Resource types** — BEAM-managed Rust objects with destructors and process monitors, registered via `init!`'s `resources = [...]`
 - **Hot code upgrade** — every otter module is hot-upgradeable; a per-build ABI tag on resource type names keeps a different build from unsafely taking over, with an opt-in stable tag (and `raw` callbacks) for state you carry across by hand
 - **OwnedEnv** — build and send terms from background threads

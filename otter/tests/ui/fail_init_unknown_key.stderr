@@ -1,4 +1,4 @@
-error: unknown init! key `frobnicate` — expected `resources`, `load`, `upgrade`, `unload` (or their `_raw` variants)
+error: unknown init! key `frobnicate` — expected `atoms`, `resources`, `load`, `upgrade`, `unload` (or their `_raw` variants)
   --> tests/ui/fail_init_unknown_key.rs:12:24
    |
 12 | otter::init!("m", [f], frobnicate = on_load);

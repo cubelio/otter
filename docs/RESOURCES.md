@@ -70,7 +70,7 @@ This reference is the BEAM's handle to your Rust struct. You cannot inspect it f
 ### 4. Use the instance from other NIFs
 
 ```rust
-// `ok` and `error` are pre-declared via `declare_atoms![ok, error]` at module scope.
+// `ok` and `error` are declared in init!'s `atoms = [...]` list.
 #[otter::nif]
 fn put<'a>(_env: Env<'a>, key: Binary<'a>, val: Binary<'a>, map: ResourceArc<MyMap>) -> Atom {
     map.data.lock().unwrap().insert(

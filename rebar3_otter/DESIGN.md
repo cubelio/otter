@@ -128,22 +128,14 @@ otter = { git = "https://github.com/cubelio/otter.git" }
 **`native/my_nif/src/lib.rs`:**
 ```rust
 use otter::env::Env;
-use otter::term::Term;
 use otter::types::Atom;
-
-otter::declare_atoms![world];
-
-fn on_load(env: Env, _info: Term) -> bool {
-    otter::init_atoms!(env);
-    true
-}
 
 #[otter::nif]
 fn hello(_env: Env) -> Atom {
     otter::atom![world]
 }
 
-otter::init!("my_nif", [hello], load = on_load);
+otter::init!("my_nif", [hello], atoms = [world]);
 ```
 
 **Note:** The scaffolded Erlang module and `-on_load` declaration are intentionally not generated. NIF loading is two lines of standard Erlang that the programmer should write and understand:

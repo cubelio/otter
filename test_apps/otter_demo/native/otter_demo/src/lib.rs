@@ -10,17 +10,6 @@ use otter::sys::NifSelectFlags;
 use otter::term::{Term, TypedTerm, Raised};
 use otter::types::{Atom, Binary, BinaryBuf, Float, Integer, List, LocalPid, LocalPort, Map, Reference, Tuple};
 
-otter::declare_atoms![
-    ok, error,
-    true_ = "true", false_ = "false",
-    world, overflow,
-    less, equal, greater,
-    atom, integer, float, binary, bitstring, list,
-    tuple, map, pid, port, fun, reference,
-    division_by_zero, dirty_cpu, from_thread,
-];
-
-
 fn atomize_bool(value: bool) -> Atom {
     if value { otter::atom![true_] } else { otter::atom![false_] }
 }
@@ -654,8 +643,10 @@ fn monitor_down_count<'a>(env: Env<'a>, arc: ResourceArc<MonitorResource>) -> In
     Integer::from_i64(env, arc.down_count.load(Ordering::Relaxed) as i64)
 }
 
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::init_atoms!(env);
+fn on_load(_env: Env, _load_info: Term) -> bool {
+    // Atoms and resources are interned/registered by the `init!` scaffolding
+    // before this runs; nothing to do here. Kept to exercise the user-load
+    // callback dispatch path.
     true
 }
 
@@ -705,6 +696,15 @@ otter::init!("otter_demo__nif", [
     test_time,
     test_consume_timeslice,
     port_send,
+],
+atoms = [
+    ok, error,
+    true_ = "true", false_ = "false",
+    world, overflow,
+    less, equal, greater,
+    atom, integer, float, binary, bitstring, list,
+    tuple, map, pid, port, fun, reference,
+    division_by_zero, dirty_cpu, from_thread,
 ],
 resources = [HashMapResource: "v1", PanickingResource, FdResource, MonitorResource],
 load = on_load);

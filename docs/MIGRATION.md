@@ -79,11 +79,11 @@ You choose the resolution level: `TypedTerm` when you need to branch on type, co
 | `f64` | `Float<'a>` | `f64::from(float)` to extract |
 | `String` | `Binary<'a>` | Call `.as_bytes()` or `.try_str()` |
 | `&str` | `Binary<'a>` | Same — binaries are the Erlang string type |
-| `bool` | `Atom` | `declare_atoms![true_ = "true", false_ = "false"]` + `atom![true_]` / `atom![false_]` (the bare `true` / `false` identifiers are Rust keywords) |
+| `bool` | `Atom` | `atoms = [true_ = "true", false_ = "false"]` in `init!` + `atom![true_]` / `atom![false_]` (the bare `true` / `false` identifiers are Rust keywords) |
 | `Vec<T>` | `List<'a>` | Walk with `iter()`, build with `List::from_terms()` |
 | `(A, B)` | `Tuple<'a>` | Access with `.element(i)`, build with `Tuple::from_terms()` |
 | `HashMap<K,V>` | `Map<'a>` | Use `.get()`, `.put()`, `.iter()` |
-| `rustler::Atom` | `Atom` | `declare_atoms![name]` + `atom![name]` (or `Atom::intern` for runtime strings; see [Atom-table safety](USAGE.md#atom-table-safety)) |
+| `rustler::Atom` | `Atom` | `atoms = [name]` in `init!` + `atom![name]` (or `Atom::intern` for runtime strings; see [Atom-table safety](USAGE.md#atom-table-safety)) |
 | `rustler::Binary` | `Binary<'a>` | `Binary::from_bytes(env, &[u8])` |
 | `rustler::TypedTerm` | `TypedTerm<'a>` | Typed enum, not opaque |
 | `rustler::Error` | *(none)* | `Result<T, Raised>`; raise via `env.raise_exception()` / `env.make_badarg()` |
@@ -109,21 +109,16 @@ atoms::ok().encode(env)
 
 **Otter:**
 ```rust
-// Pre-declare atoms for zero-cost retrieval
-otter::declare_atoms![ok, error, not_found];
-
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::init_atoms!(env);
-    true
-}
+// Pre-declare atoms for zero-cost retrieval — in the init! call
+otter::init!("my_module", [my_nif], atoms = [ok, error, not_found]);
 
 // Usage — single atomic load, no NIF call
 otter::atom![ok]
 ```
 
-`declare_atoms!` pre-declares atoms that are interned once at NIF load time. `atom!` retrieves them with a single atomic load. For atom names that aren't valid Rust identifiers, use `ident = "name"` syntax: `content_type = "content-type"`.
+The `atoms = [...]` list pre-declares atoms that are interned once at NIF load time (and re-interned automatically on hot upgrade). `atom!` retrieves them with a single atomic load. For atom names that aren't valid Rust identifiers, use `ident = "name"` syntax: `content_type = "content-type"`.
 
-For runtime atom strings (rare — prefer `declare_atoms!` for any compile-time-known name; **never** call `intern` on untrusted input — see [Atom-table safety](USAGE.md#atom-table-safety)):
+For runtime atom strings (rare — prefer the `atoms = [...]` list for any compile-time-known name; **never** call `intern` on untrusted input — see [Atom-table safety](USAGE.md#atom-table-safety)):
 
 ```rust
 Atom::intern(env, "ok").unwrap()
@@ -195,7 +190,7 @@ let a = tup.element(0);  // -> TypedTerm
 let b = tup.element(1);
 let c = tup.element(2);
 
-// `ok` is pre-declared via `declare_atoms![ok]` at module scope.
+// `ok` is declared in init!'s `atoms = [...]` list.
 let tup = Tuple::from_terms(env, [
     Integer::from_i64(env, 1).into(),
     Binary::from_bytes(env, b"hello").into(),
@@ -234,7 +229,7 @@ for (k, v) in map.iter() {
 }
 
 // Construct empty then build up — no .encode(env) needed.
-// `key` is pre-declared via `declare_atoms![key]` at module scope.
+// `key` is declared in init!'s `atoms = [...]` list.
 let mut m = Map::new(env);
 m = m.put(
     otter::atom![key],
@@ -268,7 +263,7 @@ Rustler's `Error` enum has multiple variants that do different things — some r
 
 **Otter:**
 ```rust
-// `badarith` is pre-declared via `declare_atoms![badarith]` at module scope.
+// `badarith` is declared in init!'s `atoms = [...]` list.
 #[otter::nif]
 fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Atom> {
     let bv = i64::try_from(b).unwrap();
@@ -374,7 +369,7 @@ use otter::env::OwnedEnv;
 let pid = LocalPid::self_(env);
 std::thread::spawn(move || {
     let mut owned = OwnedEnv::new();
-    // `result` is pre-declared via `declare_atoms![result]` at module scope.
+    // `result` is declared in init!'s `atoms = [...]` list.
     owned.send(&pid, |env| {
         Tuple::from_terms(env, [
             otter::atom![result].into(),
@@ -460,7 +455,7 @@ otter = { git = "https://github.com/cubelio/otter.git" }
 | `NifException` | Elixir exceptions — no Erlang equivalent |
 | `NifUntaggedEnum` | Try-each dispatch — belongs in user code |
 | Serde integration | Erlang terms don't map to serde's data model |
-| `atoms!` macro | `declare_atoms!` + `atom!` — pre-declared atoms with zero-cost retrieval |
+| `atoms!` macro | `atoms = [...]` in `init!` + `atom!` — pre-declared atoms with zero-cost retrieval |
 | `ListIterator` | Lists are cons cells, not iterators |
 | Automatic NIF registration | Explicit `init!` — visible, auditable |
 | `Error` enum | `Result<T, Raised>` + `env.raise_exception()` / `env.make_badarg()` — the actual NIF API |
@@ -475,7 +470,7 @@ otter = { git = "https://github.com/cubelio/otter.git" }
 3. Replace Rust primitive arguments with BEAM types (`i64` -> `Integer`, `String` -> `Binary`, etc.)
 4. Add explicit lifetime `<'a>` when multiple arguments carry lifetimes
 5. Replace `rustler::Error` returns with `Result<T, Raised>`; raise via `env.raise_exception(reason)` / `env.make_badarg()`
-6. Replace `atoms! {}` blocks with `declare_atoms!` / `init_atoms!` / `atom!`. Reserve `Atom::intern(env, "name")` for runtime strings — and never call it on untrusted input ([Atom-table safety](USAGE.md#atom-table-safety))
+6. Replace `atoms! {}` blocks with `init!`'s `atoms = [...]` list + `atom!`. Reserve `Atom::intern(env, "name")` for runtime strings — and never call it on untrusted input ([Atom-table safety](USAGE.md#atom-table-safety))
 7. Replace `Vec<T>` list handling with `list.iter()` iterator
 8. Replace `resource!` macro with a `Resource` trait impl + listing the type in `init!`'s `resources = [...]`; switch `ResourceArc::from(val)` to `env.make_resource(val)`
 9. Replace `OwnedEnv::send_and_clear` with `OwnedEnv::send`

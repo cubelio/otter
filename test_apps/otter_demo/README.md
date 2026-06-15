@@ -12,7 +12,7 @@ This sits inside the otter repo at `test_apps/otter_demo/` and depends on the ot
 
 ## What the demo covers
 
-The NIF crate demonstrates: pre-declared atoms (`declare_atoms!` / `init_atoms!` / `atom!`), typed arguments and returns, term passthrough, type inspection, binary construction, list iteration, equality/ordering, `Debug` formatting, `TryFrom`, resource types with destructors, and the `on_load` callback.
+The NIF crate demonstrates: pre-declared atoms (`init!`'s `atoms = [...]` + `atom!`), typed arguments and returns, term passthrough, type inspection, binary construction, list iteration, equality/ordering, `Debug` formatting, `TryFrom`, resource types with destructors, and the `on_load` callback.
 
 ## Running
 

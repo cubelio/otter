@@ -110,7 +110,7 @@ Otter wraps `enif_set_option` for tuning per-NIF options such as `delay_halt`. R
 
 ### Atoms initialized at NIF load
 
-Otter's `declare_atoms!` declares atoms statically; `init_atoms!(env)` in the load callback creates them all once and writes the terms to atomics. Rustler's `atoms!` macro caches lazily via `OnceLock::get_or_init` — first call creates them, subsequent calls return the cached value. Both avoid NIF calls in steady state and the retrieval cost is comparable. The difference is structural: otter pushes initialization to load time, rustler defers it to first call.
+Otter declares atoms statically via the `atoms = [...]` list in `init!`; the generated load (and upgrade) scaffolding interns them all once and writes the terms to atomics. Rustler's `atoms!` macro caches lazily via `OnceLock::get_or_init` — first call creates them, subsequent calls return the cached value. Both avoid NIF calls in steady state and the retrieval cost is comparable. The difference is structural: otter pushes initialization to load time, rustler defers it to first call.
 
 ### `rebar3_otter` build plugin
 

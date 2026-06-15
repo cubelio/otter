@@ -34,9 +34,10 @@ impl Atom {
     /// **Never call `intern` on untrusted input.** For input handling, use
     /// [`Atom::try_existing`] and treat `None` as "atom not recognized,
     /// reject input." Reserve `intern` for compile-time-known names — and
-    /// even there, prefer the [`declare_atoms!`](crate::declare_atoms)
-    /// macro, which interns each name exactly once at NIF load and
-    /// retrieves it thereafter as a single atomic load.
+    /// even there, prefer declaring them in the `atoms = [...]` list of
+    /// [`init!`](crate::init), which interns each name exactly once at NIF
+    /// load and retrieves it thereafter (via [`atom!`](crate::atom)) as a
+    /// single atomic load.
     ///
     /// Wraps `enif_make_atom_len`.
     pub fn intern(env: Env<'_>, name: &str) -> Option<Atom> {
@@ -74,20 +75,19 @@ impl Atom {
 /// A pre-declared atom that is initialized once at NIF load time and
 /// retrieved thereafter as a single atomic load.
 ///
-/// Use via the [`declare_atoms!`](crate::declare_atoms),
-/// [`init_atoms!`](crate::init_atoms), and [`atom!`](crate::atom) macros.
+/// Declare atoms in the `atoms = [...]` list of [`init!`](crate::init) and
+/// retrieve them with [`atom!`](crate::atom); the `init!`-generated scaffolding
+/// interns them in the load callback (and re-interns on hot upgrade):
 ///
 /// ```ignore
-/// otter::declare_atoms![ok, error, not_found];
-///
-/// fn on_load(env: Env, _load_info: Term) -> bool {
-///     otter::init_atoms!(env);
-///     true
-/// }
+/// otter::init!("my_nif", [/* nifs */], atoms = [ok, error, not_found]);
 ///
 /// // in a NIF:
 /// let ok = otter::atom![ok];
 /// ```
+///
+/// For manual control over declaration site or interning timing, construct
+/// `StaticAtom`s directly and call [`init`](Self::init) yourself.
 pub struct StaticAtom {
     name: &'static str,
     term: AtomicUsize,

@@ -25,95 +25,17 @@ pub use otter_codegen::nif;
 pub use otter_codegen::init;
 pub use otter_codegen::resource_impl;
 
-/// Declare pre-initialized atoms that can be retrieved with zero lookup cost.
-///
-/// Generates a hidden `__otter_atoms` module containing one [`StaticAtom`] per
-/// entry, plus an `init` function that interns them all at once.
-///
-/// Atoms whose BEAM name is a valid Rust identifier can be listed bare.
-/// Atoms whose name is not a valid identifier use `ident = "name"` syntax.
-///
-/// ```ignore
-/// otter::declare_atoms![ok, error, content_type = "content-type"];
-/// ```
-///
-/// Call [`init_atoms!`] from your `on_load` callback to initialize them,
-/// then retrieve individual atoms with [`atom!`].
-///
-/// [`StaticAtom`]: crate::types::atom::StaticAtom
-#[macro_export]
-macro_rules! declare_atoms {
-    // Parse comma-separated entries, each either `ident` or `ident = "name"`.
-    ($($entry:tt)*) => {
-        $crate::__declare_atoms_inner!($($entry)*);
-    };
-}
-
-/// Internal helper — not part of the public API.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __declare_atoms_inner {
-    // Terminal — emit the module from accumulated pairs.
-    (@acc [$(($ident:ident, $name:expr))*]) => {
-        #[doc(hidden)]
-        #[allow(non_upper_case_globals)]
-        pub mod __otter_atoms {
-            use $crate::types::atom::StaticAtom;
-
-            $(pub static $ident: StaticAtom = StaticAtom::new($name);)*
-
-            pub fn init(env: $crate::env::Env<'_>) {
-                $($ident.init(env);)*
-            }
-        }
-    };
-
-    // ident = "name", more entries follow
-    (@acc [$($done:tt)*] $id:ident = $lit:expr, $($rest:tt)*) => {
-        $crate::__declare_atoms_inner!(@acc [$($done)* ($id, $lit)] $($rest)*);
-    };
-    // ident = "name", last entry
-    (@acc [$($done:tt)*] $id:ident = $lit:expr) => {
-        $crate::__declare_atoms_inner!(@acc [$($done)* ($id, $lit)]);
-    };
-
-    // bare ident, more entries follow
-    (@acc [$($done:tt)*] $id:ident, $($rest:tt)*) => {
-        $crate::__declare_atoms_inner!(@acc [$($done)* ($id, stringify!($id))] $($rest)*);
-    };
-    // bare ident, last entry
-    (@acc [$($done:tt)*] $id:ident) => {
-        $crate::__declare_atoms_inner!(@acc [$($done)* ($id, stringify!($id))]);
-    };
-
-    // Entry point — start with empty accumulator
-    ($($rest:tt)*) => {
-        $crate::__declare_atoms_inner!(@acc [] $($rest)*);
-    };
-}
-
-/// Initialize all atoms declared with [`declare_atoms!`](crate::declare_atoms).
-///
-/// Must be called from the NIF `on_load` callback.
-///
-/// ```ignore
-/// fn on_load(env: Env, _load_info: Term) -> bool {
-///     otter::init_atoms!(env);
-///     true
-/// }
-/// ```
-#[macro_export]
-macro_rules! init_atoms {
-    ($env:expr) => {
-        __otter_atoms::init($env)
-    };
-}
-
-/// Retrieve a pre-declared atom by name.
+/// Retrieve an atom pre-declared in the `atoms = [...]` list of
+/// [`init!`](crate::init).
 ///
 /// Returns an [`Atom`] via a single atomic load — no hash lookup, no NIF call.
+/// The atoms are interned once at NIF load (and re-interned on hot upgrade) by
+/// the `init!`-generated scaffolding, so they are ready before any NIF runs.
 ///
 /// ```ignore
+/// otter::init!("my_nif", [/* nifs */], atoms = [ok, error]);
+///
+/// // in a NIF:
 /// let ok: Atom = otter::atom![ok];
 /// ```
 ///
