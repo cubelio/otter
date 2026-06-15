@@ -234,12 +234,17 @@ unsafe extern "C" fn stop_callback<T: Resource>(
 /// use [`register_resource_type_named`].
 ///
 // NOTE: `std::any::type_name::<T>()` is documented as a "best-effort
-// description" — uniqueness across distinct types isn't formally guaranteed
-// by the std contract. In practice rustc emits the full path and distinct
-// types produce distinct strings. A separate verification experiment
-// (defining same-named types across modules and across an imported dep,
-// then asserting `type_name` distinguishes them) is open as a future
-// TODO; tracked in ASSESSMENT.md.
+// description", not a uniqueness contract. Within one crate it is
+// nonetheless unambiguous — Rust's own path resolution forbids two items
+// at the same path, so distinct types in the user's crate always yield
+// distinct strings. The one way two genuinely-distinct types can share a
+// `type_name` in a single cdylib is dependency-mediated: two
+// semver-incompatible versions of the same crate (both linked in) render
+// their crate name identically, so `dep::Foo` from v1 and `dep::Foo` from
+// v2 collide. That requires a NIF to register `Resource` for a *dependency*
+// type that is duplicated across versions — an exotic case we accept rather
+// than guard. If it ever arises, the escape hatch is
+// `register_resource_type_named` with an explicit unique name.
 pub fn register_resource_type<T: Resource>(env: Env<'_>) {
     register_resource_type_named::<T>(env, std::any::type_name::<T>());
 }
