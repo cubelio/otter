@@ -18,8 +18,9 @@ trybuild = "1"
 
 [features]
 nif_2_18 = []
-# Expose the raw, 1:1, all-unsafe `enif` module as a public escape hatch.
-raw = []
+# Expose the raw, 1:1, all-unsafe `enif` module as a public escape hatch, and
+# accept the tier-2 `_raw` lifecycle callbacks in `init!`.
+raw = ["otter_codegen/raw"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

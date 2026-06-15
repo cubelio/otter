@@ -8,6 +8,8 @@ use std::ffi::c_int;
 pub use crate::codec::{CodecError, Decoder, Encoder};
 pub use crate::env::{Env, EnvKind};
 pub use crate::priv_data::{discard_priv_data, free_priv_data, install_priv_data, PrivData};
+#[cfg(feature = "raw")]
+pub use crate::priv_data::{old_user_priv_field, user_priv_field};
 pub use crate::resource::{register, register_tagged, ResourceFlags};
 pub use crate::sys::{
     NifEnv, NifEntry, NifFunc, NifResourceTypeInit, NifTerm, NIF_FUNC_DIRTY_CPU,

@@ -13,6 +13,11 @@ categories = ["api-bindings", "external-ffi-bindings"]
 [lib]
 proc-macro = true
 
+[features]
+# Accept the tier-2 `_raw` load/upgrade/unload callbacks in `init!`. Enabled
+# transitively by `otter`'s `raw` feature; without it, `_raw` keys are rejected.
+raw = []
+
 [dependencies]
 syn = { version = "2", features = ["full", "extra-traits"] }
 quote = "1"

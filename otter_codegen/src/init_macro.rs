@@ -27,13 +27,21 @@ impl Parse for ResourceEntry {
     }
 }
 
+/// A `load`/`upgrade`/`unload` slot: unset, a tier-1 (plain) user fn, or a
+/// tier-2 (`_raw`) user fn that manages the `user_priv_data` `void*`.
+enum Callback {
+    None,
+    Plain(Path),
+    Raw(Path),
+}
+
 struct InitInput {
     module_name: LitStr,
     nifs:        Vec<Path>,
     resources:   Vec<ResourceEntry>,
-    load:        Option<Path>,
-    upgrade:     Option<Path>,
-    unload:      Option<Path>,
+    load:        Callback,
+    upgrade:     Callback,
+    unload:      Callback,
 }
 
 impl Parse for InitInput {
@@ -50,12 +58,12 @@ impl Parse for InitInput {
 
         let mut resources = Vec::new();
         let mut seen_resources = false;
-        let mut load = None;
-        let mut upgrade = None;
-        let mut unload = None;
+        let mut load = Callback::None;
+        let mut upgrade = Callback::None;
+        let mut unload = Callback::None;
 
         // Remaining arguments are order-independent keyword entries:
-        //   resources = [..], load = f, upgrade = f, unload = f
+        //   resources = [..], load[_raw] = f, upgrade[_raw] = f, unload[_raw] = f
         while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
             if input.is_empty() {
@@ -76,15 +84,18 @@ impl Parse for InitInput {
                         .into_iter()
                         .collect();
                 }
-                "load" => set_once(&mut load, &key, input)?,
-                "upgrade" => set_once(&mut upgrade, &key, input)?,
-                "unload" => set_once(&mut unload, &key, input)?,
+                "load" => set_plain(&mut load, &key, input)?,
+                "upgrade" => set_plain(&mut upgrade, &key, input)?,
+                "unload" => set_plain(&mut unload, &key, input)?,
+                "load_raw" => set_raw(&mut load, &key, input)?,
+                "upgrade_raw" => set_raw(&mut upgrade, &key, input)?,
+                "unload_raw" => set_raw(&mut unload, &key, input)?,
                 other => {
                     return Err(Error::new_spanned(
                         &key,
                         format!(
                             "unknown init! key `{other}` — expected `resources`, \
-                             `load`, `upgrade`, or `unload`"
+                             `load`, `upgrade`, `unload` (or their `_raw` variants)"
                         ),
                     ));
                 }
@@ -95,12 +106,50 @@ impl Parse for InitInput {
     }
 }
 
-fn set_once(slot: &mut Option<Path>, key: &Ident, input: ParseStream) -> Result<()> {
-    if slot.is_some() {
-        return Err(Error::new_spanned(key, format!("duplicate `{key}`")));
+/// `load` / `upgrade` / `unload` (the kind name is implied by which slot).
+fn kind_of(key: &Ident) -> &'static str {
+    let s = key.to_string();
+    if s.starts_with("load") {
+        "load"
+    } else if s.starts_with("upgrade") {
+        "upgrade"
+    } else {
+        "unload"
     }
-    *slot = Some(input.parse::<Path>()?);
+}
+
+fn set_plain(slot: &mut Callback, key: &Ident, input: ParseStream) -> Result<()> {
+    ensure_unset(slot, key)?;
+    *slot = Callback::Plain(input.parse::<Path>()?);
     Ok(())
+}
+
+fn set_raw(slot: &mut Callback, key: &Ident, input: ParseStream) -> Result<()> {
+    if !cfg!(feature = "raw") {
+        return Err(Error::new_spanned(
+            key,
+            format!(
+                "`{key}` requires otter's `raw` feature — enable it with \
+                 `otter = {{ version = \"…\", features = [\"raw\"] }}`. The tier-2 \
+                 `_raw` callbacks hand you the library's `priv_data` `void*` directly."
+            ),
+        ));
+    }
+    ensure_unset(slot, key)?;
+    *slot = Callback::Raw(input.parse::<Path>()?);
+    Ok(())
+}
+
+fn ensure_unset(slot: &Callback, key: &Ident) -> Result<()> {
+    if matches!(slot, Callback::None) {
+        Ok(())
+    } else {
+        let kind = kind_of(key);
+        Err(Error::new_spanned(
+            key,
+            format!("duplicate `{kind}` callback — `{kind}` and `{kind}_raw` may appear at most once, combined"),
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -116,12 +165,17 @@ fn meta_path(nif_path: &Path) -> Path {
     path
 }
 
-/// The `c_int`-valued body that dispatches an optional user `load`/`upgrade`
-/// callback. Runs inside the scaffolding's `catch_unwind`, after resource
-/// registration. `info` names the raw `load_info` term in scope.
-fn callback_dispatch(user_fn: &Option<Path>, info: TokenStream) -> TokenStream {
-    match user_fn {
-        Some(f) => quote! {{
+/// The `c_int`-valued body that dispatches an optional `load`/`upgrade`
+/// callback, run inside the scaffolding's `catch_unwind` after registration.
+/// `info` names the raw `load_info` term; `old` names the `*mut *mut c_void`
+/// old-priv-data slot (present only for `upgrade`).
+fn lifecycle_dispatch(cb: &Callback, info: TokenStream, old: Option<TokenStream>) -> TokenStream {
+    match cb {
+        Callback::None => quote! {{
+            let _ = #info;
+            ::otter::__codegen::LOAD_OK
+        }},
+        Callback::Plain(f) => quote! {{
             let __otter_info_raw = ::otter::__codegen::new_raw_term(__env, #info);
             match ::otter::__codegen::Decoder::decode(__otter_info_raw) {
                 Ok(__otter_info) => if #f(__env, __otter_info) {
@@ -132,10 +186,44 @@ fn callback_dispatch(user_fn: &Option<Path>, info: TokenStream) -> TokenStream {
                 Err(_) => ::otter::__codegen::LOAD_FAILED_DECODE,
             }
         }},
-        None => quote! {{
-            let _ = #info;
-            ::otter::__codegen::LOAD_OK
-        }},
+        Callback::Raw(f) => {
+            // The user fn receives `&mut` handles to the `user_priv_data`
+            // void* it owns (plus the old build's, for upgrade).
+            let call = match &old {
+                None => quote! {
+                    #f(__env, unsafe { &mut *::otter::__codegen::user_priv_field(__pd) }, __otter_info)
+                },
+                Some(old_slot) => quote! {
+                    {
+                        let __otter_new_ref = unsafe {
+                            &mut *::otter::__codegen::user_priv_field(__pd)
+                        };
+                        let __otter_old_field = unsafe {
+                            ::otter::__codegen::old_user_priv_field(#old_slot)
+                        };
+                        let mut __otter_old_scratch: *mut ::std::ffi::c_void =
+                            ::std::ptr::null_mut();
+                        let __otter_old_ref = if __otter_old_field.is_null() {
+                            &mut __otter_old_scratch
+                        } else {
+                            unsafe { &mut *__otter_old_field }
+                        };
+                        #f(__env, __otter_new_ref, __otter_old_ref, __otter_info)
+                    }
+                },
+            };
+            quote! {{
+                let __otter_info_raw = ::otter::__codegen::new_raw_term(__env, #info);
+                match ::otter::__codegen::Decoder::decode(__otter_info_raw) {
+                    Ok(__otter_info) => if #call {
+                        ::otter::__codegen::LOAD_OK
+                    } else {
+                        ::otter::__codegen::LOAD_FAILED_USER_FALSE
+                    },
+                    Err(_) => ::otter::__codegen::LOAD_FAILED_DECODE,
+                }
+            }}
+        }
     }
 }
 
@@ -159,8 +247,6 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     // (CREATE | TAKEOVER). PrivData is published before this runs, so a user
     // callback may register additional types into the same live registry.
     let register_body = if input.resources.is_empty() {
-        // No resources: keep the params "used" so a resource-less module still
-        // compiles warning-free. The wrappers call __otter_register uniformly.
         quote! { let _ = (__otter_env, __otter_flags); }
     } else {
         let register_calls = input.resources.iter().map(|entry| {
@@ -192,8 +278,12 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     // callback — all under one catch_unwind. Any veto (user `false`, decode
     // failure, or panic) frees the PrivData and NULLs the slot.
 
-    let load_body = callback_dispatch(&input.load, quote! { __otter_load_info });
-    let upgrade_body = callback_dispatch(&input.upgrade, quote! { __otter_upgrade_info });
+    let load_body = lifecycle_dispatch(&input.load, quote! { __otter_load_info }, None);
+    let upgrade_body = lifecycle_dispatch(
+        &input.upgrade,
+        quote! { __otter_upgrade_info },
+        Some(quote! { __otter_old_priv }),
+    );
 
     let load_wrapper = quote! {
         #[doc(hidden)]
@@ -227,6 +317,12 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
         }
     };
 
+    // The upgrade wrapper consumes the old-priv slot only when a raw callback
+    // reads it; otherwise mark it used to avoid an unused-variable warning.
+    let upgrade_old_consume = match &input.upgrade {
+        Callback::Raw(_) => quote! {},
+        _ => quote! { let _ = __otter_old_priv; },
+    };
     let upgrade_wrapper = quote! {
         #[doc(hidden)]
         unsafe extern "C" fn __otter_upgrade(
@@ -235,9 +331,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             __otter_old_priv:    *mut *mut ::std::ffi::c_void,
             __otter_upgrade_info: ::otter::__codegen::NifTerm,
         ) -> ::std::ffi::c_int {
-            // Tier-1: the old build's PrivData carries no user pointer and is
-            // freed by the old build's own unload — we never touch it.
-            let _ = __otter_old_priv;
+            #upgrade_old_consume
             let __marker = ();
             let __env = unsafe {
                 ::otter::__codegen::new_env(
@@ -273,7 +367,8 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     // absorbed) and frees this build's PrivData. The BEAM passes priv_data by
     // value here, not through a slot.
     let unload_dispatch = match &input.unload {
-        Some(f) => quote! {
+        Callback::None => quote! { let _ = __otter_unload_env; },
+        Callback::Plain(f) => quote! {
             let __marker = ();
             let __env = unsafe {
                 ::otter::__codegen::new_env(
@@ -282,7 +377,22 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             };
             let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| #f(__env)));
         },
-        None => quote! { let _ = __otter_unload_env; },
+        Callback::Raw(f) => quote! {
+            let __marker = ();
+            let __env = unsafe {
+                ::otter::__codegen::new_env(
+                    &__marker, __otter_unload_env, ::otter::__codegen::EnvKind::Unload,
+                )
+            };
+            let __otter_user = unsafe {
+                *::otter::__codegen::user_priv_field(
+                    __otter_priv_data as *mut ::otter::__codegen::PrivData,
+                )
+            };
+            let _ = ::std::panic::catch_unwind(
+                ::std::panic::AssertUnwindSafe(|| #f(__env, __otter_user)),
+            );
+        },
     };
     let unload_wrapper = quote! {
         #[doc(hidden)]

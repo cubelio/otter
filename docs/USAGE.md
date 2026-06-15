@@ -172,6 +172,12 @@ otter::init!("my_module", [add, subtract],
 always generates the `load`/`upgrade`/`unload` NIF callbacks (even with none of
 these arguments), so every otter module is hot-upgradeable.
 
+Under the `raw` feature, the `load_raw`/`upgrade_raw`/`unload_raw` variants
+(mutually exclusive with the plain forms) instead hand you the library's
+`priv_data` `void*` directly — `&mut *mut c_void` to manage yourself, faithfully
+mirroring the enif contract. This is the tier-2 escape hatch for state you need
+to carry across a hot upgrade by hand; see `docs/UPGRADE.md`.
+
 The load callback receives `Env` (with `EnvKind::Load`) and the load info term. The second parameter can be any type that implements `Decoder` — `Term<'a>` is the zero-cost choice when you don't inspect the value, `TypedTerm<'a>` adds an `enif_term_type` call, and a concrete type (e.g. `Integer<'a>`) lets you reject mismatched `LoadInfo` at the type level. Return `true` for success, `false` to abort loading. Panics are caught and treated as failure.
 
 **Load failure return codes.** When the load callback returns non-zero, BEAM aborts the library load and `erlang:load_nif(Path, LoadInfo)` returns `{error, {load_failed, "Library load-call unsuccessful (N)."}}`. The integer `N` carries the cause:

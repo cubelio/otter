@@ -1,4 +1,4 @@
-error: duplicate `load`
+error: duplicate `load` callback — `load` and `load_raw` may appear at most once, combined
   --> tests/ui/fail_init_duplicate_key.rs:12:40
    |
 12 | otter::init!("m", [f], load = on_load, load = on_load);

@@ -20,8 +20,10 @@ the failure modes, because the most dangerous ones are invisible in Rust source.
 > default — module and resource-*type* survival, no cross-build payload survival) is
 > **shipped** (issue `audit-02`, closed): every module gets generated
 > `load`/`upgrade`/`unload`, an otter-owned `PrivData` registry, and the per-build ABI
-> name (`abi.rs`). Tier 2 is the `raw` escape hatch — its `_raw` priv_data callbacks are
-> **not yet shipped** (the `_raw` `init!` keys currently error). Tier 3 (the fingerprint
+> name (`abi.rs`). Tier 2 is the `raw` escape hatch — its `load_raw`/`upgrade_raw`/
+> `unload_raw` callbacks (which hand the user the `priv_data` `void*` directly) are
+> **shipped behind otter's `raw` feature**; without it the `_raw` `init!` keys are
+> rejected at compile time. Tier 3 (the fingerprint
 > + `EnifAlloc` sandbox that recovers payload survival safely) is planned. The BEAM
 > *semantics* in this document are stable and, where noted "verified", checked against
 > `erts/emulator/beam/erl_nif.c`.
@@ -191,8 +193,10 @@ Two consequences:
   set at its own `load`/`upgrade`. That removes the one shared `static` otter would
   otherwise have. (See §6 for how the registry is populated.)
 - **The faithful `void**` mirror survives as the `user_priv_data` *field*, not the
-  whole slot.** In tier 1 it is always null. Tier 2 (`raw`, not yet shipped) exposes it
-  as a bare `void*` the user's `load`/`upgrade`/`unload` set/carry/free; a typed
+  whole slot.** In tier 1 it is always null. Tier 2 (`raw`, shipped behind the feature)
+  exposes it as a bare `void*` the user's `load_raw`/`upgrade_raw`/`unload_raw`
+  set/carry/free — `&mut *mut c_void` handles to the new (and, on upgrade, the old
+  build's) field, the latter reached through the frozen header. A typed
   `Priv<P>` lens and tier 3's fingerprinted, `EnifAlloc`-backed whole-struct treatment
   remain planned. otter always allocates/frees the enclosing `PrivData`.
 
