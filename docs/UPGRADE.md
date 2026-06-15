@@ -18,11 +18,13 @@ the failure modes, because the most dangerous ones are invisible in Rust source.
 
 > **Status.** otter exposes upgrade support in **three tiers** (§8): tier 1 (the safe
 > default — module and resource-*type* survival, no cross-build payload survival) is
-> the subject of issue `audit-02`; tier 2 is the `raw` escape hatch; tier 3 (the
-> fingerprint + `EnifAlloc` sandbox that recovers payload survival safely) is planned.
-> The BEAM *semantics* in this document are stable and, where noted "verified", checked
-> against `erts/emulator/beam/erl_nif.c`; the otter API surface is **planned** where it
-> is not yet shipped.
+> **shipped** (issue `audit-02`, closed): every module gets generated
+> `load`/`upgrade`/`unload`, an otter-owned `PrivData` registry, and the per-build ABI
+> name (`abi.rs`). Tier 2 is the `raw` escape hatch — its `_raw` priv_data callbacks are
+> **not yet shipped** (the `_raw` `init!` keys currently error). Tier 3 (the fingerprint
+> + `EnifAlloc` sandbox that recovers payload survival safely) is planned. The BEAM
+> *semantics* in this document are stable and, where noted "verified", checked against
+> `erts/emulator/beam/erl_nif.c`.
 
 ---
 
@@ -162,36 +164,37 @@ Lifecycle:
 Because the two slots belong to two distinct instances, the *clean and default*
 ownership pattern is: **each instance frees its own.**
 
-### otter's model: otter owns the slot (planned)
+### otter's model: otter owns the slot
 
 The lifecycle above is the raw enif contract. **otter does not hand the bare
-`void*` to the user; otter owns it and points it at an `OtterPrivData` struct**, of
-which the user's state is one field:
+`void*` to the user; otter owns it and points it at a `PrivData` struct** (shipped,
+`priv_data.rs`), of which the user's state is one field:
 
 ```rust
-struct OtterPrivData {
-    types: ResourceRegistry,   // this instance's *mut NifResourceType pointers (see §6)
-    user:  Priv<P> | *mut c_void,  // the user's state — typed lens (safe) or faithful void* (raw)
-    // optional: a second user-managed void* blob, controlled exactly like the raw slot
+#[repr(C)]
+pub struct PrivData {
+    magic: u64,                  // PRIV_MAGIC — frozen header word, read cross-build
+    user_priv_data: *mut c_void, // the user's void* (tier 2 `raw`); null in tier 1
+    registry: ResourceRegistry,  // build-private: TypeId -> *mut NifResourceType (§6)
 }
 ```
 
-This is deliberate, and it is *why otter needs no `static`s* for cross-version
-state. Two consequences:
+The first two fields are a frozen `#[repr(C)]` header — the only bytes ever read
+across the upgrade boundary (at fixed offsets), and only to hand the user back their
+old `user_priv_data` on upgrade. Everything after is build-private and reconstructed
+fresh by each build. This is *why otter needs no `static`s* for cross-version state.
+Two consequences:
 
 - **The resource-type registry lives here, not in a `static`.** `priv_data` is
   genuinely per-instance even when the `.so` (and its file-scope statics) are shared
   on a same-`.so` reload — so each module instance carries its *own* type pointers,
-  set at its own `load`/`upgrade`. That is exactly the per-instance isolation this
-  section's BEAM note prescribes, and it removes the one shared `static` otter would
+  set at its own `load`/`upgrade`. That removes the one shared `static` otter would
   otherwise have. (See §6 for how the registry is populated.)
-- **The faithful `void**` mirror survives as a *field*, not the whole slot.** The
-  user's `load` still sets `new.user`; `upgrade` still reads (and may null) `old.user`
-  for takeover; `unload` still frees it. otter allocates/frees the enclosing
-  `OtterPrivData`; the user owns the lifecycle of their field exactly as before. The
-  `raw` tier exposes that field as a bare `void*`; the safe tier exposes a typed
-  `Priv<P>` lens. tier 3 (§8) fingerprints and `EnifAlloc`-backs the whole struct as
-  one unit.
+- **The faithful `void**` mirror survives as the `user_priv_data` *field*, not the
+  whole slot.** In tier 1 it is always null. Tier 2 (`raw`, not yet shipped) exposes it
+  as a bare `void*` the user's `load`/`upgrade`/`unload` set/carry/free; a typed
+  `Priv<P>` lens and tier 3's fingerprinted, `EnifAlloc`-backed whole-struct treatment
+  remain planned. otter always allocates/frees the enclosing `PrivData`.
 
 The cost is that reading `priv_data` needs a module-bound env (`enif_priv_data`),
 which propagates to resource creation — see §5.
@@ -255,7 +258,7 @@ When library A creates a `ResourceArc<T>`:
 - Any heap the `T` *owns* (e.g. a `Vec`'s backing buffer) is a **separate Rust-heap
   allocation** reached through a pointer inside the struct.
 
-### Creation requires an env (planned)
+### Creation requires an env
 
 Because the type registry lives in `priv_data` (§4) rather than a `static`, obtaining
 the `*mut NifResourceType` to allocate or decode a resource goes through
@@ -346,37 +349,38 @@ Two consequences settle otter's design:
    out from under the new instance and any still-outstanding objects. So registration's
    enif call **must run in `upgrade`**, unconditionally.
 
-### otter's registration (settled — `audit-02`)
+### otter's registration (implemented — `audit-02`)
 
-- **Separate `load` / `upgrade` (/ `unload`) functions.** The user writes them
-  explicitly — *not* a single `load` re-run on upgrade. `load` holds one-time side
+- **Always-generated `load` / `upgrade` / `unload`.** otter emits all three (non-`NULL`)
+  for every module, so any otter module is hot-upgradeable. `load` holds one-time side
   effects that must not repeat (priv_data, threads, fds); `upgrade` is the distinct
-  callback the BEAM requires (and the only one with `old_priv_data`). `init!` generates
-  a non-`NULL` `upgrade` wrapper that dispatches to the user's `upgrade` fn.
-- **The user calls `register_resource_type::<T>` in *both* `load` and `upgrade`** (the
-  C idiom). otter does not auto-collect a type list — registration stays explicit.
-- **Flag by callback:** `CREATE` in `load`, `CREATE | TAKEOVER` in `upgrade`. `load`
-  runs only when no old code of this module exists, so it can never legitimately collide
-  — `CREATE`-only there is the *strict* choice (a collision is a real error, not
-  silently absorbed). `upgrade` is where takeover is both possible and needed.
-- **`EnvKind`** gains an `Upgrade` variant (`Init` → `Load`); it gates *call legality*
-  (registration is legal only from `load`/`upgrade`) and selects the flag. It does not
-  otherwise branch the logic.
+  callback the BEAM requires (and the only one with `old_priv_data`); `unload` frees the
+  `PrivData`. Each dispatches to an *optional* user callback of the same name.
+- **Registration is list-driven, run in *both* `load` and `upgrade`.** The user lists
+  types in `init!`'s `resources = [...]`; the scaffolding registers them in load and
+  re-registers (takeover) in upgrade — the C idiom, automated. A user callback may still
+  call `register::<T>(env, flags)` by hand for dynamic cases (the `PrivData` is published
+  before the callback runs, so it lands in the live registry).
+- **Flag by callback:** `CREATE` in `load`, `CREATE | TAKEOVER` in `upgrade`, passed
+  explicitly by the generated wrapper (not inferred from `EnvKind`). `load` runs only
+  when no old code of this module exists, so `CREATE`-only there is the *strict* choice
+  (a collision is a real error, not silently absorbed). `upgrade` is where takeover is
+  both possible and needed.
+- **`EnvKind`** gains `Upgrade` and `Unload` variants (`Init` → `Load`); `register`
+  asserts the env is `Load` or `Upgrade`. It gates *call legality* only.
 - **The handle is stored in the per-instance registry inside `priv_data` (§4), not a
-  `static`.** Each `register_resource_type::<T>` call writes the returned
-  `*mut NifResourceType` into *this instance's* `OtterPrivData.types`, keyed by `T`
-  (its `TypeId`); `ResourceArc` reads it back via `env → enif_priv_data → registry`.
-  Because `priv_data` is per-instance, and the registry is built entirely within
-  `load`/`upgrade` (before any NIF call on that instance) and read-only thereafter,
-  there is **no `static`, no shared cell, and no atomics** — and the same-`.so`
-  shared-static hazard disappears outright, since each instance owns its registry.
+  `static`.** Each `register` call writes the returned `*mut NifResourceType` into *this
+  instance's* `PrivData` registry, keyed by `T`'s `TypeId`; `ResourceArc` reads it back
+  via `env → enif_priv_data → registry`. Because `priv_data` is per-instance, and the
+  registry is built entirely within `load`/`upgrade` (before any NIF call on that
+  instance) and read-only thereafter, there is **no `static`, no shared cell, and no
+  atomics** — the same-`.so` shared-static hazard disappears, since each instance owns
+  its registry.
 
-This supersedes the earlier `OnceLock`/`AtomicPtr` static-cell design and removes the
+This superseded the earlier `OnceLock`/`AtomicPtr` static-cell design and removed the
 `Resource` trait's `resource_type_handle()` static accessor: the type pointer is reached
-through the env-bound registry, not a global. The old `OnceLock::set().expect()` (the
-second half of `audit-02`) panicked on the second registration; the per-instance
-registry instead records the freshly returned handle in each instance's own slot — and
-the enif call still runs every time, for the ownership transfer above.
+through the env-bound registry, not a global. The enif call runs every time, for the
+ownership transfer above.
 
 ---
 
@@ -456,8 +460,15 @@ upgrade.
 The mechanism is the BEAM's own `(module, name)` resource lookup (§6, verified against
 erts source). otter registers each type under a **per-build-unique name** — in effect
 a *maximally conservative fingerprint that compares equal only for the byte-identical
-library image* — and registers with `CREATE` in `load`, `CREATE | TAKEOVER` in
-`upgrade`. The lookup then routes each case automatically:
+library image*. Concretely (`abi.rs`), the default name is
+`"{type_name}#abi={hash}"`, where `{hash}` is a `DefaultHasher` digest of this
+library's own binary, located at load time via `dladdr` over an otter function address
+and read from disk (cached; a per-load fallback on failure, which degrades to "never
+take over"). A type may instead be registered `"{type_name}#tag={tag}"` via
+`register_tagged` / `resources = [T: "tag"]`, a stable name with no hash that opts the
+type *into* cross-build takeover (the per-type analog of `raw` — a promise its layout is
+stable). Registration uses `CREATE` in `load`, `CREATE | TAKEOVER` in `upgrade`. The
+lookup then routes each case automatically:
 
 - **Same `.so` reloaded in place** (`l(Mod)`): same build ⟹ same name ⟹ the lookup
   matches ⟹ **takeover**. Sound, because the two instances are the *identical image* —
@@ -522,7 +533,7 @@ code-pointer-free** payloads. Two pieces working together:
   the one shared free path — neutralizing the allocator assumption even after the old
   library unloads.
 
-The fingerprint and `EnifAlloc` apply to the whole `OtterPrivData` struct (§4) — the
+The fingerprint and `EnifAlloc` apply to the whole `PrivData` struct (§4) — the
 registry plus the user payload — as one enif-allocated, fingerprinted unit. The
 resource-type registry rides the `(module, name)` name-matching automatically; the
 **user payload** has no name-matching to ride on, so tier 3 checks the fingerprint

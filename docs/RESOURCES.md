@@ -23,42 +23,29 @@ This is a plain Rust struct. It lives on the Rust heap and follows normal Rust r
 
 ### 2. Register it as a resource type
 
-Before the BEAM can manage instances of your struct, you register the type once at NIF load time.
+Before the BEAM can manage instances of your struct, you register the type. You list it in `init!`, and otter registers it in the generated load (and upgrade) callbacks.
 
 ```rust
-use std::sync::OnceLock;
-use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
+use otter::resource::{Resource, ResourceArc};
 
-static MY_MAP_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
+impl Resource for MyMap {}
 
-impl Resource for MyMap {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MY_MAP_TYPE
-    }
-}
-
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::resource::register_resource_type::<MyMap>(env);
-    true
-}
-
-otter::init!("my_module", [new, put, get], load = on_load);
+otter::init!("my_module", [new, put, get],
+    resources = [MyMap]);
 ```
 
-`Resource` requires `Send + Sync + 'static`. This is enforced at compile time — the compiler will reject a struct that isn't safe to share across threads.
+`Resource` requires `Send + Sync + 'static`. This is enforced at compile time — the compiler will reject a struct that isn't safe to share across threads. The trait has no required methods; `destructor`, `down`, and `stop` are optional.
 
-The `OnceLock<ResourceTypeHandle>` static is a one-time slot that `register_resource_type` fills. It stores the BEAM's internal type pointer so that `ResourceArc` can look it up later.
+The registered type pointer lives in a per-instance registry inside otter-owned `priv_data`, keyed by the type's `TypeId`. Each module instance carries its own registry (sound across a hot upgrade — no shared static), and `ResourceArc` looks the pointer up via `env → enif_priv_data → registry`. This is why creation takes an env (step 3).
 
-> **Planned change (`audit-02`).** This `static` handle slot is being replaced by a *per-instance registry inside otter-owned `priv_data`*, so that hot code upgrade is sound and each module instance carries its own type pointers (no shared static). Resource creation will then take an env (`env.make_resource(val)`) instead of being env-less. See `docs/UPGRADE.md` §4 and §6.
-
-`register_resource_type::<T>(env)` derives the BEAM-side resource type identifier from `std::any::type_name::<T>()` — the fully-qualified Rust type path (e.g. `"my_crate::MyMap"`). This guarantees uniqueness within the NIF library, since BEAM's resource type table is per-library and rustc's `type_name` for distinct types produces distinct strings. If you need to register under a specific external name (e.g., for backward compatibility with a pre-existing resource type identifier), use `register_resource_type_named::<T>(env, name)`.
+The BEAM-side resource type identifier is derived from `std::any::type_name::<T>()` — the fully-qualified Rust type path (e.g. `"my_crate::MyMap"`) — plus a per-build ABI suffix. The type path guarantees uniqueness within the NIF library (BEAM's resource type table is per-library and rustc's `type_name` for distinct types produces distinct strings); the ABI suffix keeps a different build from taking the type over on upgrade. To opt a type into cross-build takeover under a stable name, tag it: `resources = [MyMap: "v1"]`. For dynamic registration outside the list, call `otter::resource::register::<T>(env, ResourceFlags::CREATE)` (or `register_tagged`) inside `load`/`upgrade`.
 
 ### 3. Create an instance
 
 ```rust
 #[otter::nif]
-fn new(_env: Env) -> ResourceArc<MyMap> {
-    ResourceArc::from(MyMap {
+fn new(env: Env) -> ResourceArc<MyMap> {
+    env.make_resource(MyMap {
         data: Mutex::new(HashMap::new()),
     })
 }
@@ -66,7 +53,7 @@ fn new(_env: Env) -> ResourceArc<MyMap> {
 
 What happens here:
 
-1. `ResourceArc::from(val)` calls `enif_alloc_resource` — the BEAM allocates a block of memory and sets its reference count to 1.
+1. `env.make_resource(val)` looks `MyMap` up in the registry and calls `enif_alloc_resource` — the BEAM allocates a block of memory and sets its reference count to 1.
 2. Rust writes `val` into that block via `ptr::write`.
 3. The NIF returns a `ResourceArc`, which the `#[otter::nif]` macro encodes by calling `enif_make_resource` — this creates an Erlang term (an opaque reference) that holds a second reference to the same block.
 4. The `ResourceArc` is then dropped at the end of the NIF call, decrementing the count back to 1. Now only the Erlang term keeps the allocation alive.
@@ -122,10 +109,6 @@ When the last Erlang reference to the resource is garbage collected, the BEAM ca
 
 ```rust
 impl Resource for MyMap {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MY_MAP_TYPE
-    }
-
     fn destructor(self, _env: Env<'_>) {
         // self is moved here — Rust drops it when this function returns
     }

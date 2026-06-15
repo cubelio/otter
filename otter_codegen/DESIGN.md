@@ -152,21 +152,26 @@ otter::init!("my_module", [
     add,
     subtract,
     lookup,
-], load = on_load);
+], resources = [MyResource], load = on_load);
 ```
 
-**The NIF list is explicit.** The user lists every NIF. This is consistent with how Erlang itself declares NIFs and makes the registration visible and auditable.
+**The NIF list is explicit.** The user lists every NIF. This is consistent with how Erlang itself declares NIFs and makes the registration visible and auditable. The remaining arguments are order-independent keyword entries: `resources = [...]`, `load`, `upgrade`, `unload`.
 
 **Generated entry point:** `extern "C" fn nif_init() -> *const ErlNifEntry`
 (Unix only — otter is Unix-only at present; see the core `DESIGN.md`).
 `nif_init` first calls `otter::init()` to populate the `enif_*` function
 pointers via `dlsym`, then builds and leaks the `ErlNifEntry`.
 
-The generated load callback (emitted only when `load = ...` is given) does one
-thing: it calls the user's `load` callback. It receives `(Env, TypedTerm)` — the env
-and the `load_info` term passed by `erlang:load_nif/2`. Resource types are
-**not** registered automatically; the user does that explicitly inside their
-`load` callback (see below).
+**`load`/`upgrade`/`unload` are always generated** (non-`NULL`), so every otter
+module is hot-upgradeable. Each `load`/`upgrade` wrapper installs otter-owned
+`PrivData`, registers the listed `resources` (`CREATE` in load,
+`CREATE | TAKEOVER` in upgrade), then dispatches the optional user callback —
+all under one `catch_unwind`. Any veto (user `false`, a `load_info` decode
+failure, or a panic) frees the `PrivData` and NULLs the slot, returning a
+distinct `LOAD_FAILED_*` code. `unload` dispatches the optional user callback
+(which cannot veto; a panic is absorbed) and frees the `PrivData`. The user
+`load`/`upgrade` fns receive `(Env, Term)` — the env and the `load_info` term
+from `erlang:load_nif/2` — and return `bool`; `unload` receives `(Env)`.
 
 ---
 
@@ -174,15 +179,17 @@ and the `load_info` term passed by `erlang:load_nif/2`. Resource types are
 
 Applied to `impl Resource for T`. Currently a pass-through that validates the impl block. Reserved for future use (e.g. derive-style code generation for resource callbacks).
 
-**Registration is not automatic.** The user explicitly registers each resource
-type in their `init!` load callback, by calling the free function
-`otter::resource::register_resource_type::<T>(env)`. The identifier is derived
-from `std::any::type_name::<T>()`, or pass an explicit string via
-`register_resource_type_named::<T>(env, name)`:
+**Registration is list-driven.** The user lists each resource type in
+`init!`'s `resources = [...]`, and the generated load/upgrade scaffolding
+registers them (see `otter::init!` above). A bare entry `MyResource` registers
+under an ABI-suffixed name; `MyResource: "v1"` registers under a stable tagged
+name (opting into cross-build takeover). The underlying primitives,
+`otter::resource::register::<T>(env, flags)` and `register_tagged`, remain
+callable by hand inside a `load`/`upgrade` callback for dynamic cases:
 
 ```rust
 fn on_load(env: Env<'_>, _load_info: Term<'_>) -> bool {
-    otter::resource::register_resource_type::<MyResource>(env);
+    otter::resource::register::<MyResource>(env, ResourceFlags::CREATE);
     true
 }
 ```

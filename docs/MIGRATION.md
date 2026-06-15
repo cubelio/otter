@@ -308,35 +308,24 @@ rustler::init!("my_module");
 
 **Otter:**
 ```rust
-use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
-use std::sync::OnceLock;
+use otter::resource::{Resource, ResourceArc};
 
 struct MyResource { /* ... */ }
 
-static MY_RESOURCE_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
+impl Resource for MyResource {}
 
-impl Resource for MyResource {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MY_RESOURCE_TYPE
-    }
-}
-
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::resource::register_resource_type::<MyResource>(env);
-    true
-}
-
-otter::init!("my_module", [create, use_it], load = on_load);
+otter::init!("my_module", [create, use_it],
+    resources = [MyResource]);
 ```
 
-The `OnceLock<ResourceTypeHandle>` static is the **type registration** — one per type, not per instance. Every `ResourceArc::from(MyResource { ... })` allocates a new instance on the BEAM heap with its own refcount.
+Listing a type in `resources = [...]` **is** the registration — one per type, not per instance — and otter registers it in the generated load and upgrade callbacks. Every `env.make_resource(MyResource { ... })` then allocates a new instance on the BEAM heap with its own refcount.
 
 Creating and receiving resources:
 ```rust
 // Create — returns opaque reference to Erlang
 #[otter::nif]
 fn create(env: Env) -> ResourceArc<MyResource> {
-    ResourceArc::from(MyResource { /* ... */ })
+    env.make_resource(MyResource { /* ... */ })
 }
 
 // Receive — Decoder extracts ResourceArc from reference term
@@ -351,10 +340,6 @@ fn use_it(_env: Env, res: ResourceArc<MyResource>) -> Atom {
 Destructors and monitors:
 ```rust
 impl Resource for MyResource {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MY_RESOURCE_TYPE
-    }
-
     fn destructor(self, _env: Env<'_>) {
         // all references gone — clean up
     }
@@ -492,7 +477,7 @@ otter = { git = "https://github.com/cubelio/otter.git" }
 5. Replace `rustler::Error` returns with `Result<T, Raised>`; raise via `env.raise_exception(reason)` / `env.make_badarg()`
 6. Replace `atoms! {}` blocks with `declare_atoms!` / `init_atoms!` / `atom!`. Reserve `Atom::intern(env, "name")` for runtime strings — and never call it on untrusted input ([Atom-table safety](USAGE.md#atom-table-safety))
 7. Replace `Vec<T>` list handling with `list.iter()` iterator
-8. Replace `resource!` macro with `OnceLock<ResourceTypeHandle>` + `Resource` trait impl + `register_resource_type` in load callback
+8. Replace `resource!` macro with a `Resource` trait impl + listing the type in `init!`'s `resources = [...]`; switch `ResourceArc::from(val)` to `env.make_resource(val)`
 9. Replace `OwnedEnv::send_and_clear` with `OwnedEnv::send`
 10. Update `Cargo.toml`: replace `rustler` dependency with `otter`
 11. Update build config: replace Mix/rustler config with `rebar.config` + `rebar3_otter`

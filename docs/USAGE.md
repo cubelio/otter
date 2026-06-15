@@ -154,19 +154,25 @@ Registers all NIFs with the BEAM.
 otter::init!("my_module", [add, subtract, hello]);
 ```
 
-With an optional load callback:
+With optional resource types and lifecycle callbacks (all keyword arguments
+after the NIF list are order-independent):
 
 ```rust
 fn on_load(env: Env, _load_info: Term) -> bool {
     otter::init_atoms!(env);  // initialize pre-declared atoms
-    otter::resource::register_resource_type::<MyResource>(env);
     true
 }
 
-otter::init!("my_module", [add, subtract], load = on_load);
+otter::init!("my_module", [add, subtract],
+    resources = [MyResource],   // registered automatically; see "Resources"
+    load = on_load);            // also: upgrade = f, unload = f
 ```
 
-The load callback receives `Env` (with `EnvKind::Init`) and the load info term. The second parameter can be any type that implements `Decoder` — `Term<'a>` is the zero-cost choice when you don't inspect the value, `TypedTerm<'a>` adds an `enif_term_type` call, and a concrete type (e.g. `Integer<'a>`) lets you reject mismatched `LoadInfo` at the type level. Return `true` for success, `false` to abort loading. Panics are caught and treated as failure.
+`load` and `upgrade` are `fn(Env, Term) -> bool`; `unload` is `fn(Env)`. otter
+always generates the `load`/`upgrade`/`unload` NIF callbacks (even with none of
+these arguments), so every otter module is hot-upgradeable.
+
+The load callback receives `Env` (with `EnvKind::Load`) and the load info term. The second parameter can be any type that implements `Decoder` — `Term<'a>` is the zero-cost choice when you don't inspect the value, `TypedTerm<'a>` adds an `enif_term_type` call, and a concrete type (e.g. `Integer<'a>`) lets you reject mismatched `LoadInfo` at the type level. Return `true` for success, `false` to abort loading. Panics are caught and treated as failure.
 
 **Load failure return codes.** When the load callback returns non-zero, BEAM aborts the library load and `erlang:load_nif(Path, LoadInfo)` returns `{error, {load_failed, "Library load-call unsuccessful (N)."}}`. The integer `N` carries the cause:
 
@@ -677,48 +683,48 @@ To call a `raw`-surface enif function that may raise and handle it the same way,
 
 Resources let you own Rust data from the BEAM side. The BEAM manages the lifetime via reference counting — when no Erlang term references the resource, the destructor runs.
 
-> **Hot upgrade caveat.** A resource's Rust payload is not assumed to survive a code upgrade across non-identical builds. Outside the `raw` feature, otter never assumes two builds share an allocator or a datatype layout — see `docs/UPGRADE.md` and `otter/DESIGN.md` "Core safety invariant".
->
-> **Planned change (`audit-02`).** The `static OnceLock<ResourceTypeHandle>` storage shown below is being replaced by a per-instance registry inside otter-owned `priv_data`, and resource creation will take an env (`env.make_resource(val)`). The examples here reflect the current API; the upgrade-safe design is in `docs/UPGRADE.md` §4 and §6.
+> **Hot upgrade caveat.** A resource's Rust payload is not assumed to survive a code upgrade across non-identical builds. Outside the `raw` feature, otter never assumes two builds share an allocator or a datatype layout — see `docs/UPGRADE.md` and `otter/DESIGN.md` "Core safety invariant". By default a resource type's BEAM-side name carries a hash of this build's binary, so a different build does *not* take over its resources; opt a type into cross-build takeover with `resources = [MyState: "v1"]` (a promise that its layout is stable).
 
 ### Defining a resource
 
 ```rust
-use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
-use std::sync::OnceLock;
+use otter::resource::{Resource, ResourceArc};
 
 struct MyState {
     counter: std::sync::atomic::AtomicU64,
 }
 
-static MY_STATE_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
-
-impl Resource for MyState {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MY_STATE_TYPE
-    }
-}
+impl Resource for MyState {}
 ```
+
+The `Resource` trait has no required methods — `destructor`, `down`, and `stop`
+are all optional (see below).
 
 ### Registering
 
-Registration must happen in the load callback:
+List resource types in `init!`; otter registers them in the generated load and
+upgrade callbacks:
 
 ```rust
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::resource::register_resource_type::<MyState>(env);
-    true
-}
-
-otter::init!("my_module", [create, increment, read], load = on_load);
+otter::init!("my_module", [create, increment, read],
+    resources = [MyState],
+    load = on_load);
 ```
 
+The registered type pointer lives in the library's private data, keyed by
+`TypeId`. To opt a type into cross-build hot-upgrade takeover, give it a stable
+tag: `resources = [MyState: "v1"]`. For dynamic cases you can still register
+by hand inside `load`/`upgrade` with
+`otter::resource::register::<MyState>(env, ResourceFlags::CREATE)`.
+
 ### Creating and using
+
+Construction takes the env, which looks the type up in the registry:
 
 ```rust
 #[otter::nif]
 fn create(env: Env) -> ResourceArc<MyState> {
-    ResourceArc::from(MyState {
+    env.make_resource(MyState {
         counter: std::sync::atomic::AtomicU64::new(0),
     })
 }
@@ -738,14 +744,24 @@ fn read<'a>(env: Env<'a>, state: ResourceArc<MyState>) -> Integer<'a> {
 
 `ResourceArc<T>` implements `Deref<Target=T>`, `Encoder`, `Decoder`, `Clone`, and `Drop`. It is `Send + Sync`.
 
+To create a resource off a NIF thread (e.g. inside an `OwnedEnv` worker, where
+`enif_priv_data` is unavailable), capture a `Send` handle from a module-bound
+env first, then use it on the worker thread:
+
+```rust
+let handle = env.resource_handle::<MyState>();   // Send + Sync
+std::thread::spawn(move || {
+    let arc = handle.make(MyState {
+        counter: std::sync::atomic::AtomicU64::new(0),
+    });
+    // ...
+});
+```
+
 ### Destructors and monitors
 
 ```rust
 impl Resource for MyState {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MY_STATE_TYPE
-    }
-
     fn destructor(self, _env: Env<'_>) {
         // cleanup when reference count hits zero
     }
