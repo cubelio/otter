@@ -507,7 +507,8 @@ impl<'a> Env<'a> {
     pub fn raise_exception<T>(self, reason: impl AsNifTerm<'a>) -> Result<T, Raised<'a>> {
         // Raising is only meaningful on a process-bound call env, whose pending
         // exception the BEAM delivers when the NIF returns. On any other env
-        // (OwnedEnv, a resource callback, load/upgrade/unload) the underlying
+        // (a process-independent env, a resource callback, load/upgrade/unload)
+        // the underlying
         // enif_raise_exception is a benign no-op — it writes a throwaway or
         // never-consulted exception slot (verified against erts/erl_nif.c) — so
         // the call silently accomplishes nothing. Catch that misuse in dev

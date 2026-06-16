@@ -1,10 +1,11 @@
-//! `Env<'a>` and `OwnedEnv`.
+//! `Env<'a>`, `OwnedTermBuilder`, and `OwnedTerm`.
 
+use std::cell::Cell;
 use std::marker::PhantomData;
 
-use crate::sys::NifEnv;
-use crate::term::TypedTerm;
-use crate::types::{LocalPid, LocalPort};
+use crate::sys::{NifEnv, NifTerm};
+use crate::term::Term;
+use crate::types::LocalPid;
 
 // ---------------------------------------------------------------------------
 // EnvKind
@@ -90,110 +91,94 @@ impl<'a> Env<'a> {
 // as an additional impl block on Env<'a>.
 
 // ---------------------------------------------------------------------------
-// OwnedEnv
+// OwnedTermBuilder / OwnedTerm
 // ---------------------------------------------------------------------------
 
-/// A process-independent NIF environment for constructing and sending terms
-/// from outside a NIF call (e.g. from a spawned OS thread).
+/// Builds a single message term in a process-independent environment, then
+/// hands its heap to a process via the `enif_send` steal.
 ///
-/// Use [`send`] to build a term and dispatch it to an Erlang process in one
-/// step. The env is cleared automatically after each send, ready for reuse.
-///
-/// [`send`]: OwnedEnv::send
-pub struct OwnedEnv {
+/// Terms are built directly on the builder and held as ordinary [`Term`]s.
+/// They borrow the builder, so they cannot outlive it. Choose the message with
+/// [`set`](Self::set), then [`build`](Self::build) consumes the builder into an
+/// [`OwnedTerm`] whose heap is stolen on send — O(1), single-use.
+pub struct OwnedTermBuilder {
     env: *mut NifEnv,
+    // Borrowing `&self._anchor` gives `env()` its lifetime.
+    _anchor: (),
+    msg: Cell<NifTerm>,
 }
 
-// SAFETY: The BEAM's process-independent envs are designed for cross-thread
-// use. OwnedEnv may be created on one thread and used on another.
-unsafe impl Send for OwnedEnv {}
+/// A message term that owns its process-independent environment, ready to send.
+/// Produced by [`OwnedTermBuilder::build`].
+pub struct OwnedTerm {
+    env: *mut NifEnv,
+    msg: NifTerm,
+}
 
-impl OwnedEnv {
-    /// Allocate a new process-independent environment.
-    pub fn new() -> OwnedEnv {
+// SAFETY: the BEAM's process-independent envs are designed for cross-thread
+// use. Either may be created on one thread and sent from another.
+unsafe impl Send for OwnedTermBuilder {}
+unsafe impl Send for OwnedTerm {}
+
+impl OwnedTermBuilder {
+    /// Allocate a builder over a fresh process-independent environment.
+    pub fn new() -> OwnedTermBuilder {
         let env = unsafe { crate::enif::alloc_env() };
         assert!(!env.is_null(), "enif_alloc_env returned null");
-        OwnedEnv { env }
+        OwnedTermBuilder { env, _anchor: (), msg: Cell::new(crate::enif::THE_NON_VALUE) }
     }
 
-    /// Build a term and send it to `pid`.
-    ///
-    /// The closure receives a temporary [`Env`] backed by this environment
-    /// and must return the term to send. After the closure returns the term
-    /// is dispatched to `pid` and the environment is cleared.
-    ///
-    /// Returns `true` if the send succeeded (the target process was alive).
-    ///
-    /// After `enif_send` returns, this environment is cleared regardless of
-    /// whether the send succeeded — the BEAM invalidates `msg_env` on every
-    /// call.
-    ///
-    /// # Note
-    ///
-    /// When calling from outside a NIF call (e.g. an OS thread), `enif_send`
-    /// is called with a null caller environment, which is the correct usage
-    /// for non-scheduler threads.
-    pub fn send<F>(&mut self, pid: &LocalPid, f: F) -> bool
-    where
-        F: FnOnce(Env<'_>) -> TypedTerm<'_>,
-    {
-        let marker = ();
-        // SAFETY: self.env is valid; marker ties the lifetime to this frame.
-        let env = unsafe { Env::new(&marker, self.env, EnvKind::ProcessIndependent) };
-        let term = f(env).as_raw();
-        // null caller_env = sending from outside a NIF call / scheduler thread.
-        let ok = unsafe {
-            crate::enif::send(std::ptr::null_mut(), &pid.pid, self.env, term) != 0
-        };
-        // enif_send always invalidates msg_env; clear our state to match.
-        self.clear();
-        ok
+    /// Borrow the environment to build terms. The returned terms borrow the
+    /// builder and cannot outlive it.
+    pub fn env<'a>(&'a self) -> Env<'a> {
+        // SAFETY: self.env is valid for 'a; &self._anchor ties 'a to this borrow.
+        unsafe { Env::new(&self._anchor, self.env, EnvKind::ProcessIndependent) }
     }
 
-    /// Build a port command message and send it to `port`.
-    ///
-    /// Like [`send`], but issues `enif_port_command`. The closure receives a
-    /// temporary [`Env`] backed by this environment and returns the command
-    /// term; afterwards the environment is cleared. Returns `true` if the
-    /// command was accepted.
-    ///
-    /// [`send`]: OwnedEnv::send
-    pub fn port_command<F>(&mut self, port: &LocalPort, f: F) -> bool
-    where
-        F: FnOnce(Env<'_>) -> TypedTerm<'_>,
-    {
-        let marker = ();
-        // SAFETY: self.env is valid; marker ties the lifetime to this frame.
-        let env = unsafe { Env::new(&marker, self.env, EnvKind::ProcessIndependent) };
-        let term = f(env).as_raw();
-        // null caller_env = issuing the command from outside a NIF call.
-        let ok = unsafe {
-            crate::enif::port_command(std::ptr::null_mut(), &port.port, self.env, term) != 0
-        };
-        // port_command invalidates msg_env like send; clear our state to match.
-        self.clear();
-        ok
+    /// Choose `t` as the message to send. `t` must have been built in this
+    /// builder's environment.
+    pub fn set<'a>(&'a self, t: Term<'a>) {
+        assert!(t.env.as_ptr() == self.env, "term was built in a different env");
+        self.msg.set(t.term);
     }
 
-    /// Clear the environment, invalidating all terms built in it.
+    /// Consume the builder into a sendable [`OwnedTerm`].
     ///
-    /// After clearing the env can be reused to build new terms. Normally
-    /// you do not need to call this directly — [`send`] clears automatically.
-    ///
-    /// [`send`]: OwnedEnv::send
-    pub fn clear(&mut self) {
-        unsafe { crate::enif::clear_env(self.env) };
+    /// Panics if no term was [`set`](Self::set).
+    pub fn build(self) -> OwnedTerm {
+        let msg = self.msg.get();
+        assert!(msg != crate::enif::THE_NON_VALUE, "build() called without set()");
+        let env = self.env;
+        // Transfer env ownership to OwnedTerm; skip OwnedTermBuilder::drop.
+        std::mem::forget(self);
+        OwnedTerm { env, msg }
     }
 }
 
-impl Default for OwnedEnv {
+impl Default for OwnedTermBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Drop for OwnedEnv {
+impl Drop for OwnedTermBuilder {
     fn drop(&mut self) {
         unsafe { crate::enif::free_env(self.env) };
     }
+}
+
+impl Drop for OwnedTerm {
+    fn drop(&mut self) {
+        unsafe { crate::enif::free_env(self.env) };
+    }
+}
+
+/// Send `owned_term` to `pid`, stealing its environment's heap into the
+/// message. Returns `true` if `pid` was alive; the environment is freed either
+/// way.
+pub fn send_owned(pid: &LocalPid, owned_term: OwnedTerm) -> bool {
+    // null caller_env = sending from outside a NIF call / scheduler thread.
+    unsafe { crate::enif::send(std::ptr::null_mut(), &pid.pid, owned_term.env, owned_term.msg) != 0 }
+    // owned_term drops -> free_env: empty after a successful steal,
+    // term-holding after a failed send.
 }

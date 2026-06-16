@@ -35,7 +35,7 @@ otter/src/
 ├── sys.rs      Raw C ABI types mirroring erl_nif.h
 ├── enif.rs     Complete 1:1 enif_* shims + dlsym loading. The sole funcs()/unsafe
 │               consumer; pub under the `raw` feature, else pub(crate).
-├── env.rs      Env<'a>, EnvKind, OwnedEnv
+├── env.rs      Env<'a>, EnvKind, OwnedTermBuilder, OwnedTerm
 ├── term.rs     Term, TypedTerm, Raised, and the general-purpose Env methods
 ├── codec.rs    Encoder + Decoder traits, CodecError
 ├── types/      One file per concrete term type — its methods plus the Env methods
@@ -133,26 +133,27 @@ pub enum EnvKind {
 
 `EnvKind` and `Env.kind` are `pub` because generated code constructs `ProcessBound`, `Load`, `Upgrade`, and `Unload` envs. `register` asserts `env.kind` is `Load` or `Upgrade` at runtime.
 
-### `OwnedEnv`
+### `OwnedTermBuilder` / `OwnedTerm`
 
-A process-independent environment for building and sending terms from outside a NIF call (e.g. from a spawned OS thread). Simple struct with one field:
+Building and sending a message from outside a NIF call (e.g. from a spawned OS thread), via the `enif_send` heap steal — O(1), single-use:
 
 ```rust
-pub struct OwnedEnv {
-    env: *mut NifEnv,
+pub struct OwnedTermBuilder { /* owns a process-independent env */ }
+pub struct OwnedTerm        { /* owns its env + the chosen message word */ }
+
+impl OwnedTermBuilder {
+    pub fn new() -> OwnedTermBuilder;
+    pub fn env(&self) -> Env<'_>;       // build terms on it; they borrow the builder
+    pub fn set(&self, t: Term<'_>);     // choose the message (must be built in this env)
+    pub fn build(self) -> OwnedTerm;    // consume the builder, taking ownership of its env
 }
 
-impl OwnedEnv {
-    pub fn new() -> OwnedEnv;
-    pub fn send<F>(&mut self, pid: &LocalPid, f: F) -> bool
-    where F: FnOnce(Env<'_>) -> TypedTerm<'_>;
-    pub fn port_command<F>(&mut self, port: &LocalPort, f: F) -> bool   // same closure shape
-    where F: FnOnce(Env<'_>) -> TypedTerm<'_>;
-    pub fn clear(&mut self);
-}
+pub fn send_owned(pid: &LocalPid, owned: OwnedTerm) -> bool;
 ```
 
-`send` is closure-based: the closure builds a term in a temporary env, sends it to `pid`, and clears automatically. Terms cannot escape the closure — the lifetime is tied to the closure's scope. `OwnedEnv` implements `Drop` (calls `enif_free_env`), `Default`, and is `Send`.
+Terms are built directly on the builder (`value.encode(b.env())`) and held as ordinary `Term`s — they borrow the builder, so they cannot outlive it. `set` records which term is the message (provenance-checked against the builder's env); `build` consumes the builder into an `OwnedTerm` whose heap is transplanted into the message on `send_owned`. Both types implement `Drop` (`enif_free_env`) and are `Send`; the builder also implements `Default`.
+
+A successful send *steals* the env's heap (`enif_send` with a non-NULL `msg_env`), so the env is single-use: there is no reuse-and-clear, and no off-thread `port_command` (`enif_port_command` aborts the VM on a NULL caller env).
 
 ---
 
@@ -421,6 +422,6 @@ Requires a `ResourceArc<T>` — the BEAM ties I/O event lifecycle to resource ob
 - **Automatic NIF registration** — registration is explicit via `init!`.
 - **`NifUntaggedEnum`** — structural dispatch belongs in user code.
 - **Convenience wrappers** — no built-in `IoData`, no pre-assembled type hierarchies.
-- **Thread spawning** — not a core NIF concept. Use `OwnedEnv::send` for messaging from OS threads spawned via standard Rust threading.
+- **Thread spawning** — not a core NIF concept. Use `OwnedTermBuilder` for messaging from OS threads spawned via standard Rust threading.
 - **Raw memory allocation** (`enif_alloc`/`enif_free`) — use Rust's allocator for ordinary per-call work. Opting *all* allocations onto the BEAM allocator is available via `otter::enif_global_allocator!()` (the `EnifAlloc` `#[global_allocator]`, `src/alloc.rs`), so cross-build state is freeable through the one shared path; a per-state *scoped* allocator and the ABI fingerprint that complete the safe sandbox remain planned — see the core safety invariant and `docs/UPGRADE.md`.
 - **NIF threading primitives** (`enif_mutex_*`, `enif_cond_*`, etc.) — use `std::sync`.

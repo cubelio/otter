@@ -347,7 +347,7 @@ impl Resource for MyResource {
 
 ---
 
-## OwnedEnv / Message Passing
+## Message Passing
 
 **Rustler:**
 ```rust
@@ -364,22 +364,24 @@ std::thread::spawn(move || {
 
 **Otter:**
 ```rust
-use otter::env::OwnedEnv;
+use otter::codec::Encoder;
+use otter::env::{send_owned, OwnedTermBuilder};
 
 let pid = LocalPid::self_(env);
 std::thread::spawn(move || {
-    let mut owned = OwnedEnv::new();
+    let builder = OwnedTermBuilder::new();
+    let benv = builder.env();
     // `result` is declared in init!'s `atoms = [...]` list.
-    owned.send(&pid, |env| {
-        Tuple::from_terms(env, [
-            otter::atom![result].into(),
-            Integer::from_i64(env, 42).into(),
-        ]).into()
-    });
+    let msg = Tuple::from_terms(benv, [
+        otter::atom![result].into(),
+        Integer::from_i64(benv, 42).into(),
+    ]).encode(benv);
+    builder.set(msg);
+    send_owned(&pid, builder.build());
 });
 ```
 
-Same pattern. The closure gets a temporary `Env`; terms built inside cannot escape. Environment is cleared after send. Call `owned.clear()` to reuse for multiple sends.
+Otter splits rustler's `send_and_clear` closure into explicit steps: build terms on `builder.env()` (they borrow the builder), `set` the message, `build` into an `OwnedTerm`, then `send_owned`. The send *steals* the builder's heap, so the builder is single-use — rustler's `clear`-and-reuse and `SavedTerm` have no otter equivalent.
 
 ---
 
@@ -473,6 +475,6 @@ otter = { git = "https://github.com/cubelio/otter.git" }
 6. Replace `atoms! {}` blocks with `init!`'s `atoms = [...]` list + `atom!`. Reserve `Atom::intern(env, "name")` for runtime strings — and never call it on untrusted input ([Atom-table safety](USAGE.md#atom-table-safety))
 7. Replace `Vec<T>` list handling with `list.iter()` iterator
 8. Replace `resource!` macro with a `Resource` trait impl + listing the type in `init!`'s `resources = [...]`; switch `ResourceArc::from(val)` to `env.make_resource(val)`
-9. Replace `OwnedEnv::send_and_clear` with `OwnedEnv::send`
+9. Replace `OwnedEnv::send_and_clear` (and `OwnedEnv::run`/`SavedTerm`) with `OwnedTermBuilder` + `send_owned`
 10. Update `Cargo.toml`: replace `rustler` dependency with `otter`
 11. Update build config: replace Mix/rustler config with `rebar.config` + `rebar3_otter`

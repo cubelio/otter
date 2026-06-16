@@ -24,7 +24,8 @@ use crate::types::LocalPid;
 /// Holds the BEAM-side resource-type pointer so a resource can be created
 /// ([`make`](Self::make)) without consulting `enif_priv_data` — capture it
 /// inside a module-bound NIF call, then move it to an OS thread or
-/// [`OwnedEnv`](crate::env::OwnedEnv) where no module-bound env is available.
+/// [`OwnedTermBuilder`](crate::env::OwnedTermBuilder) where no module-bound
+/// env is available.
 pub struct ResourceTypeHandle<T: Resource> {
     ptr: *mut NifResourceType,
     _t:  PhantomData<fn() -> T>,
@@ -65,7 +66,8 @@ impl<'a> Env<'a> {
     /// Looks `T` up in this library's registry (via `enif_priv_data`), so the
     /// env must be module-bound (a normal NIF call, or a load/upgrade env).
     /// Panics if `T` was never registered. Capture the returned handle before
-    /// moving work to a thread or `OwnedEnv` that has no module-bound env.
+    /// moving work to a thread or `OwnedTermBuilder` that has no module-bound
+    /// env.
     pub fn resource_handle<T: Resource>(self) -> ResourceTypeHandle<T> {
         let ptr = registry(self)
             .and_then(|r| r.get::<T>())

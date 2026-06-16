@@ -577,7 +577,7 @@ A few rules follow from what the macro expands to:
 
 - **Duplicates.** Two entries with the same identifier are a compile error. Two different identifiers mapped to the same string (`ok` and `okay = "ok"`) are fine — both intern the same BEAM atom and compare equal.
 - **Atom name length.** Erlang atoms cap at 255 characters; over-length names fail at load, not mid-NIF.
-- **Thread- and env-safe.** `atom![…]` is safe from any scheduler thread, including dirty NIFs. The returned `Atom` is valid in any environment, including an `OwnedEnv`.
+- **Thread- and env-safe.** `atom![…]` is safe from any scheduler thread, including dirty NIFs. The returned `Atom` is valid in any environment, including a process-independent one (e.g. an `OwnedTermBuilder`'s).
 
 ---
 
@@ -725,7 +725,7 @@ fn read<'a>(env: Env<'a>, state: ResourceArc<MyState>) -> Integer<'a> {
 
 `ResourceArc<T>` implements `Deref<Target=T>`, `Encoder`, `Decoder`, `Clone`, and `Drop`. It is `Send + Sync`.
 
-To create a resource off a NIF thread (e.g. inside an `OwnedEnv` worker, where
+To create a resource off a NIF thread (e.g. inside an `OwnedTermBuilder` worker, where
 `enif_priv_data` is unavailable), capture a `Send` handle from a module-bound
 env first, then use it on the worker thread:
 
@@ -764,34 +764,32 @@ let success: bool = resource_arc.demonitor(Some(env), &monitor);
 
 ---
 
-## OwnedEnv and Message Passing
+## OwnedTermBuilder and Message Passing
 
-`OwnedEnv` lets you build terms and send messages from outside a NIF call — typically from a spawned OS thread.
+`OwnedTermBuilder` lets you build a term and send it to a process from outside a NIF call — typically from a spawned OS thread. Build terms on its environment, choose one as the message with `set`, then `build` it into an `OwnedTerm` and hand that to `send_owned`.
 
 ```rust
 use std::thread;
+use otter::codec::Encoder;                       // for `.encode(...)`
+use otter::env::{send_owned, OwnedTermBuilder};
 
 #[otter::nif]
 fn start_worker(env: Env) -> Atom {
     let pid = LocalPid::self_(env);
     thread::spawn(move || {
-        let mut owned = OwnedEnv::new();
+        let builder = OwnedTermBuilder::new();
         let result = do_heavy_work();
-        owned.send(&pid, |env| {
-            Integer::from_i64(env, result).into()
-        });
+        let env = builder.env();
+        builder.set(Integer::from_i64(env, result).encode(env));
+        send_owned(&pid, builder.build());
     });
     otter::atom![ok]  // assuming `ok` is pre-declared
 }
 ```
 
-The closure passed to `send` receives a temporary `Env`. Terms built inside cannot escape — the lifetime is bound to the closure. After `send`, the environment is automatically cleared.
+Terms are built on `builder.env()` and borrow the builder, so they cannot outlive it. `set` records the message — it must have been built in this builder's env (checked) — and `build` consumes the builder into a sendable `OwnedTerm`. A successful `send_owned` *steals* the builder's heap into the message, so the builder is single-use: there is no reuse-and-clear, and no off-thread `port_command` (`enif_port_command` aborts the VM when its caller env is NULL, and a non-scheduler thread has no process env to supply).
 
-Call `owned.clear()` to reuse the environment for multiple sends without reallocating.
-
-`OwnedEnv::port_command` is the port equivalent of `send`, with the same closure shape.
-
-**From inside a NIF**, you already hold the process env, so send a term directly — no `OwnedEnv` needed:
+**From inside a NIF**, you already hold the process env, so send a term directly — no `OwnedTermBuilder` needed:
 
 ```rust
 #[otter::nif]

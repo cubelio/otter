@@ -270,8 +270,8 @@ the `*mut NifResourceType` to allocate or decode a resource goes through
 
 - **In a NIF or callback**: always have one. Construction becomes `env.make_resource(val)`
   (replacing the env-less `ResourceArc::from(val)`); decoding already holds an env.
-- **Off-thread / `OwnedEnv`**: a spawned thread has no module-bound env, and
-  `enif_priv_data` does not work on an `OwnedEnv`. So a worker captures the handle
+- **Off-thread / `OwnedTermBuilder`**: a spawned thread has no module-bound env, and
+  `enif_priv_data` does not work on a process-independent env. So a worker captures the handle
   *before* spawning — `let h = env.resource_handle::<T>();` — and creates with `h` on
   the thread. The capability is preserved; it is just made explicit, consistent with
   otter's "capture what you need, no ambient magic" stance.

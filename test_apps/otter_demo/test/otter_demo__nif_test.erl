@@ -171,7 +171,7 @@ smoke_test_() ->
     %% Dirty scheduler
     ?_assertEqual(dirty_cpu, otter_demo__nif:dirty_cpu_thread_type()),
 
-    %% OwnedEnv — send + receive must run in the same process
+    %% OwnedTermBuilder — send + receive must run in the same process
     ?_test(begin
       ?assertEqual(ok, otter_demo__nif:send_from_thread()),
       receive

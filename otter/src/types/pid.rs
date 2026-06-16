@@ -122,8 +122,9 @@ impl<'a> Env<'a> {
     /// The pid of the calling process (`enif_self`).
     ///
     /// Panics if called on an env that is not process-bound (a resource
-    /// callback, an `OwnedEnv`, the load env) — `enif_self` returns NULL there
-    /// and there is no calling process, so there is no self pid to return.
+    /// callback, a process-independent env, the load env) — `enif_self` returns
+    /// NULL there and there is no calling process, so there is no self pid to
+    /// return.
     pub fn self_pid(self) -> LocalPid {
         let mut out = NifPid { pid: 0 };
         // enif_self returns NULL outside a process-bound env; producing a
@@ -166,7 +167,8 @@ impl<'a> Env<'a> {
     ///
     /// The message is copied into the target's mailbox. Returns `true` if `to`
     /// was alive. This is the in-NIF send; from a non-scheduler thread build
-    /// the message in an `OwnedEnv` and use `OwnedEnv::send` instead.
+    /// the message with an [`OwnedTermBuilder`](crate::env::OwnedTermBuilder)
+    /// and use [`send_owned`](crate::env::send_owned) instead.
     pub fn send(self, to: &LocalPid, msg: impl AsNifTerm<'a>) -> bool {
         // null msg_env: msg is a term in this (caller) env and is copied.
         unsafe {

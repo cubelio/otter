@@ -143,8 +143,9 @@ impl<'a> Env<'a> {
     /// is the in-NIF form, mirroring [`Env::send`]: `enif_port_command`
     /// requires its `msg_env` to be process-independent or NULL, and the call
     /// env is neither, so NULL (copy-from-caller) is the only correct choice.
-    /// From a non-scheduler thread, build the command in an `OwnedEnv` and use
-    /// [`OwnedEnv::port_command`](crate::env::OwnedEnv::port_command) instead.
+    /// There is no off-thread form: `enif_port_command` aborts the VM when its
+    /// caller env is NULL, and a non-scheduler thread has no process env to
+    /// supply.
     ///
     /// Returns `true` if the command was accepted.
     pub fn port_command(self, port: &LocalPort, msg: impl AsNifTerm<'a>) -> bool {

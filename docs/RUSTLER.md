@@ -18,9 +18,9 @@ Repository: https://github.com/rusterlium/rustler
 
 Rustler's core insight — using `PhantomData<*mut &'a u8>` to make `Env<'a>` invariant over `'a`, synthesizing a unique per-call lifetime from a stack borrow — is correct and elegant. Otter preserves this mechanism unchanged. It is the right way to prevent `TypedTerm` values from escaping a NIF call at compile time with zero runtime cost.
 
-### The `OwnedEnv` / `SavedTerm` pattern
+### The `OwnedEnv` / `SavedTerm` pattern — *not* adopted
 
-Using `Arc<NIF_ENV>` and `Weak<NIF_ENV>` as a generation token to safely detect use-after-clear at runtime is a clean solution. Otter preserves this.
+Rustler uses `Arc<NIF_ENV>`/`Weak<NIF_ENV>` as a generation token to detect use-after-clear of a `SavedTerm` at runtime. It's a clean solution to a problem otter chose not to have. Otter replaces the reusable, stateful `OwnedEnv` (with `run`/`save`/`SavedTerm`) with a single-use `OwnedTermBuilder`: build terms on `builder.env()`, `set` the message, `build` into an `OwnedTerm`, `send_owned`. Because the builder is consumed on send and never reused, there is nothing to "save across a clear," so the generation token, `Arc`/`Weak`, and `SavedTerm` are all unnecessary. Cross-builder provenance is a single pointer compare in `set`, not a runtime generation check.
 
 ### The layered architecture
 

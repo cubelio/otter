@@ -4,7 +4,8 @@ use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use otter::env::{Env, OwnedEnv};
+use otter::codec::Encoder;
+use otter::env::{send_owned, Env, OwnedTermBuilder};
 use otter::resource::{Resource, ResourceArc};
 use otter::sys::NifSelectFlags;
 use otter::term::{Term, TypedTerm, Raised};
@@ -428,16 +429,16 @@ fn dirty_cpu_thread_type(_env: Env) -> Atom {
 }
 
 // --- send_from_thread/0 -------------------------------------------------
-// OwnedEnv: spawn a thread, build a term, send to calling process.
+// OwnedTermBuilder: spawn a thread, build a term, send to calling process.
 
 #[otter::nif]
 fn send_from_thread(env: Env) -> Atom {
     let pid = LocalPid::self_(env);
     std::thread::spawn(move || {
-        let mut owned = OwnedEnv::new();
-        owned.send(&pid, |_env| {
-            TypedTerm::Atom(otter::atom![from_thread])
-        });
+        let builder = OwnedTermBuilder::new();
+        let msg = otter::atom![from_thread].encode(builder.env());
+        builder.set(msg);
+        send_owned(&pid, builder.build());
     });
     otter::atom![ok]
 }
