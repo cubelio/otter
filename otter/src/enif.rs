@@ -24,6 +24,10 @@ use crate::sys::{
     NifTime, NifTimeUnit, NifUniqueInteger, SysIOVec,
 };
 
+/// The BEAM's non-value marker (`THE_NON_VALUE`). No valid term is ever `0`,
+/// so it doubles as an "absent term" sentinel.
+pub(crate) const THE_NON_VALUE: NifTerm = 0;
+
 // ---------------------------------------------------------------------------
 // Opaque types not defined in sys/mod.rs
 // ---------------------------------------------------------------------------
