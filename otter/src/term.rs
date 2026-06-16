@@ -595,7 +595,7 @@ impl<'a> Env<'a> {
     }
 
     /// Enable delayed halt: the VM waits for currently-running NIF calls to
-    /// return before halting. Must be called from the load callback. Returns
+    /// return before halting. Must be called from the load or upgrade callback. Returns
     /// `true` on success.
     ///
     /// `ERL_NIF_OPT_DELAY_HALT` is a boolean enable that takes no argument —
@@ -604,13 +604,13 @@ impl<'a> Env<'a> {
     /// Wraps `enif_set_option(ERL_NIF_OPT_DELAY_HALT)`.
     pub fn set_option_delay_halt(self) -> bool {
         assert!(
-            self.kind == EnvKind::Load,
-            "set_option_delay_halt must be called from the NIF load callback"
+            matches!(self.kind, EnvKind::Load | EnvKind::Upgrade),
+            "set_option_delay_halt must be called from the NIF load or upgrade callback"
         );
         unsafe { crate::enif::set_option_delay_halt(self.as_ptr()) == 0 }
     }
 
-    /// Set the on-halt callback. Must be called from the load callback.
+    /// Set the on-halt callback. Must be called from the load or upgrade callback.
     ///
     /// # Safety
     ///
@@ -622,13 +622,13 @@ impl<'a> Env<'a> {
         callback: unsafe extern "C" fn(*mut std::ffi::c_void),
     ) -> bool {
         assert!(
-            self.kind == EnvKind::Load,
-            "set_option_on_halt must be called from the NIF load callback"
+            matches!(self.kind, EnvKind::Load | EnvKind::Upgrade),
+            "set_option_on_halt must be called from the NIF load or upgrade callback"
         );
         unsafe { crate::enif::set_option_on_halt(self.as_ptr(), callback) == 0 }
     }
 
-    /// Set the on-unload-thread callback. Must be called from the load callback.
+    /// Set the on-unload-thread callback. Must be called from the load or upgrade callback.
     ///
     /// # Safety
     ///
@@ -640,8 +640,8 @@ impl<'a> Env<'a> {
         callback: unsafe extern "C" fn(*mut std::ffi::c_void),
     ) -> bool {
         assert!(
-            self.kind == EnvKind::Load,
-            "set_option_on_unload_thread must be called from the NIF load callback"
+            matches!(self.kind, EnvKind::Load | EnvKind::Upgrade),
+            "set_option_on_unload_thread must be called from the NIF load or upgrade callback"
         );
         unsafe { crate::enif::set_option_on_unload_thread(self.as_ptr(), callback) == 0 }
     }
