@@ -5,7 +5,6 @@ use std::marker::PhantomData;
 
 use crate::sys::{NifEnv, NifTerm};
 use crate::term::Term;
-use crate::types::LocalPid;
 
 // ---------------------------------------------------------------------------
 // EnvKind
@@ -111,8 +110,8 @@ pub struct OwnedTermBuilder {
 /// A message term that owns its process-independent environment, ready to send.
 /// Produced by [`OwnedTermBuilder::build`].
 pub struct OwnedTerm {
-    env: *mut NifEnv,
-    msg: NifTerm,
+    pub(crate) env: *mut NifEnv,
+    pub(crate) msg: NifTerm,
 }
 
 // SAFETY: the BEAM's process-independent envs are designed for cross-thread
@@ -171,14 +170,4 @@ impl Drop for OwnedTerm {
     fn drop(&mut self) {
         unsafe { crate::enif::free_env(self.env) };
     }
-}
-
-/// Send `owned_term` to `pid`, stealing its environment's heap into the
-/// message. Returns `true` if `pid` was alive; the environment is freed either
-/// way.
-pub fn send_owned(pid: &LocalPid, owned_term: OwnedTerm) -> bool {
-    // null caller_env = sending from outside a NIF call / scheduler thread.
-    unsafe { crate::enif::send(std::ptr::null_mut(), &pid.pid, owned_term.env, owned_term.msg) != 0 }
-    // owned_term drops -> free_env: empty after a successful steal,
-    // term-holding after a failed send.
 }

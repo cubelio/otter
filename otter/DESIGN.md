@@ -148,10 +148,12 @@ impl OwnedTermBuilder {
     pub fn build(self) -> OwnedTerm;    // consume the builder, taking ownership of its env
 }
 
-pub fn send_owned(pid: &LocalPid, owned: OwnedTerm) -> bool;
+// the message is delivered via a method on the recipient pid:
+//   pid.send_owned(owned)            // off-thread (NULL caller env)
+//   pid.send_owned_from(env, owned)  // in-NIF (caller env attributes the sender)
 ```
 
-Terms are built directly on the builder (`value.encode(b.env())`) and held as ordinary `Term`s — they borrow the builder, so they cannot outlive it. `set` records which term is the message (provenance-checked against the builder's env); `build` consumes the builder into an `OwnedTerm` whose heap is transplanted into the message on `send_owned`. Both types implement `Drop` (`enif_free_env`) and are `Send`; the builder also implements `Default`.
+Terms are built directly on the builder (`value.encode(b.env())`) and held as ordinary `Term`s — they borrow the builder, so they cannot outlive it. `set` records which term is the message (provenance-checked against the builder's env); `build` consumes the builder into an `OwnedTerm` whose heap is transplanted into the message when sent with [`LocalPid::send_owned`]. Both types implement `Drop` (`enif_free_env`) and are `Send`; the builder also implements `Default`.
 
 A successful send *steals* the env's heap (`enif_send` with a non-NULL `msg_env`), so the env is single-use: there is no reuse-and-clear, and no off-thread `port_command` (`enif_port_command` aborts the VM on a NULL caller env).
 
@@ -286,7 +288,9 @@ fn iter(self) -> MapIterator<'a>
 fn self_(env) -> Pid
 fn is_alive(self, env) -> bool
 fn whereis(env, name: Atom) -> Option<Pid>
-// (in-NIF send: env.send(to, msg) -> bool)
+// sends are methods on the recipient LocalPid:
+//   to.send(msg) / to.send_from(env, msg)            (copy)
+//   to.send_owned(owned) / to.send_owned_from(env, owned)  (steal)
 
 // Port
 fn whereis(env, name: Atom) -> Option<Port>

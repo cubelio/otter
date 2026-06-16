@@ -1,5 +1,5 @@
 use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
+use crate::env::{Env, OwnedTerm};
 use crate::sys::{NifPid, NifTerm};
 use crate::term::{Term, AsNifTerm};
 
@@ -53,6 +53,43 @@ impl LocalPid {
     /// Check if the process is alive (`enif_is_process_alive`).
     pub fn is_alive(self, env: Env<'_>) -> bool {
         env.is_process_alive(self.pid)
+    }
+
+    /// Copy `msg` into this process's mailbox from **outside** a NIF call —
+    /// e.g. a spawned OS thread (`enif_send` with a NULL caller env and NULL
+    /// `msg_env`). Returns `true` if the process was alive.
+    pub fn send<'a>(self, msg: impl AsNifTerm<'a>) -> bool {
+        unsafe {
+            crate::enif::send(std::ptr::null_mut(), &self.pid, std::ptr::null_mut(), msg.as_nif_term()) != 0
+        }
+    }
+
+    /// Copy `msg` into this process's mailbox from **inside** a NIF, attributing
+    /// the message to `env`'s process (`enif_send`, NULL `msg_env`). Returns
+    /// `true` if the process was alive.
+    pub fn send_from<'a>(self, env: Env<'a>, msg: impl AsNifTerm<'a>) -> bool {
+        unsafe {
+            crate::enif::send(env.as_ptr(), &self.pid, std::ptr::null_mut(), msg.as_nif_term()) != 0
+        }
+    }
+
+    /// Steal `owned`'s environment heap into this process's mailbox from
+    /// **outside** a NIF call (`enif_send` with a NULL caller env and a non-NULL
+    /// `msg_env`). The environment is freed afterwards. Returns `true` if the
+    /// process was alive.
+    pub fn send_owned(self, owned: OwnedTerm) -> bool {
+        unsafe { crate::enif::send(std::ptr::null_mut(), &self.pid, owned.env, owned.msg) != 0 }
+        // owned drops -> free_env: empty after a successful steal, term-holding after a failure.
+    }
+
+    /// Steal `owned`'s environment heap into this process's mailbox from
+    /// **inside** a NIF, passing `env` as the caller. A process-bound call env
+    /// attributes the message to its process (sender pid, seq-trace, reduction
+    /// accounting); any other env (process-independent, callback, load/...) the
+    /// BEAM treats as no caller, since its proc is `INVALID_PID`. The
+    /// environment is freed afterwards. Returns `true` if the process was alive.
+    pub fn send_owned_from(self, env: Env<'_>, owned: OwnedTerm) -> bool {
+        unsafe { crate::enif::send(env.as_ptr(), &self.pid, owned.env, owned.msg) != 0 }
     }
 }
 
@@ -163,18 +200,6 @@ impl<'a> Env<'a> {
         }
     }
 
-    /// Send `msg` (a term in this env) to local process `to` (`enif_send`).
-    ///
-    /// The message is copied into the target's mailbox. Returns `true` if `to`
-    /// was alive. This is the in-NIF send; from a non-scheduler thread build
-    /// the message with an [`OwnedTermBuilder`](crate::env::OwnedTermBuilder)
-    /// and use [`send_owned`](crate::env::send_owned) instead.
-    pub fn send(self, to: &LocalPid, msg: impl AsNifTerm<'a>) -> bool {
-        // null msg_env: msg is a term in this (caller) env and is copied.
-        unsafe {
-            crate::enif::send(self.as_ptr(), &to.pid, std::ptr::null_mut(), msg.as_nif_term()) != 0
-        }
-    }
 }
 
 impl<'a> Decoder<'a> for Pid<'a> {
@@ -197,3 +222,4 @@ impl<'a> Decoder<'a> for LocalPid {
             .ok_or(CodecError::WrongType)
     }
 }
+

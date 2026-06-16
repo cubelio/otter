@@ -501,7 +501,10 @@ struct LocalPid { pid: NifPid }                   // validated local — no life
 | `LocalPid::self_(env) → LocalPid` | Calling process PID (always local) | `enif_self` |
 | `LocalPid::whereis(env, name) → Option<LocalPid>` | Look up by registered name | `enif_whereis_pid` |
 | `LocalPid::is_alive(self, env) → bool` | Check if process is alive | `enif_is_process_alive` |
-| `Env::send(&LocalPid, msg) → bool` | In-NIF send | `enif_send` |
+| `LocalPid::send(self, msg) → bool` | Off-thread copy send (NULL caller env) | `enif_send` |
+| `LocalPid::send_from(self, env, msg) → bool` | In-NIF copy send (caller env) | `enif_send` |
+| `LocalPid::send_owned(self, owned) → bool` | Off-thread steal send (NULL caller env) | `enif_send` |
+| `LocalPid::send_owned_from(self, env, owned) → bool` | In-NIF steal send (caller env attributes the sender) | `enif_send` |
 
 `is_current_process_alive` is exposed on `Env`.
 

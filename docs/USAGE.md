@@ -451,8 +451,8 @@ let self_pid = LocalPid::self_(env);
 let alive: bool = local.is_alive(env);
 let pid = LocalPid::whereis(env, name_atom);
 
-// Send (in-NIF) takes a &LocalPid
-env.send(&local, msg_term);
+// Send (in-NIF): a method on the recipient pid, with the caller env
+local.send_from(env, msg_term);
 ```
 
 ### Port
@@ -766,12 +766,12 @@ let success: bool = resource_arc.demonitor(Some(env), &monitor);
 
 ## OwnedTermBuilder and Message Passing
 
-`OwnedTermBuilder` lets you build a term and send it to a process from outside a NIF call — typically from a spawned OS thread. Build terms on its environment, choose one as the message with `set`, then `build` it into an `OwnedTerm` and hand that to `send_owned`.
+`OwnedTermBuilder` lets you build a term and send it to a process from outside a NIF call — typically from a spawned OS thread. Build terms on its environment, choose one as the message with `set`, `build` it into an `OwnedTerm`, then deliver it with `pid.send_owned(...)`.
 
 ```rust
 use std::thread;
 use otter::codec::Encoder;                       // for `.encode(...)`
-use otter::env::{send_owned, OwnedTermBuilder};
+use otter::env::OwnedTermBuilder;
 
 #[otter::nif]
 fn start_worker(env: Env) -> Atom {
@@ -781,25 +781,32 @@ fn start_worker(env: Env) -> Atom {
         let result = do_heavy_work();
         let env = builder.env();
         builder.set(Integer::from_i64(env, result).encode(env));
-        send_owned(&pid, builder.build());
+        pid.send_owned(builder.build());          // off-thread: no caller env
     });
     otter::atom![ok]  // assuming `ok` is pre-declared
 }
 ```
 
+The sends are methods on the recipient [`LocalPid`], split by whether you hold a caller env:
+
+| | copy | steal an `OwnedTerm` |
+|---|---|---|
+| off-thread (no caller env) | `pid.send(msg)` | `pid.send_owned(owned)` |
+| in a NIF (caller env) | `pid.send_from(env, msg)` | `pid.send_owned_from(env, owned)` |
+
 Terms are built on `builder.env()` and borrow the builder, so they cannot outlive it. `set` records the message — it must have been built in this builder's env (checked) — and `build` consumes the builder into a sendable `OwnedTerm`. A successful `send_owned` *steals* the builder's heap into the message, so the builder is single-use: there is no reuse-and-clear, and no off-thread `port_command` (`enif_port_command` aborts the VM when its caller env is NULL, and a non-scheduler thread has no process env to supply).
 
-**From inside a NIF**, you already hold the process env, so send a term directly — no `OwnedTermBuilder` needed:
+**From inside a NIF**, you already hold the process env, so copy a term directly — no `OwnedTermBuilder` needed:
 
 ```rust
 #[otter::nif]
-fn notify<'a>(env: Env<'a>, to: Pid, msg: TypedTerm<'a>) -> Atom {
-    env.send(&to, msg);   // msg is copied into to's mailbox
+fn notify<'a>(env: Env<'a>, to: LocalPid, msg: TypedTerm<'a>) -> Atom {
+    to.send_from(env, msg);   // msg is copied into to's mailbox
     otter::atom![ok]
 }
 ```
 
-`Env::send` returns `true` if the target was alive. The matching port operation is the existing `Env::port_command`.
+`send_from` returns `true` if the target was alive. The matching port operation is the existing `Env::port_command`.
 
 ---
 

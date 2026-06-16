@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use otter::codec::Encoder;
-use otter::env::{send_owned, Env, OwnedTermBuilder};
+use otter::env::{Env, OwnedTermBuilder};
 use otter::resource::{Resource, ResourceArc};
 use otter::sys::NifSelectFlags;
 use otter::term::{Term, TypedTerm, Raised};
@@ -438,7 +438,7 @@ fn send_from_thread(env: Env) -> Atom {
         let builder = OwnedTermBuilder::new();
         let msg = otter::atom![from_thread].encode(builder.env());
         builder.set(msg);
-        send_owned(&pid, builder.build());
+        pid.send_owned(builder.build());
     });
     otter::atom![ok]
 }
@@ -448,7 +448,7 @@ fn send_from_thread(env: Env) -> Atom {
 
 #[otter::nif]
 fn send_to<'a>(env: Env<'a>, to: LocalPid, msg: Term<'a>) -> Atom {
-    env.send(&to, msg);
+    to.send_from(env, msg);
     otter::atom![ok]
 }
 
