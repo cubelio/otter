@@ -1093,6 +1093,7 @@ pub unsafe fn make_list6(
 }
 
 /// Creates an ordinary list term with 7 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn make_list7(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm,
@@ -1101,6 +1102,7 @@ pub unsafe fn make_list7(
 }
 
 /// Creates an ordinary list term with 8 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn make_list8(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm,
@@ -1109,6 +1111,7 @@ pub unsafe fn make_list8(
 }
 
 /// Creates an ordinary list term with 9 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_list`.
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn make_list9(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm, e9: NifTerm,
@@ -1175,6 +1178,7 @@ pub unsafe fn make_tuple6(
 }
 
 /// Creates a tuple term with 7 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn make_tuple7(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm,
@@ -1183,6 +1187,7 @@ pub unsafe fn make_tuple7(
 }
 
 /// Creates a tuple term with 8 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn make_tuple8(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm,
@@ -1191,6 +1196,7 @@ pub unsafe fn make_tuple8(
 }
 
 /// Creates a tuple term with 9 elements. NIF 0.1 (OTP R13B03). Calls the variadic `enif_make_tuple`.
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn make_tuple9(
     env: *mut NifEnv, e1: NifTerm, e2: NifTerm, e3: NifTerm, e4: NifTerm,
     e5: NifTerm, e6: NifTerm, e7: NifTerm, e8: NifTerm, e9: NifTerm,

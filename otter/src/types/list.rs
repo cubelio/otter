@@ -53,6 +53,14 @@ impl<'a> List<'a> {
         self.env.get_list_length(self)
     }
 
+    /// Returns `true` if this is the empty list `[]`.
+    ///
+    /// One `enif_get_list_cell` call — O(1). An improper list (and any
+    /// non-empty proper list) is not empty.
+    pub fn is_empty(self) -> bool {
+        matches!(self.node(), Node::Nil)
+    }
+
     /// Reverse a proper list.
     ///
     /// Returns `None` for improper lists (those whose final tail is not `[]`).
