@@ -138,7 +138,7 @@ impl<'a> Env<'a> {
     /// Send a command to local port `port` (`enif_port_command`).
     ///
     /// `msg` is a term in this (caller) env and is copied into the port. This
-    /// is the in-NIF form, mirroring [`LocalPid::send_from`]: `enif_port_command`
+    /// is the in-NIF form, mirroring [`LocalPid::send_from`](crate::types::LocalPid::send_from): `enif_port_command`
     /// requires its `msg_env` to be process-independent or NULL, and the call
     /// env is neither, so NULL (copy-from-caller) is the only correct choice.
     /// There is no off-thread form: `enif_port_command` aborts the VM when its

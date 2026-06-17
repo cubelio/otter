@@ -158,10 +158,14 @@ otter::init!("my_module", [
 
 **The NIF list is explicit.** The user lists every NIF. This is consistent with how Erlang itself declares NIFs and makes the registration visible and auditable. The remaining arguments are order-independent keyword entries: `atoms = [...]`, `resources = [...]`, `load`, `upgrade`, `unload`.
 
-**Generated entry point:** `extern "C" fn nif_init() -> *const ErlNifEntry`
-(Unix only — otter is Unix-only at present; see the core `DESIGN.md`).
-`nif_init` first calls `otter::init()` to populate the `enif_*` function
-pointers via `dlsym`, then builds and leaks the `ErlNifEntry`.
+**Generated entry point:** the macro emits a builder fn that constructs and
+leaks the `ErlNifEntry`, then invokes `enif_ffi::nif_init!` (re-exported as
+`otter::nif_init`). That macro — from the `enif-ffi` crate — emits the
+platform-correct `nif_init` symbol (Unix *and* Windows), resolves the `enif_*`
+table at load (`dlsym` on Unix / the BEAM-supplied callback table on Windows),
+and on success calls the builder. So otter's codegen owns the `ErlNifEntry`
+contents while enif-ffi owns the entry-point signature and symbol resolution.
+See the core `DESIGN.md` Layer 1.
 
 **`load`/`upgrade`/`unload` are always generated** (non-`NULL`), so every otter
 module is hot-upgradeable. Each `load`/`upgrade` wrapper installs otter-owned

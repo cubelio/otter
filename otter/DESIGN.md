@@ -30,11 +30,12 @@ Code that relies on ABI compatibility between builds is unsound in safe otter an
 
 ## Layer Structure
 
+The raw C ABI floor (types, `enif_*` shims, the load-time loader) lives in the
+external **`enif-ffi`** crate; everything under `otter/src/` is the safe layer
+above it.
+
 ```
 otter/src/
-├── sys.rs      Raw C ABI types mirroring erl_nif.h
-├── enif.rs     Complete 1:1 enif_* shims + dlsym loading. The sole funcs()/unsafe
-│               consumer; pub under the `raw` feature, else pub(crate).
 ├── env.rs      Env<'a>, EnvKind, OwnedTermBuilder, OwnedTerm
 ├── term.rs     Term, TypedTerm, Raised, and the general-purpose Env methods
 ├── codec.rs    Encoder + Decoder traits, CodecError
@@ -48,63 +49,52 @@ otter/src/
 
 ---
 
-## Layer 1: Raw C ABI (`sys/`)
+## Layer 1: Raw C ABI floor — the `enif-ffi` crate
 
-Direct Rust transcription of `erl_nif.h`. No logic, no safety wrappers — only type definitions and constants.
+otter's raw floor is the external **`enif-ffi`** crate — a thin, 1:1, all-`unsafe`
+binding to the `enif_*` C API. It supplies the three things otter once carried in
+its own `sys.rs`/`enif.rs` and now consumes wholesale; otter calls `enif_ffi::*`
+directly throughout the safe layer.
 
-Key types:
+1. **Raw types and constants** — the `#[repr(C)]` transcription of `erl_nif.h`:
+   `enif_ffi::{Term, Env, Func, Entry, Binary, Pid, Port, Monitor, ResourceType,
+   ResourceTypeInit, MapIterator, TermType, SysInfo, Event, …}`; the flag newtypes
+   (`SelectFlags`, `ResourceFlags`, `UniqueInteger`) with their scoped constants
+   (`SelectFlags::READ`, …) and `BitOr`; and the standalone constants
+   (`SELECT_*`, `THR_*`, `DIRTY_JOB_*`, `BIN2TERM_SAFE`, `TIME_ERROR`, …).
 
-| Rust type | C type | Purpose |
-|---|---|---|
-| `NifTerm` | `ERL_NIF_TERM` | Opaque term handle — a tagged machine word |
-| `NifEnv` | `ErlNifEnv` | Per-call or process-independent environment |
-| `NifFunc` | `ErlNifFunc` | Describes one NIF: name, arity, function pointer, flags |
-| `NifEntry` | `ErlNifEntry` | Library descriptor returned by `nif_init()` |
-| `NifBinary` | `ErlNifBinary` | Inspected binary: size + data pointer |
-| `NifResourceType` | `ErlNifResourceType` | Opaque resource type handle |
-| `NifPid` | `ErlNifPid` | Local process identifier |
-| `NifPort` | `ErlNifPort` | Port identifier |
-| `NifMonitor` | `ErlNifMonitor` | Process monitor handle (32 bytes, opaque) |
-| `NifMapIterator` | `ErlNifMapIterator` | Map iteration state |
-| `NifTermType` | `ErlNifTermType` | Enum of the 11 term types |
-| `NifTime` | `ErlNifTime` | Time value (i64) |
-| `NifTimeUnit` | `ErlNifTimeUnit` | Second/Millisecond/Microsecond/Nanosecond |
-| `NifHash` | `ErlNifHash` | InternalHash or Phash2 |
-| `NifSysInfo` | `ErlNifSysInfo` | BEAM system information struct |
-| `NifOption` | `ErlNifOption` | Option key for `enif_set_option` |
-| `NifEvent` | `ErlNifEvent` | OS event handle (fd on Unix) |
+2. **Shim functions** — one `unsafe fn` per `enif_*`, calling through a load-time
+   function-pointer table with the `enif_` prefix dropped (`enif_ffi::is_atom`,
+   `enif_ffi::make_atom`, …). The macro-only C entry points (`make_tupleN`,
+   `select_read/write/error`, `set_option_*`) are reimplemented over the real
+   functions; the variadic `printf` family is intentionally left unwrapped, since
+   its `va_list` form is unrepresentable on stable Rust.
 
-Also defines flag newtypes with scoped constants: `NifResourceFlags::CREATE`, `NifUniqueInteger::POSITIVE`,
-`NifSelectFlags::READ`, etc. All flag types implement `BitOr` for combination. Standalone constants:
-`NIF_BIN2TERM_SAFE`, `NIF_DIRTY_JOB_*`, `NIF_SELECT_*`, `NIF_THR_*`, `NIF_TIME_ERROR`.
+3. **Symbol resolution + the entry point** — `enif_ffi::nif_init!` emits the
+   platform-correct `nif_init` and resolves the `enif_*` table at load: `dlsym`
+   on Unix, the BEAM-supplied callback table on Windows. **Both platforms are
+   supported.** Minimum version: NIF 2.17 (OTP 26), with opt-in `nif_2_18`.
 
----
-
-## Layer 1.5: NIF Function Shims (`enif.rs`)
-
-Complete `enif_*` API surface in a single `pub(crate)` module. Three responsibilities:
-
-1. **Function pointer table** — an `EnifFunctions` struct holding ~100+ `unsafe extern "C" fn` pointers, organized by NIF version (0.1 through 2.17, optional 2.18).
-
-2. **Dynamic symbol loading** — `enif::init()` resolves all function pointers via `libc::dlsym(RTLD_DEFAULT, ...)` at NIF load time. Guarded by `OnceLock` against double-initialization. Returns `Err(symbol_name)` on first failure.
-
-3. **Shim functions** — one `unsafe fn` per `enif_*`, calling through the pointer table with the `enif_` prefix dropped (e.g. `enif::is_atom()`, `enif::make_atom()`). Each doc comment notes the NIF version and OTP release where the C function was introduced.
-
-`enif` is the **sole** consumer of `funcs()` and the only place FFI `unsafe` lives; everything above it audits as safe. The module is `pub` under the `raw` feature (the complete escape hatch) and `pub(crate)` otherwise — it is always compiled, the feature only controls visibility. Symbol loading is exposed as a single public `otter::init()` at the crate root, which delegates to `enif::init()`.
-
-Minimum required version: NIF 2.17 (OTP 26). C macros that delegate to real enif functions (e.g. `enif_make_tuple3`, `enif_select_read`) are exposed as plain Rust functions. Variadic functions (`make_tuple`, `make_list`, `set_option`) are bound as variadic `fn` pointers and called directly; only the `printf` family stays type-erased (`*mut c_void`), since its `va_list` variants are unrepresentable on stable Rust.
+otter's generated `nif_init` invokes `enif_ffi::nif_init!` (see
+`otter_codegen/DESIGN.md`). The crate is re-exported as `otter::enif_ffi`
+(`#[doc(hidden)]`) so the codegen output in the user's crate can name the raw
+types in the `extern "C"` signatures it emits; turning that into a deliberate
+`raw`-feature escape hatch is planned (issue enhance-11). The one piece otter
+keeps in-tree is `alloc.rs`, which **direct-links** `enif_alloc`/`enif_free`
+rather than going through the resolved table — the global allocator may run before
+`nif_init`, so it cannot depend on the resolution step.
 
 ---
 
 ## Layer 2: The safe layer (env-as-receiver)
 
-Above `enif` is the entire Erlang-facing surface, and it audits as safe — `enif` is the only place `funcs()`/`unsafe` FFI is reached.
+Above the enif-ffi floor is the entire Erlang-facing surface, and it audits as safe — every `unsafe` FFI call goes through an `enif_ffi::*` shim.
 
 The organising principle is **env-as-receiver**: an operation takes its environment explicitly. When the env *is* the subject it is the receiver — `env.make_tuple(&[…])`, `env.is_binary(term)`, `env.get_map_value(map, key)` — under the audit rule *every `enif_foo(env, …)` becomes `env.foo(…)`*. Env-less operations on a clear subject are value-type methods instead (`Term`'s `Ord`/`Eq` via `enif_compare`/`enif_is_identical`, the `BinaryBuf` buffer ops). Term inputs are taken as `impl AsNifTerm<'a>` (see Layer 4), so a term from another env is rejected at compile time.
 
 These methods are not gathered in one module — each lives next to its subject. The predicate and builder Env methods for a type sit on that type's file in `types/` (`env.make_binary` in `types/binary.rs`, `env.make_tuple` in `types/tuple.rs`); the general ones (`raise_exception`, `make_copy`, `term_type`, `schedule_nif`, `cpu_time`, …) sit on `term.rs`. The per-type constructors (`Atom::intern`, `Binary::from_bytes`, `Map::new`, …) remain and delegate to the matching Env method.
 
-The optional sync/thread/IO-queue tier and the deliberately-unsafe set (`enif_alloc`/`dlsym`/`fprintf`/…) have **no** safe wrapper — they are reachable only through the `raw`-feature `enif` surface.
+The optional sync/thread/IO-queue tier and the deliberately-unsafe set (`enif_alloc`/`dlsym`/`fprintf`/…) have **no** safe wrapper — they are reachable only through the raw `enif-ffi` crate (re-exported as `otter::enif_ffi`).
 
 ---
 

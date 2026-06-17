@@ -24,7 +24,7 @@ Rustler uses `Arc<NIF_ENV>`/`Weak<NIF_ENV>` as a generation token to detect use-
 
 ### The layered architecture
 
-Layering that concentrates unsafety in the lower layers behind a safe public surface is sound. Otter follows the same shape: `sys.rs` (raw types) → `enif.rs` (the 1:1 shims — the sole `unsafe`/`funcs()` floor) → the safe env-as-receiver layer.
+Layering that concentrates unsafety in the lower layers behind a safe public surface is sound. Otter follows the same shape: the external **`enif-ffi`** crate (raw types + the 1:1 `unsafe` shims + the load-time loader — the whole FFI floor) → the safe env-as-receiver layer. Otter consumes enif-ffi as a dependency and adds only the safe layer on top.
 
 ### Panic catching at the C boundary
 
@@ -32,7 +32,7 @@ Every NIF wrapper must catch panics via `std::panic::catch_unwind`. A panicking 
 
 ### Dynamic symbol loading
 
-`enif_*` functions are resolved at NIF load time via `dlsym` on Unix and a callback table on Windows. Otter follows the same approach on Unix — the `enif` module holds a complete function pointer table populated by `enif::init()` via `dlsym` at load time. Windows is not supported; the crate emits a `compile_error!` on non-Unix targets.
+`enif_*` functions are resolved at NIF load time via `dlsym` on Unix and a callback table on Windows. Otter follows the same approach through the `enif-ffi` crate: `enif_ffi::nif_init!` emits the platform-correct entry point and populates the function-pointer table at load — `dlsym` on Unix, the BEAM-supplied callback table on Windows. Both platforms are supported.
 
 ---
 
