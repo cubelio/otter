@@ -20,7 +20,7 @@ use std::sync::OnceLock;
 use crate::sys::{
     NifEnv, NifIOQueue, NifIOQueueOpts, NifIOVec,
     NifMapIterator, NifMapIteratorEntry,
-    NifResourceType, NifResourceTypeInit, NifTerm,
+    NifResourceTypeInit, NifTerm,
     SysIOVec,
 };
 
@@ -118,11 +118,11 @@ pub(crate) struct EnifFunctions {
         *mut NifEnv, *const c_char, *const c_char,
         Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void)>,
         enif_ffi::ResourceFlags, *mut enif_ffi::ResourceFlags,
-    ) -> *mut NifResourceType,
-    pub alloc_resource:     unsafe extern "C" fn(*mut NifResourceType, usize) -> *mut c_void,
+    ) -> *mut enif_ffi::ResourceType,
+    pub alloc_resource:     unsafe extern "C" fn(*mut enif_ffi::ResourceType, usize) -> *mut c_void,
     pub release_resource:   unsafe extern "C" fn(*mut c_void),
     pub make_resource:      unsafe extern "C" fn(*mut NifEnv, *mut c_void) -> NifTerm,
-    pub get_resource:       unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifResourceType, *mut *mut c_void) -> c_int,
+    pub get_resource:       unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::ResourceType, *mut *mut c_void) -> c_int,
     pub sizeof_resource:    unsafe extern "C" fn(*mut c_void) -> usize,
     pub make_new_binary:    unsafe extern "C" fn(*mut NifEnv, usize, *mut NifTerm) -> *mut u8,
     pub mutex_create:       unsafe extern "C" fn(*mut c_char) -> *mut NifMutex,
@@ -295,7 +295,7 @@ pub(crate) struct EnifFunctions {
     pub open_resource_type_x: unsafe extern "C" fn(
         *mut NifEnv, *const c_char, *const NifResourceTypeInit,
         enif_ffi::ResourceFlags, *mut enif_ffi::ResourceFlags,
-    ) -> *mut NifResourceType,
+    ) -> *mut enif_ffi::ResourceType,
     pub monitor_process: unsafe extern "C" fn(
         *mut NifEnv, *mut c_void, *const enif_ffi::Pid, *mut enif_ffi::Monitor,
     ) -> c_int,
@@ -353,7 +353,7 @@ pub(crate) struct EnifFunctions {
     pub init_resource_type: unsafe extern "C" fn(
         *mut NifEnv, *const c_char, *const NifResourceTypeInit,
         enif_ffi::ResourceFlags, *mut enif_ffi::ResourceFlags,
-    ) -> *mut NifResourceType,
+    ) -> *mut enif_ffi::ResourceType,
     pub dynamic_resource_call: unsafe extern "C" fn(
         *mut NifEnv, NifTerm, NifTerm, NifTerm, *mut c_void,
     ) -> c_int,
@@ -1438,7 +1438,7 @@ pub unsafe fn open_resource_type(
     env: *mut NifEnv, module_str: *const c_char, name_str: *const c_char,
     dtor: Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void)>,
     flags: enif_ffi::ResourceFlags, tried: *mut enif_ffi::ResourceFlags,
-) -> *mut NifResourceType {
+) -> *mut enif_ffi::ResourceType {
     unsafe { (funcs().open_resource_type)(env, module_str, name_str, dtor, flags, tried) }
 }
 
@@ -1446,13 +1446,13 @@ pub unsafe fn open_resource_type(
 pub unsafe fn open_resource_type_x(
     env: *mut NifEnv, name_str: *const c_char, init: *const NifResourceTypeInit,
     flags: enif_ffi::ResourceFlags, tried: *mut enif_ffi::ResourceFlags,
-) -> *mut NifResourceType {
+) -> *mut enif_ffi::ResourceType {
     unsafe { (funcs().open_resource_type_x)(env, name_str, init, flags, tried) }
 }
 
 /// Allocates a memory-managed resource object of the given type and size. NIF 1.0 (OTP R13B04). Wraps `enif_alloc_resource`.
 pub unsafe fn alloc_resource(
-    rtype: *mut NifResourceType, size: usize,
+    rtype: *mut enif_ffi::ResourceType, size: usize,
 ) -> *mut c_void {
     unsafe { (funcs().alloc_resource)(rtype, size) }
 }
@@ -1469,7 +1469,7 @@ pub unsafe fn make_resource(env: *mut NifEnv, obj: *mut c_void) -> NifTerm {
 
 /// Retrieves a pointer to the resource object referred to by a resource term. NIF 1.0 (OTP R13B04). Wraps `enif_get_resource`.
 pub unsafe fn get_resource(
-    env: *mut NifEnv, term: NifTerm, rtype: *mut NifResourceType,
+    env: *mut NifEnv, term: NifTerm, rtype: *mut enif_ffi::ResourceType,
     objp: *mut *mut c_void,
 ) -> c_int {
     unsafe { (funcs().get_resource)(env, term, rtype, objp) }
@@ -1978,7 +1978,7 @@ pub unsafe fn select_write(
 pub unsafe fn init_resource_type(
     env: *mut NifEnv, name_str: *const c_char, init: *const NifResourceTypeInit,
     flags: enif_ffi::ResourceFlags, tried: *mut enif_ffi::ResourceFlags,
-) -> *mut NifResourceType {
+) -> *mut enif_ffi::ResourceType {
     unsafe { (funcs().init_resource_type)(env, name_str, init, flags, tried) }
 }
 

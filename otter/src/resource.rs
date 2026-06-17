@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::priv_data::{PrivData, ResourceRegistry};
-use crate::sys::{NifEnv, NifResourceType, NifResourceTypeInit};
+use crate::sys::{NifEnv, NifResourceTypeInit};
 use crate::term::{Term, AsNifTerm};
 use crate::types::LocalPid;
 
@@ -27,11 +27,11 @@ use crate::types::LocalPid;
 /// [`OwnedTermBuilder`](crate::env::OwnedTermBuilder) where no module-bound
 /// env is available.
 pub struct ResourceTypeHandle<T: Resource> {
-    ptr: *mut NifResourceType,
+    ptr: *mut enif_ffi::ResourceType,
     _t:  PhantomData<fn() -> T>,
 }
 
-// SAFETY: NifResourceType is BEAM-internal data that lives for the lifetime
+// SAFETY: enif_ffi::ResourceType is BEAM-internal data that lives for the lifetime
 // of the VM. Safe to share across threads once registered.
 unsafe impl<T: Resource> Send for ResourceTypeHandle<T> {}
 unsafe impl<T: Resource> Sync for ResourceTypeHandle<T> {}

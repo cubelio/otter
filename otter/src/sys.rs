@@ -99,14 +99,6 @@ pub struct NifEntry {
 // Resource type
 // ---------------------------------------------------------------------------
 
-/// `ErlNifResourceType` — opaque resource type handle returned by registration.
-/// NIF 2.0 (OTP R14A).
-#[repr(C)]
-pub struct NifResourceType {
-    _opaque: [u8; 0],
-    _marker: std::marker::PhantomData<(*mut u8, std::marker::PhantomPinned)>,
-}
-
 /// `ErlNifResourceTypeInit` — callback table passed to resource type registration.
 ///
 /// `members` must equal the number of callback fields being provided,
