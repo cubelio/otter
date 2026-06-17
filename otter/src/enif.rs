@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 use crate::sys::{
     NifBinary, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
-    NifMapIterator, NifMapIteratorEntry, NifPid, NifPort,
+    NifMapIterator, NifMapIteratorEntry, NifPid,
     NifResourceFlags, NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
     NifTime, NifTimeUnit, SysIOVec,
 };
@@ -277,11 +277,11 @@ pub(crate) struct EnifFunctions {
     pub make_unique_integer: unsafe extern "C" fn(*mut NifEnv, enif_ffi::UniqueInteger) -> NifTerm,
     pub is_current_process_alive: unsafe extern "C" fn(*mut NifEnv) -> c_int,
     pub is_process_alive:   unsafe extern "C" fn(*mut NifEnv, *mut NifPid) -> c_int,
-    pub is_port_alive:      unsafe extern "C" fn(*mut NifEnv, *mut NifPort) -> c_int,
-    pub get_local_port:     unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifPort) -> c_int,
+    pub is_port_alive:      unsafe extern "C" fn(*mut NifEnv, *mut enif_ffi::Port) -> c_int,
+    pub get_local_port:     unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Port) -> c_int,
     pub term_to_binary:     unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifBinary) -> c_int,
     pub binary_to_term:     unsafe extern "C" fn(*mut NifEnv, *const u8, usize, *mut NifTerm, c_uint) -> usize,
-    pub port_command:       unsafe extern "C" fn(*mut NifEnv, *const NifPort, *mut NifEnv, NifTerm) -> c_int,
+    pub port_command:       unsafe extern "C" fn(*mut NifEnv, *const enif_ffi::Port, *mut NifEnv, NifTerm) -> c_int,
     pub thread_type:        unsafe extern "C" fn() -> c_int,
     pub snprintf:           *mut c_void, // variadic
 
@@ -305,7 +305,7 @@ pub(crate) struct EnifFunctions {
     pub compare_monitors:   unsafe extern "C" fn(*const enif_ffi::Monitor, *const enif_ffi::Monitor) -> c_int,
     pub hash:               unsafe extern "C" fn(enif_ffi::Hash, NifTerm, u64) -> u64,
     pub whereis_pid:        unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifPid) -> c_int,
-    pub whereis_port:       unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifPort) -> c_int,
+    pub whereis_port:       unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Port) -> c_int,
     pub ioq_create:         unsafe extern "C" fn(NifIOQueueOpts) -> *mut NifIOQueue,
     pub ioq_destroy:        unsafe extern "C" fn(*mut NifIOQueue),
     pub ioq_enq_binary:     unsafe extern "C" fn(*mut NifIOQueue, *mut NifBinary, usize) -> c_int,
@@ -1378,26 +1378,26 @@ pub unsafe fn whereis_pid(
 
 /// Extracts a node-local port from a term, returning non-zero on success. NIF 2.11 (OTP 19.0). Wraps `enif_get_local_port`.
 pub unsafe fn get_local_port(
-    env: *mut NifEnv, term: NifTerm, port: *mut NifPort,
+    env: *mut NifEnv, term: NifTerm, port: *mut enif_ffi::Port,
 ) -> c_int {
     unsafe { (funcs().get_local_port)(env, term, port) }
 }
 
 /// Returns non-zero if the given port is alive. NIF 2.11 (OTP 19.0). Wraps `enif_is_port_alive`.
-pub unsafe fn is_port_alive(env: *mut NifEnv, port: *mut NifPort) -> c_int {
+pub unsafe fn is_port_alive(env: *mut NifEnv, port: *mut enif_ffi::Port) -> c_int {
     unsafe { (funcs().is_port_alive)(env, port) }
 }
 
 /// Looks up a port by its registered name atom, returning non-zero on success. NIF 2.12 (OTP 20.0). Wraps `enif_whereis_port`.
 pub unsafe fn whereis_port(
-    env: *mut NifEnv, name: NifTerm, port: *mut NifPort,
+    env: *mut NifEnv, name: NifTerm, port: *mut enif_ffi::Port,
 ) -> c_int {
     unsafe { (funcs().whereis_port)(env, name, port) }
 }
 
 /// Sends a message to a port asynchronously, like `erlang:port_command/2`. NIF 2.11 (OTP 19.0). Wraps `enif_port_command`.
 pub unsafe fn port_command(
-    env: *mut NifEnv, to_port: *const NifPort, msg_env: *mut NifEnv, msg: NifTerm,
+    env: *mut NifEnv, to_port: *const enif_ffi::Port, msg_env: *mut NifEnv, msg: NifTerm,
 ) -> c_int {
     unsafe { (funcs().port_command)(env, to_port, msg_env, msg) }
 }

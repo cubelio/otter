@@ -112,7 +112,7 @@ pub struct NifBinary {
 }
 
 // ---------------------------------------------------------------------------
-// Pid and Port
+// Pid
 // ---------------------------------------------------------------------------
 
 /// `ErlNifPid` — local process identifier. NIF 2.0 (OTP R14A).
@@ -120,13 +120,6 @@ pub struct NifBinary {
 #[derive(Clone, Copy)]
 pub struct NifPid {
     pub pid: NifTerm,
-}
-
-/// `ErlNifPort` — port identifier. NIF 2.11 (OTP 19.0).
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct NifPort {
-    pub port_id: NifTerm,
 }
 
 // ---------------------------------------------------------------------------

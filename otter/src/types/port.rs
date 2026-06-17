@@ -1,6 +1,6 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifPort, NifTerm};
+use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang port identifier whose locality is not yet established.
@@ -31,7 +31,7 @@ impl<'a> Port<'a> {
 /// APIs take `&LocalPort`.
 #[derive(Clone, Copy)]
 pub struct LocalPort {
-    pub(crate) port: NifPort,
+    pub(crate) port: enif_ffi::Port,
 }
 
 impl LocalPort {
@@ -109,10 +109,10 @@ impl<'a> Env<'a> {
         unsafe { crate::enif::is_port(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 
-    /// Decode a term into a local `NifPort` (`enif_get_local_port`).
+    /// Decode a term into a local `enif_ffi::Port` (`enif_get_local_port`).
     /// `None` if `term` is not a local port.
-    pub fn get_local_port(self, term: impl AsNifTerm<'a>) -> Option<NifPort> {
-        let mut out = NifPort { port_id: 0 };
+    pub fn get_local_port(self, term: impl AsNifTerm<'a>) -> Option<enif_ffi::Port> {
+        let mut out = enif_ffi::Port { port_id: 0 };
         if unsafe { crate::enif::get_local_port(self.as_ptr(), term.as_nif_term(), &mut out) != 0 } {
             Some(out)
         } else {
@@ -121,7 +121,7 @@ impl<'a> Env<'a> {
     }
 
     /// Whether the port identified by `port` is alive (`enif_is_port_alive`).
-    pub fn is_port_alive(self, port: NifPort) -> bool {
+    pub fn is_port_alive(self, port: enif_ffi::Port) -> bool {
         let mut port = port;
         unsafe { crate::enif::is_port_alive(self.as_ptr(), &mut port) != 0 }
     }
@@ -129,7 +129,7 @@ impl<'a> Env<'a> {
     /// Look up a port by its registered name (`enif_whereis_port`).
     /// `None` if no port is registered under `name`.
     pub fn whereis_port(self, name: impl AsNifTerm<'a>) -> Option<LocalPort> {
-        let mut out = NifPort { port_id: 0 };
+        let mut out = enif_ffi::Port { port_id: 0 };
         if unsafe { crate::enif::whereis_port(self.as_ptr(), name.as_nif_term(), &mut out) != 0 } {
             Some(LocalPort { port: out })
         } else {
