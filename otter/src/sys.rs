@@ -9,16 +9,7 @@
 //! referenced as `enif_ffi::*` (and a few re-exported under their legacy
 //! `Nif*` names while consumers catch up).
 
-use std::ffi::{c_int, c_uint};
-
-// ---------------------------------------------------------------------------
-// Function descriptor
-// ---------------------------------------------------------------------------
-
-/// `enif_ffi::Func.flags` value: run on dirty CPU scheduler. NIF 2.7 (OTP 17.3).
-pub const NIF_FUNC_DIRTY_CPU: c_uint = 1;
-/// `enif_ffi::Func.flags` value: run on dirty I/O scheduler. NIF 2.7 (OTP 17.3).
-pub const NIF_FUNC_DIRTY_IO: c_uint = 2;
+use std::ffi::c_int;
 
 // ---------------------------------------------------------------------------
 // Library entry point descriptor

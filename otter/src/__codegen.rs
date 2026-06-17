@@ -11,7 +11,12 @@ pub use crate::priv_data::{discard_priv_data, free_priv_data, install_priv_data,
 #[cfg(feature = "raw")]
 pub use crate::priv_data::{old_user_priv_field, user_priv_field};
 pub use crate::resource::{register, register_tagged, ResourceFlags};
-pub use crate::sys::{NIF_FUNC_DIRTY_CPU, NIF_FUNC_DIRTY_IO};
+// enif-ffi consolidates the dirty-scheduler flags: DIRTY_JOB_{CPU,IO}_BOUND
+// serve as both the Func.flags values and the schedule_nif flags (same values).
+pub use enif_ffi::{
+    DIRTY_JOB_CPU_BOUND as NIF_FUNC_DIRTY_CPU,
+    DIRTY_JOB_IO_BOUND as NIF_FUNC_DIRTY_IO,
+};
 // Generated NIF/load/upgrade/unload entry points reference `__codegen::NifEnv`;
 // generated registration references `__codegen::NifResourceTypeInit`; the
 // generated nif_init entry references the version/variant constants. Keep the
