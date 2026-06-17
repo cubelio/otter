@@ -89,7 +89,7 @@ impl<'a> Term<'a> {
     ///
     /// Wraps `enif_term_to_binary`.
     pub fn serialize(self) -> Option<BinaryBuf> {
-        let mut bin: crate::sys::NifBinary = unsafe { std::mem::zeroed() };
+        let mut bin: enif_ffi::Binary = unsafe { std::mem::zeroed() };
         if self.env.term_to_binary(self, &mut bin) {
             Some(BinaryBuf::from_filled(bin))
         } else {

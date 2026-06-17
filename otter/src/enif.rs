@@ -18,7 +18,7 @@ use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
 use crate::sys::{
-    NifBinary, NifEnv, NifIOQueue, NifIOQueueOpts, NifIOVec,
+    NifEnv, NifIOQueue, NifIOQueueOpts, NifIOVec,
     NifMapIterator, NifMapIteratorEntry,
     NifResourceType, NifResourceTypeInit, NifTerm,
     SysIOVec,
@@ -76,8 +76,8 @@ pub(crate) struct EnifFunctions {
     pub is_atom:            unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
     pub is_binary:          unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
     pub is_ref:             unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
-    pub inspect_binary:     unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifBinary) -> c_int,
-    pub alloc_binary:       unsafe extern "C" fn(usize, *mut NifBinary) -> c_int,
+    pub inspect_binary:     unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Binary) -> c_int,
+    pub alloc_binary:       unsafe extern "C" fn(usize, *mut enif_ffi::Binary) -> c_int,
     pub get_int:            unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_int) -> c_int,
     pub get_ulong:          unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut std::ffi::c_ulong) -> c_int,
     pub get_double:         unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut f64) -> c_int,
@@ -85,7 +85,7 @@ pub(crate) struct EnifFunctions {
     pub get_tuple:          unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_int, *mut *const NifTerm) -> c_int,
     pub is_identical:       unsafe extern "C" fn(NifTerm, NifTerm) -> c_int,
     pub compare:            unsafe extern "C" fn(NifTerm, NifTerm) -> c_int,
-    pub make_binary:        unsafe extern "C" fn(*mut NifEnv, *mut NifBinary) -> NifTerm,
+    pub make_binary:        unsafe extern "C" fn(*mut NifEnv, *mut enif_ffi::Binary) -> NifTerm,
     pub make_badarg:        unsafe extern "C" fn(*mut NifEnv) -> NifTerm,
     pub make_int:           unsafe extern "C" fn(*mut NifEnv, c_int) -> NifTerm,
     pub make_ulong:         unsafe extern "C" fn(*mut NifEnv, std::ffi::c_ulong) -> NifTerm,
@@ -103,7 +103,7 @@ pub(crate) struct EnifFunctions {
     // NIF 1.0 (OTP R13B04)
     // =====================================================================
     pub priv_data:          unsafe extern "C" fn(*mut NifEnv) -> *mut c_void,
-    pub realloc_binary:     unsafe extern "C" fn(*mut NifBinary, usize) -> c_int,
+    pub realloc_binary:     unsafe extern "C" fn(*mut enif_ffi::Binary, usize) -> c_int,
     pub is_fun:             unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
     pub is_pid:             unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
     pub is_port:            unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
@@ -162,7 +162,7 @@ pub(crate) struct EnifFunctions {
     pub free:               unsafe extern "C" fn(*mut c_void),
     pub realloc:            unsafe extern "C" fn(*mut c_void, usize) -> *mut c_void,
     pub system_info:        unsafe extern "C" fn(*mut enif_ffi::SysInfo, usize),
-    pub inspect_iolist_as_binary: unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifBinary) -> c_int,
+    pub inspect_iolist_as_binary: unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Binary) -> c_int,
     pub make_sub_binary:    unsafe extern "C" fn(*mut NifEnv, NifTerm, usize, usize) -> NifTerm,
     pub get_string:         unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_char, c_uint, enif_ffi::CharEncoding) -> c_int,
     pub get_atom:           unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_char, c_uint, enif_ffi::CharEncoding) -> c_int,
@@ -170,7 +170,7 @@ pub(crate) struct EnifFunctions {
     // =====================================================================
     // NIF 2.0 (OTP R14B)
     // =====================================================================
-    pub release_binary:     unsafe extern "C" fn(*mut NifBinary),
+    pub release_binary:     unsafe extern "C" fn(*mut enif_ffi::Binary),
     pub is_list:            unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
     pub is_tuple:           unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
     pub get_atom_length:    unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_uint, enif_ffi::CharEncoding) -> c_int,
@@ -279,7 +279,7 @@ pub(crate) struct EnifFunctions {
     pub is_process_alive:   unsafe extern "C" fn(*mut NifEnv, *mut enif_ffi::Pid) -> c_int,
     pub is_port_alive:      unsafe extern "C" fn(*mut NifEnv, *mut enif_ffi::Port) -> c_int,
     pub get_local_port:     unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Port) -> c_int,
-    pub term_to_binary:     unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifBinary) -> c_int,
+    pub term_to_binary:     unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Binary) -> c_int,
     pub binary_to_term:     unsafe extern "C" fn(*mut NifEnv, *const u8, usize, *mut NifTerm, c_uint) -> usize,
     pub port_command:       unsafe extern "C" fn(*mut NifEnv, *const enif_ffi::Port, *mut NifEnv, NifTerm) -> c_int,
     pub thread_type:        unsafe extern "C" fn() -> c_int,
@@ -308,7 +308,7 @@ pub(crate) struct EnifFunctions {
     pub whereis_port:       unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Port) -> c_int,
     pub ioq_create:         unsafe extern "C" fn(NifIOQueueOpts) -> *mut NifIOQueue,
     pub ioq_destroy:        unsafe extern "C" fn(*mut NifIOQueue),
-    pub ioq_enq_binary:     unsafe extern "C" fn(*mut NifIOQueue, *mut NifBinary, usize) -> c_int,
+    pub ioq_enq_binary:     unsafe extern "C" fn(*mut NifIOQueue, *mut enif_ffi::Binary, usize) -> c_int,
     pub ioq_enqv:           unsafe extern "C" fn(*mut NifIOQueue, *mut NifIOVec, usize) -> c_int,
     pub ioq_size:           unsafe extern "C" fn(*mut NifIOQueue) -> usize,
     pub ioq_deq:            unsafe extern "C" fn(*mut NifIOQueue, usize, *mut usize) -> c_int,
@@ -838,28 +838,28 @@ pub unsafe fn compare(lhs: NifTerm, rhs: NifTerm) -> c_int {
 
 /// Initializes `bin` with info about binary `term`. Returns non-zero on success. NIF 0.1 (OTP R13B03). Wraps `enif_inspect_binary`.
 pub unsafe fn inspect_binary(
-    env: *mut NifEnv, term: NifTerm, bin: *mut NifBinary,
+    env: *mut NifEnv, term: NifTerm, bin: *mut enif_ffi::Binary,
 ) -> c_int {
     unsafe { (funcs().inspect_binary)(env, term, bin) }
 }
 
 /// Allocates a new binary of `size` bytes. Returns non-zero on success. NIF 0.1 (OTP R13B03). Wraps `enif_alloc_binary`.
-pub unsafe fn alloc_binary(size: usize, bin: *mut NifBinary) -> c_int {
+pub unsafe fn alloc_binary(size: usize, bin: *mut enif_ffi::Binary) -> c_int {
     unsafe { (funcs().alloc_binary)(size, bin) }
 }
 
 /// Changes the size of `bin`. Returns non-zero on success. NIF 1.0 (OTP R13B04). Wraps `enif_realloc_binary`.
-pub unsafe fn realloc_binary(bin: *mut NifBinary, size: usize) -> c_int {
+pub unsafe fn realloc_binary(bin: *mut enif_ffi::Binary, size: usize) -> c_int {
     unsafe { (funcs().realloc_binary)(bin, size) }
 }
 
 /// Releases a binary obtained from [`alloc_binary`]. NIF 2.0 (OTP R14B). Wraps `enif_release_binary`.
-pub unsafe fn release_binary(bin: *mut NifBinary) {
+pub unsafe fn release_binary(bin: *mut enif_ffi::Binary) {
     unsafe { (funcs().release_binary)(bin) }
 }
 
 /// Creates a binary term from `bin`, transferring ownership of the data. NIF 0.1 (OTP R13B03). Wraps `enif_make_binary`.
-pub unsafe fn make_binary(env: *mut NifEnv, bin: *mut NifBinary) -> NifTerm {
+pub unsafe fn make_binary(env: *mut NifEnv, bin: *mut enif_ffi::Binary) -> NifTerm {
     unsafe { (funcs().make_binary)(env, bin) }
 }
 
@@ -880,7 +880,7 @@ pub unsafe fn make_sub_binary(
 
 /// Copies iolist `term` into a contiguous binary buffer. Returns non-zero on success. NIF 1.0 (OTP R13B04). Wraps `enif_inspect_iolist_as_binary`.
 pub unsafe fn inspect_iolist_as_binary(
-    env: *mut NifEnv, term: NifTerm, bin: *mut NifBinary,
+    env: *mut NifEnv, term: NifTerm, bin: *mut enif_ffi::Binary,
 ) -> c_int {
     unsafe { (funcs().inspect_iolist_as_binary)(env, term, bin) }
 }
@@ -1588,7 +1588,7 @@ pub unsafe fn hash(hash_type: enif_ffi::Hash, term: NifTerm, salt: u64) -> u64 {
 
 /// Serializes a term into the Erlang external term format, allocating the result binary. NIF 2.11 (OTP 19.0). Wraps `enif_term_to_binary`.
 pub unsafe fn term_to_binary(
-    env: *mut NifEnv, term: NifTerm, bin: *mut NifBinary,
+    env: *mut NifEnv, term: NifTerm, bin: *mut enif_ffi::Binary,
 ) -> c_int {
     unsafe { (funcs().term_to_binary)(env, term, bin) }
 }
@@ -1863,7 +1863,7 @@ pub unsafe fn ioq_destroy(q: *mut NifIOQueue) {
 
 /// Enqueues a binary into the I/O queue, skipping the first `skip` bytes; ownership transfers to the queue. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_enq_binary`.
 pub unsafe fn ioq_enq_binary(
-    q: *mut NifIOQueue, bin: *mut NifBinary, skip: usize,
+    q: *mut NifIOQueue, bin: *mut enif_ffi::Binary, skip: usize,
 ) -> c_int {
     unsafe { (funcs().ioq_enq_binary)(q, bin, skip) }
 }

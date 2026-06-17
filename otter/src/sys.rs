@@ -94,22 +94,6 @@ pub struct NifEntry {
     pub min_erts: *const c_char,
 }
 
-// ---------------------------------------------------------------------------
-// Binary
-// ---------------------------------------------------------------------------
-
-/// `ErlNifBinary` — inspected binary: byte count and data pointer.
-///
-/// Returned by `enif_inspect_binary` and `enif_alloc_binary`.
-/// The `ref_bin` and `__spare__` fields are internal to the BEAM.
-/// NIF 1.0 (OTP R13B04).
-#[repr(C)]
-pub struct NifBinary {
-    pub size: usize,
-    pub data: *mut u8,
-    ref_bin: *mut c_void,
-    _spare:  [*mut c_void; 2],
-}
 
 // ---------------------------------------------------------------------------
 // Resource type

@@ -1,7 +1,7 @@
 use std::str::Utf8Error;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifBinary, NifTerm};
+use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// A byte-aligned binary (`enif_is_binary` returned true).
@@ -54,7 +54,7 @@ impl<'a> Binary<'a> {
     /// Zero-copy — the slice points directly into the BEAM heap. Valid for
     /// the lifetime `'a` of the environment.
     pub fn as_bytes(self) -> &'a [u8] {
-        let mut bin: NifBinary = unsafe { std::mem::zeroed() };
+        let mut bin: enif_ffi::Binary = unsafe { std::mem::zeroed() };
         // A Binary is always a valid binary, so inspect cannot fail here.
         self.env.inspect_binary(self, &mut bin);
         unsafe { std::slice::from_raw_parts(bin.data, bin.size) }
@@ -197,7 +197,7 @@ impl Ord for Bitstring<'_> {
 ///
 /// [`Term::serialize`]: crate::term::Term::serialize
 pub struct BinaryBuf {
-    bin: crate::sys::NifBinary,
+    bin: enif_ffi::Binary,
     len: usize,
     released: bool,
 }
@@ -212,15 +212,15 @@ impl BinaryBuf {
     ///
     /// Panics if the allocation fails.
     pub fn with_capacity(capacity: usize) -> BinaryBuf {
-        let mut bin: crate::sys::NifBinary = unsafe { std::mem::zeroed() };
+        let mut bin: enif_ffi::Binary = unsafe { std::mem::zeroed() };
         let ok = unsafe { crate::enif::alloc_binary(capacity, &mut bin) != 0 };
         assert!(ok, "enif_alloc_binary failed");
         BinaryBuf { bin, len: 0, released: false }
     }
 
-    /// Take ownership of an already-filled `NifBinary` (e.g. from
+    /// Take ownership of an already-filled `enif_ffi::Binary` (e.g. from
     /// `enif_term_to_binary`), where the whole allocation is live data.
-    pub(crate) fn from_filled(bin: crate::sys::NifBinary) -> BinaryBuf {
+    pub(crate) fn from_filled(bin: enif_ffi::Binary) -> BinaryBuf {
         BinaryBuf { len: bin.size, bin, released: false }
     }
 
@@ -414,13 +414,13 @@ impl<'a> Env<'a> {
 
     /// Inspect a binary term, filling `bin` (`enif_inspect_binary`).
     /// Returns `false` if `term` is not a byte-aligned binary.
-    pub fn inspect_binary(self, term: impl AsNifTerm<'a>, bin: &mut NifBinary) -> bool {
+    pub fn inspect_binary(self, term: impl AsNifTerm<'a>, bin: &mut enif_ffi::Binary) -> bool {
         unsafe { crate::enif::inspect_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
     }
 
-    /// Convert an allocated `NifBinary` into a binary term (`enif_make_binary`).
+    /// Convert an allocated `enif_ffi::Binary` into a binary term (`enif_make_binary`).
     /// After this call the BEAM owns the binary; `bin` must not be used again.
-    pub fn make_binary(self, bin: &mut NifBinary) -> Binary<'a> {
+    pub fn make_binary(self, bin: &mut enif_ffi::Binary) -> Binary<'a> {
         let term = unsafe { crate::enif::make_binary(self.as_ptr(), bin) };
         Binary { term, env: self }
     }
@@ -447,7 +447,7 @@ impl<'a> Env<'a> {
     /// Serialize a term to the external binary format, filling `bin`
     /// (`enif_term_to_binary`). Returns `false` on failure. `bin` is allocated
     /// via enif_alloc_binary; pass it to `make_binary` or release it.
-    pub fn term_to_binary(self, term: impl AsNifTerm<'a>, bin: &mut NifBinary) -> bool {
+    pub fn term_to_binary(self, term: impl AsNifTerm<'a>, bin: &mut enif_ffi::Binary) -> bool {
         unsafe { crate::enif::term_to_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
     }
 
