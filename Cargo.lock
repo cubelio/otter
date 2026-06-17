@@ -5,7 +5,8 @@ version = 4
 [[package]]
 name = "enif-ffi"
 version = "0.1.0"
-source = "git+https://github.com/cubelio/enif-ffi#3d9e878ab9663d96ecde962a19e3e149611615dd"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d21a466d43fa1a62f8375c1602a0634a544aa5ac3c8d0f27d3eb870c2779694"
 dependencies = [
  "libc",
 ]
