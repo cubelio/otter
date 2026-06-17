@@ -10,7 +10,6 @@ use std::marker::PhantomData;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::priv_data::{PrivData, ResourceRegistry};
-use crate::sys::NifResourceTypeInit;
 use crate::term::{Term, AsNifTerm};
 use crate::types::LocalPid;
 
@@ -331,7 +330,7 @@ fn register_named<T: Resource>(env: Env<'_>, flags: ResourceFlags, name: &str) {
     let cname = std::ffi::CString::new(name)
         .expect("resource type name must not contain null bytes");
 
-    let init = NifResourceTypeInit {
+    let init = enif_ffi::ResourceTypeInit {
         dtor:     Some(destructor_callback::<T>),
         stop:     Some(stop_callback::<T>),
         down:     Some(down_callback::<T>),

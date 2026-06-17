@@ -75,31 +75,12 @@ pub struct NifEntry {
     pub vm_variant: *const c_char,
     /// Added in NIF 2.7 (OTP 17.3) — unused, set to 0 or 1.
     pub options: c_uint,
-    /// Added in NIF 2.12 (OTP 20.0) — must equal `size_of::<NifResourceTypeInit>()`.
+    /// Added in NIF 2.12 (OTP 20.0) — must equal `size_of::<enif_ffi::ResourceTypeInit>()`.
     pub sizeof_resource_type_init: usize,
     /// Added in NIF 2.14 (OTP 21.0) — minimum ERTS version string.
     pub min_erts: *const c_char,
 }
 
-
-// ---------------------------------------------------------------------------
-// Resource type
-// ---------------------------------------------------------------------------
-
-/// `ErlNifResourceTypeInit` — callback table passed to resource type registration.
-///
-/// `members` must equal the number of callback fields being provided,
-/// counting from the start: 1 = dtor only, 2 = dtor+stop, 3 = dtor+stop+down,
-/// 4 = dtor+stop+down+dyncall.
-/// NIF 2.12 (OTP 20.0). `dyncall` field added in NIF 2.16 (OTP 24.0).
-#[repr(C)]
-pub struct NifResourceTypeInit {
-    pub dtor:    Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut c_void)>,
-    pub stop:    Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut c_void, enif_ffi::Event, c_int)>,
-    pub down:    Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut c_void, *mut enif_ffi::Pid, *mut enif_ffi::Monitor)>,
-    pub members: c_int,
-    pub dyncall: Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut c_void, *mut c_void)>,
-}
 
 // ---------------------------------------------------------------------------
 // OS event handle (for enif_select)
