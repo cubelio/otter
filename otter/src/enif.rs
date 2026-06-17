@@ -18,7 +18,7 @@ use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
 use crate::sys::{
-    NifIOQueueOpts, NifIOVec,
+    NifIOVec,
     NifTerm,
     SysIOVec,
 };
@@ -305,7 +305,7 @@ pub(crate) struct EnifFunctions {
     pub hash:               unsafe extern "C" fn(enif_ffi::Hash, NifTerm, u64) -> u64,
     pub whereis_pid:        unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, *mut enif_ffi::Pid) -> c_int,
     pub whereis_port:       unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, *mut enif_ffi::Port) -> c_int,
-    pub ioq_create:         unsafe extern "C" fn(NifIOQueueOpts) -> *mut enif_ffi::IOQueue,
+    pub ioq_create:         unsafe extern "C" fn(enif_ffi::IOQueueOpts) -> *mut enif_ffi::IOQueue,
     pub ioq_destroy:        unsafe extern "C" fn(*mut enif_ffi::IOQueue),
     pub ioq_enq_binary:     unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut enif_ffi::Binary, usize) -> c_int,
     pub ioq_enqv:           unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut NifIOVec, usize) -> c_int,
@@ -1851,7 +1851,7 @@ pub unsafe fn thread_name(tid: NifTid) -> *mut c_char {
 // NIF 2.13 (IOQ core), NIF 2.14 (ioq_peek_head)
 
 /// Creates a new I/O queue; `opts` must be `ERL_NIF_IOQ_NORMAL`. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_create`.
-pub unsafe fn ioq_create(opts: NifIOQueueOpts) -> *mut enif_ffi::IOQueue {
+pub unsafe fn ioq_create(opts: enif_ffi::IOQueueOpts) -> *mut enif_ffi::IOQueue {
     unsafe { (funcs().ioq_create)(opts) }
 }
 

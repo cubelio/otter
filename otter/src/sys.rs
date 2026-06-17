@@ -160,11 +160,8 @@ pub const NIF_DIRTY_JOB_IO_BOUND:  c_int = 2;
 // I/O queue and iovec
 // ---------------------------------------------------------------------------
 
-/// `ErlNifIOQueueOpts` — I/O queue creation options. NIF 2.13 (OTP 20.1).
-pub type NifIOQueueOpts = c_int;
-
 /// Normal I/O queue mode. NIF 2.13 (OTP 20.1).
-pub const NIF_IOQ_NORMAL: NifIOQueueOpts = 1;
+pub const NIF_IOQ_NORMAL: enif_ffi::IOQueueOpts = 1;
 
 /// `SysIOVec` — iovec on Unix. Matches `struct iovec`. NIF 2.13 (OTP 20.1).
 #[cfg(unix)]
