@@ -1,6 +1,6 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, OwnedTerm};
-use crate::sys::{NifPid, NifTerm};
+use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang process identifier whose locality is not yet established.
@@ -35,7 +35,7 @@ impl<'a> Pid<'a> {
 /// local pid, so those APIs take `&LocalPid`.
 #[derive(Clone, Copy)]
 pub struct LocalPid {
-    pub(crate) pid: NifPid,
+    pub(crate) pid: enif_ffi::Pid,
 }
 
 impl LocalPid {
@@ -163,7 +163,7 @@ impl<'a> Env<'a> {
     /// NULL there and there is no calling process, so there is no self pid to
     /// return.
     pub fn self_pid(self) -> LocalPid {
-        let mut out = NifPid { pid: 0 };
+        let mut out = enif_ffi::Pid { pid: 0 };
         // enif_self returns NULL outside a process-bound env; producing a
         // Pid{0} there would be an invalid term word (UB on later use).
         let ok = unsafe { !crate::enif::self_(self.as_ptr(), &mut out).is_null() };
@@ -171,10 +171,10 @@ impl<'a> Env<'a> {
         LocalPid { pid: out }
     }
 
-    /// Decode a term into a local `NifPid` (`enif_get_local_pid`).
+    /// Decode a term into a local `enif_ffi::Pid` (`enif_get_local_pid`).
     /// `None` if `term` is not a local pid.
-    pub fn get_local_pid(self, term: impl AsNifTerm<'a>) -> Option<NifPid> {
-        let mut out = NifPid { pid: 0 };
+    pub fn get_local_pid(self, term: impl AsNifTerm<'a>) -> Option<enif_ffi::Pid> {
+        let mut out = enif_ffi::Pid { pid: 0 };
         if unsafe { crate::enif::get_local_pid(self.as_ptr(), term.as_nif_term(), &mut out) != 0 } {
             Some(out)
         } else {
@@ -184,7 +184,7 @@ impl<'a> Env<'a> {
 
     /// Whether the process identified by `pid` is alive
     /// (`enif_is_process_alive`).
-    pub fn is_process_alive(self, pid: NifPid) -> bool {
+    pub fn is_process_alive(self, pid: enif_ffi::Pid) -> bool {
         let mut pid = pid;
         unsafe { crate::enif::is_process_alive(self.as_ptr(), &mut pid) != 0 }
     }
@@ -192,7 +192,7 @@ impl<'a> Env<'a> {
     /// Look up a process by its registered name (`enif_whereis_pid`).
     /// `None` if no process is registered under `name`.
     pub fn whereis_pid(self, name: impl AsNifTerm<'a>) -> Option<LocalPid> {
-        let mut out = NifPid { pid: 0 };
+        let mut out = enif_ffi::Pid { pid: 0 };
         if unsafe { crate::enif::whereis_pid(self.as_ptr(), name.as_nif_term(), &mut out) != 0 } {
             Some(LocalPid { pid: out })
         } else {

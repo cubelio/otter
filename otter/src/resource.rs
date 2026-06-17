@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::priv_data::{PrivData, ResourceRegistry};
-use crate::sys::{NifEnv, NifEvent, NifPid, NifResourceType, NifResourceTypeInit};
+use crate::sys::{NifEnv, NifEvent, NifResourceType, NifResourceTypeInit};
 use crate::term::{Term, AsNifTerm};
 use crate::types::LocalPid;
 
@@ -219,7 +219,7 @@ unsafe extern "C" fn destructor_callback<T: Resource>(env: *mut NifEnv, obj: *mu
 unsafe extern "C" fn down_callback<T: Resource>(
     env: *mut NifEnv,
     obj: *mut c_void,
-    pid: *mut NifPid,
+    pid: *mut enif_ffi::Pid,
     mon: *mut enif_ffi::Monitor,
 ) {
     let inner = align_ptr::<T>(obj) as *const T;

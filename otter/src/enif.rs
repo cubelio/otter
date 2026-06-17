@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 use crate::sys::{
     NifBinary, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
-    NifMapIterator, NifMapIteratorEntry, NifPid,
+    NifMapIterator, NifMapIteratorEntry,
     NifResourceFlags, NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
     NifTime, NifTimeUnit, SysIOVec,
 };
@@ -183,10 +183,10 @@ pub(crate) struct EnifFunctions {
     pub alloc_env:          unsafe extern "C" fn() -> *mut NifEnv,
     pub free_env:           unsafe extern "C" fn(*mut NifEnv),
     pub clear_env:          unsafe extern "C" fn(*mut NifEnv),
-    pub send:               unsafe extern "C" fn(*mut NifEnv, *const NifPid, *mut NifEnv, NifTerm) -> c_int,
+    pub send:               unsafe extern "C" fn(*mut NifEnv, *const enif_ffi::Pid, *mut NifEnv, NifTerm) -> c_int,
     pub make_copy:          unsafe extern "C" fn(*mut NifEnv, NifTerm) -> NifTerm,
-    pub self_:           unsafe extern "C" fn(*mut NifEnv, *mut NifPid) -> *mut NifPid,
-    pub get_local_pid:      unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifPid) -> c_int,
+    pub self_:           unsafe extern "C" fn(*mut NifEnv, *mut enif_ffi::Pid) -> *mut enif_ffi::Pid,
+    pub get_local_pid:      unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Pid) -> c_int,
     pub keep_resource:      unsafe extern "C" fn(*mut c_void),
     pub make_resource_binary: unsafe extern "C" fn(*mut NifEnv, *mut c_void, *const c_void, usize) -> NifTerm,
     // int64/uint64: on 64-bit these are loaded as get_long/make_long.
@@ -276,7 +276,7 @@ pub(crate) struct EnifFunctions {
     pub cpu_time:           unsafe extern "C" fn(*mut NifEnv) -> NifTerm,
     pub make_unique_integer: unsafe extern "C" fn(*mut NifEnv, enif_ffi::UniqueInteger) -> NifTerm,
     pub is_current_process_alive: unsafe extern "C" fn(*mut NifEnv) -> c_int,
-    pub is_process_alive:   unsafe extern "C" fn(*mut NifEnv, *mut NifPid) -> c_int,
+    pub is_process_alive:   unsafe extern "C" fn(*mut NifEnv, *mut enif_ffi::Pid) -> c_int,
     pub is_port_alive:      unsafe extern "C" fn(*mut NifEnv, *mut enif_ffi::Port) -> c_int,
     pub get_local_port:     unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Port) -> c_int,
     pub term_to_binary:     unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifBinary) -> c_int,
@@ -290,21 +290,21 @@ pub(crate) struct EnifFunctions {
     // =====================================================================
     pub select: unsafe extern "C" fn(
         *mut NifEnv, NifEvent, NifSelectFlags,
-        *mut c_void, *const NifPid, NifTerm,
+        *mut c_void, *const enif_ffi::Pid, NifTerm,
     ) -> c_int,
     pub open_resource_type_x: unsafe extern "C" fn(
         *mut NifEnv, *const c_char, *const NifResourceTypeInit,
         NifResourceFlags, *mut NifResourceFlags,
     ) -> *mut NifResourceType,
     pub monitor_process: unsafe extern "C" fn(
-        *mut NifEnv, *mut c_void, *const NifPid, *mut enif_ffi::Monitor,
+        *mut NifEnv, *mut c_void, *const enif_ffi::Pid, *mut enif_ffi::Monitor,
     ) -> c_int,
     pub demonitor_process: unsafe extern "C" fn(
         *mut NifEnv, *mut c_void, *const enif_ffi::Monitor,
     ) -> c_int,
     pub compare_monitors:   unsafe extern "C" fn(*const enif_ffi::Monitor, *const enif_ffi::Monitor) -> c_int,
     pub hash:               unsafe extern "C" fn(enif_ffi::Hash, NifTerm, u64) -> u64,
-    pub whereis_pid:        unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifPid) -> c_int,
+    pub whereis_pid:        unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Pid) -> c_int,
     pub whereis_port:       unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut enif_ffi::Port) -> c_int,
     pub ioq_create:         unsafe extern "C" fn(NifIOQueueOpts) -> *mut NifIOQueue,
     pub ioq_destroy:        unsafe extern "C" fn(*mut NifIOQueue),
@@ -340,11 +340,11 @@ pub(crate) struct EnifFunctions {
     // =====================================================================
     pub select_x: unsafe extern "C" fn(
         *mut NifEnv, NifEvent, NifSelectFlags,
-        *mut c_void, *const NifPid, NifTerm, *mut NifEnv,
+        *mut c_void, *const enif_ffi::Pid, NifTerm, *mut NifEnv,
     ) -> c_int,
     pub make_monitor_term:  unsafe extern "C" fn(*mut NifEnv, *const enif_ffi::Monitor) -> NifTerm,
-    pub set_pid_undefined:  unsafe extern "C" fn(*mut NifPid),
-    pub is_pid_undefined:   unsafe extern "C" fn(*const NifPid) -> c_int,
+    pub set_pid_undefined:  unsafe extern "C" fn(*mut enif_ffi::Pid),
+    pub is_pid_undefined:   unsafe extern "C" fn(*const enif_ffi::Pid) -> c_int,
     pub term_type:          unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
 
     // =====================================================================
@@ -1346,19 +1346,19 @@ pub unsafe fn make_unique_integer(
 // -- Pid ------------------------------------------------------------------
 
 /// Initializes `*pid` to represent the calling process, returning the pointer on success or NULL if not process-bound. NIF 2.0 (OTP R14B). Wraps `enif_self`.
-pub unsafe fn self_(env: *mut NifEnv, pid: *mut NifPid) -> *mut NifPid {
+pub unsafe fn self_(env: *mut NifEnv, pid: *mut enif_ffi::Pid) -> *mut enif_ffi::Pid {
     unsafe { (funcs().self_)(env, pid) }
 }
 
 /// Extracts a node-local pid from a term, returning non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_get_local_pid`.
 pub unsafe fn get_local_pid(
-    env: *mut NifEnv, term: NifTerm, pid: *mut NifPid,
+    env: *mut NifEnv, term: NifTerm, pid: *mut enif_ffi::Pid,
 ) -> c_int {
     unsafe { (funcs().get_local_pid)(env, term, pid) }
 }
 
 /// Returns non-zero if the process identified by `*pid` is alive. NIF 2.11 (OTP 19.0). Wraps `enif_is_process_alive`.
-pub unsafe fn is_process_alive(env: *mut NifEnv, pid: *mut NifPid) -> c_int {
+pub unsafe fn is_process_alive(env: *mut NifEnv, pid: *mut enif_ffi::Pid) -> c_int {
     unsafe { (funcs().is_process_alive)(env, pid) }
 }
 
@@ -1369,7 +1369,7 @@ pub unsafe fn is_current_process_alive(env: *mut NifEnv) -> c_int {
 
 /// Looks up a process by its registered name atom, returning non-zero on success. NIF 2.12 (OTP 20.0). Wraps `enif_whereis_pid`.
 pub unsafe fn whereis_pid(
-    env: *mut NifEnv, name: NifTerm, pid: *mut NifPid,
+    env: *mut NifEnv, name: NifTerm, pid: *mut enif_ffi::Pid,
 ) -> c_int {
     unsafe { (funcs().whereis_pid)(env, name, pid) }
 }
@@ -1421,7 +1421,7 @@ pub unsafe fn clear_env(env: *mut NifEnv) {
 
 /// Sends a message to a process; `msg_env` is invalidated on success. NIF 2.0 (OTP R14B). Wraps `enif_send`.
 pub unsafe fn send(
-    env: *mut NifEnv, to_pid: *const NifPid, msg_env: *mut NifEnv, msg: NifTerm,
+    env: *mut NifEnv, to_pid: *const enif_ffi::Pid, msg_env: *mut NifEnv, msg: NifTerm,
 ) -> c_int {
     unsafe { (funcs().send)(env, to_pid, msg_env, msg) }
 }
@@ -1519,7 +1519,7 @@ pub unsafe fn schedule_nif(
 
 /// Starts monitoring a process from a resource; a process exit triggers the `down` callback. NIF 2.12 (OTP 20.0). Wraps `enif_monitor_process`.
 pub unsafe fn monitor_process(
-    env: *mut NifEnv, obj: *mut c_void, pid: *const NifPid, monitor: *mut enif_ffi::Monitor,
+    env: *mut NifEnv, obj: *mut c_void, pid: *const enif_ffi::Pid, monitor: *mut enif_ffi::Monitor,
 ) -> c_int {
     unsafe { (funcs().monitor_process)(env, obj, pid, monitor) }
 }
@@ -1543,7 +1543,7 @@ pub unsafe fn compare_monitors(
 /// Registers for asynchronous notifications when an OS event object becomes ready for read or write. NIF 2.12 (OTP 20.0). Wraps `enif_select`.
 pub unsafe fn select(
     env: *mut NifEnv, e: NifEvent, flags: NifSelectFlags, obj: *mut c_void,
-    pid: *const NifPid, ref_term: NifTerm,
+    pid: *const enif_ffi::Pid, ref_term: NifTerm,
 ) -> c_int {
     unsafe { (funcs().select)(env, e, flags, obj, pid, ref_term) }
 }
@@ -1921,7 +1921,7 @@ pub unsafe fn ioq_peek_head(
 /// Extended select with custom message support. NIF 2.15 (OTP 22.0). Wraps `enif_select_x`.
 pub unsafe fn select_x(
     env: *mut NifEnv, e: NifEvent, flags: NifSelectFlags, obj: *mut c_void,
-    pid: *const NifPid, msg: NifTerm, msg_env: *mut NifEnv,
+    pid: *const enif_ffi::Pid, msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
     unsafe { (funcs().select_x)(env, e, flags, obj, pid, msg, msg_env) }
 }
@@ -1934,12 +1934,12 @@ pub unsafe fn make_monitor_term(
 }
 
 /// Sets a pid variable to undefined, for use as a sentinel value. NIF 2.15 (OTP 22.0). Wraps `enif_set_pid_undefined`.
-pub unsafe fn set_pid_undefined(pid: *mut NifPid) {
+pub unsafe fn set_pid_undefined(pid: *mut enif_ffi::Pid) {
     unsafe { (funcs().set_pid_undefined)(pid) }
 }
 
 /// Returns non-zero if the pid was set to undefined with `set_pid_undefined`. NIF 2.15 (OTP 22.0). Wraps `enif_is_pid_undefined`.
-pub unsafe fn is_pid_undefined(pid: *const NifPid) -> c_int {
+pub unsafe fn is_pid_undefined(pid: *const enif_ffi::Pid) -> c_int {
     unsafe { (funcs().is_pid_undefined)(pid) }
 }
 
@@ -1955,7 +1955,7 @@ pub unsafe fn term_type(env: *mut NifEnv, term: NifTerm) -> c_int {
 /// Registers for async read notifications with a custom message. NIF 2.15 (OTP 22.0). Macro equivalent of `enif_select_read`.
 // Implementation note: calls select_x with SELECT_READ | SELECT_CUSTOM_MSG.
 pub unsafe fn select_read(
-    env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const NifPid,
+    env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const enif_ffi::Pid,
     msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
     unsafe { select_x(env, e, NifSelectFlags::READ | NifSelectFlags::CUSTOM_MSG, obj, pid, msg, msg_env) }
@@ -1964,7 +1964,7 @@ pub unsafe fn select_read(
 /// Registers for async write notifications with a custom message. NIF 2.15 (OTP 22.0). Macro equivalent of `enif_select_write`.
 // Implementation note: calls select_x with SELECT_WRITE | SELECT_CUSTOM_MSG.
 pub unsafe fn select_write(
-    env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const NifPid,
+    env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const enif_ffi::Pid,
     msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
     unsafe { select_x(env, e, NifSelectFlags::WRITE | NifSelectFlags::CUSTOM_MSG, obj, pid, msg, msg_env) }
@@ -1993,7 +1993,7 @@ pub unsafe fn dynamic_resource_call(
 /// Registers for async error notifications with a custom message. NIF 2.16 (OTP 24.0). Macro equivalent of `enif_select_error`.
 // Implementation note: calls select_x with SELECT_ERROR | SELECT_CUSTOM_MSG.
 pub unsafe fn select_error(
-    env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const NifPid,
+    env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const enif_ffi::Pid,
     msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
     unsafe { select_x(env, e, NifSelectFlags::ERROR | NifSelectFlags::CUSTOM_MSG, obj, pid, msg, msg_env) }

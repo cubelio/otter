@@ -112,17 +112,6 @@ pub struct NifBinary {
 }
 
 // ---------------------------------------------------------------------------
-// Pid
-// ---------------------------------------------------------------------------
-
-/// `ErlNifPid` — local process identifier. NIF 2.0 (OTP R14A).
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct NifPid {
-    pub pid: NifTerm,
-}
-
-// ---------------------------------------------------------------------------
 // Resource type
 // ---------------------------------------------------------------------------
 
@@ -144,7 +133,7 @@ pub struct NifResourceType {
 pub struct NifResourceTypeInit {
     pub dtor:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void)>,
     pub stop:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, NifEvent, c_int)>,
-    pub down:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, *mut NifPid, *mut enif_ffi::Monitor)>,
+    pub down:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, *mut enif_ffi::Pid, *mut enif_ffi::Monitor)>,
     pub members: c_int,
     pub dyncall: Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, *mut c_void)>,
 }
