@@ -18,7 +18,7 @@ use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
 use crate::sys::{
-    NifBinary, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
+    NifBinary, NifEnv, NifIOQueue, NifIOQueueOpts, NifIOVec,
     NifMapIterator, NifMapIteratorEntry,
     NifResourceType, NifResourceTypeInit, NifSelectFlags, NifTerm,
     SysIOVec,
@@ -289,7 +289,7 @@ pub(crate) struct EnifFunctions {
     // NIF 2.12 (OTP 20.0)
     // =====================================================================
     pub select: unsafe extern "C" fn(
-        *mut NifEnv, NifEvent, NifSelectFlags,
+        *mut NifEnv, enif_ffi::Event, NifSelectFlags,
         *mut c_void, *const enif_ffi::Pid, NifTerm,
     ) -> c_int,
     pub open_resource_type_x: unsafe extern "C" fn(
@@ -339,7 +339,7 @@ pub(crate) struct EnifFunctions {
     // NIF 2.15 (OTP 22.0)
     // =====================================================================
     pub select_x: unsafe extern "C" fn(
-        *mut NifEnv, NifEvent, NifSelectFlags,
+        *mut NifEnv, enif_ffi::Event, NifSelectFlags,
         *mut c_void, *const enif_ffi::Pid, NifTerm, *mut NifEnv,
     ) -> c_int,
     pub make_monitor_term:  unsafe extern "C" fn(*mut NifEnv, *const enif_ffi::Monitor) -> NifTerm,
@@ -1542,7 +1542,7 @@ pub unsafe fn compare_monitors(
 
 /// Registers for asynchronous notifications when an OS event object becomes ready for read or write. NIF 2.12 (OTP 20.0). Wraps `enif_select`.
 pub unsafe fn select(
-    env: *mut NifEnv, e: NifEvent, flags: NifSelectFlags, obj: *mut c_void,
+    env: *mut NifEnv, e: enif_ffi::Event, flags: NifSelectFlags, obj: *mut c_void,
     pid: *const enif_ffi::Pid, ref_term: NifTerm,
 ) -> c_int {
     unsafe { (funcs().select)(env, e, flags, obj, pid, ref_term) }
@@ -1920,7 +1920,7 @@ pub unsafe fn ioq_peek_head(
 
 /// Extended select with custom message support. NIF 2.15 (OTP 22.0). Wraps `enif_select_x`.
 pub unsafe fn select_x(
-    env: *mut NifEnv, e: NifEvent, flags: NifSelectFlags, obj: *mut c_void,
+    env: *mut NifEnv, e: enif_ffi::Event, flags: NifSelectFlags, obj: *mut c_void,
     pid: *const enif_ffi::Pid, msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
     unsafe { (funcs().select_x)(env, e, flags, obj, pid, msg, msg_env) }
@@ -1955,7 +1955,7 @@ pub unsafe fn term_type(env: *mut NifEnv, term: NifTerm) -> c_int {
 /// Registers for async read notifications with a custom message. NIF 2.15 (OTP 22.0). Macro equivalent of `enif_select_read`.
 // Implementation note: calls select_x with SELECT_READ | SELECT_CUSTOM_MSG.
 pub unsafe fn select_read(
-    env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const enif_ffi::Pid,
+    env: *mut NifEnv, e: enif_ffi::Event, obj: *mut c_void, pid: *const enif_ffi::Pid,
     msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
     unsafe { select_x(env, e, NifSelectFlags::READ | NifSelectFlags::CUSTOM_MSG, obj, pid, msg, msg_env) }
@@ -1964,7 +1964,7 @@ pub unsafe fn select_read(
 /// Registers for async write notifications with a custom message. NIF 2.15 (OTP 22.0). Macro equivalent of `enif_select_write`.
 // Implementation note: calls select_x with SELECT_WRITE | SELECT_CUSTOM_MSG.
 pub unsafe fn select_write(
-    env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const enif_ffi::Pid,
+    env: *mut NifEnv, e: enif_ffi::Event, obj: *mut c_void, pid: *const enif_ffi::Pid,
     msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
     unsafe { select_x(env, e, NifSelectFlags::WRITE | NifSelectFlags::CUSTOM_MSG, obj, pid, msg, msg_env) }
@@ -1993,7 +1993,7 @@ pub unsafe fn dynamic_resource_call(
 /// Registers for async error notifications with a custom message. NIF 2.16 (OTP 24.0). Macro equivalent of `enif_select_error`.
 // Implementation note: calls select_x with SELECT_ERROR | SELECT_CUSTOM_MSG.
 pub unsafe fn select_error(
-    env: *mut NifEnv, e: NifEvent, obj: *mut c_void, pid: *const enif_ffi::Pid,
+    env: *mut NifEnv, e: enif_ffi::Event, obj: *mut c_void, pid: *const enif_ffi::Pid,
     msg: NifTerm, msg_env: *mut NifEnv,
 ) -> c_int {
     unsafe { select_x(env, e, NifSelectFlags::ERROR | NifSelectFlags::CUSTOM_MSG, obj, pid, msg, msg_env) }

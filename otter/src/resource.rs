@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::priv_data::{PrivData, ResourceRegistry};
-use crate::sys::{NifEnv, NifEvent, NifResourceType, NifResourceTypeInit};
+use crate::sys::{NifEnv, NifResourceType, NifResourceTypeInit};
 use crate::term::{Term, AsNifTerm};
 use crate::types::LocalPid;
 
@@ -178,7 +178,7 @@ pub trait Resource: Sized + Send + Sync + 'static {
     /// type (the BEAM requires one for any resource passed to `enif_select`),
     /// so leaving this as the default no-op is harmless for resources that are
     /// never selected.
-    fn stop(&self, _env: Env<'_>, _event: NifEvent, _is_direct_call: bool) {}
+    fn stop(&self, _env: Env<'_>, _event: enif_ffi::Event, _is_direct_call: bool) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +237,7 @@ unsafe extern "C" fn down_callback<T: Resource>(
 unsafe extern "C" fn stop_callback<T: Resource>(
     env: *mut NifEnv,
     obj: *mut c_void,
-    event: NifEvent,
+    event: enif_ffi::Event,
     is_direct_call: c_int,
 ) {
     let inner = align_ptr::<T>(obj) as *const T;

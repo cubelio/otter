@@ -132,7 +132,7 @@ pub struct NifResourceType {
 #[repr(C)]
 pub struct NifResourceTypeInit {
     pub dtor:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void)>,
-    pub stop:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, NifEvent, c_int)>,
+    pub stop:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, enif_ffi::Event, c_int)>,
     pub down:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, *mut enif_ffi::Pid, *mut enif_ffi::Monitor)>,
     pub members: c_int,
     pub dyncall: Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, *mut c_void)>,
@@ -142,13 +142,9 @@ pub struct NifResourceTypeInit {
 // OS event handle (for enif_select)
 // ---------------------------------------------------------------------------
 
-/// `ErlNifEvent` — OS event handle. `c_int` on Unix, `*mut c_void` on Windows.
-/// NIF 2.12 (OTP 20.0).
-#[cfg(unix)]
-pub type NifEvent = c_int;
-
-#[cfg(windows)]
-pub type NifEvent = *mut c_void;
+/// `ErlNifEvent` — re-export of [`enif_ffi::Event`] under otter's legacy name,
+/// kept while consumers still reference `otter::sys::NifEvent`. NIF 2.12.
+pub use enif_ffi::Event as NifEvent;
 
 // ---------------------------------------------------------------------------
 // Map iterator
