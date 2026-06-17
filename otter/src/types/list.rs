@@ -2,7 +2,7 @@ use std::ffi::{c_char, c_uint};
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifCharEncoding, NifTerm};
+use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang list term.
@@ -289,7 +289,7 @@ impl<'a> Env<'a> {
                 self.as_ptr(),
                 s.as_ptr() as *const c_char,
                 s.len(),
-                NifCharEncoding::Utf8,
+                enif_ffi::CharEncoding::Utf8,
             )
         };
         List { term, env: self }
@@ -302,7 +302,7 @@ impl<'a> Env<'a> {
         let raw = term.as_nif_term();
         let mut len: c_uint = 0;
         if unsafe {
-            crate::enif::get_string_length(self.as_ptr(), raw, &mut len, NifCharEncoding::Utf8) == 0
+            crate::enif::get_string_length(self.as_ptr(), raw, &mut len, enif_ffi::CharEncoding::Utf8) == 0
         } {
             return None;
         }
@@ -317,7 +317,7 @@ impl<'a> Env<'a> {
                 raw,
                 buf.as_mut_ptr() as *mut c_char,
                 buf.len() as c_uint,
-                NifCharEncoding::Utf8,
+                enif_ffi::CharEncoding::Utf8,
             )
         };
         if ret <= 0 {

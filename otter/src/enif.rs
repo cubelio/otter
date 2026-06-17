@@ -18,7 +18,7 @@ use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
 use crate::sys::{
-    NifBinary, NifCharEncoding, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
+    NifBinary, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
     NifMapIterator, NifMapIteratorEntry, NifOption, NifPid, NifPort,
     NifResourceFlags, NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
     NifTime, NifTimeUnit, SysIOVec,
@@ -91,12 +91,12 @@ pub(crate) struct EnifFunctions {
     pub make_ulong:         unsafe extern "C" fn(*mut NifEnv, std::ffi::c_ulong) -> NifTerm,
     pub make_double:        unsafe extern "C" fn(*mut NifEnv, f64) -> NifTerm,
     pub make_atom:          unsafe extern "C" fn(*mut NifEnv, *const c_char) -> NifTerm,
-    pub make_existing_atom: unsafe extern "C" fn(*mut NifEnv, *const c_char, *mut NifTerm, NifCharEncoding) -> c_int,
+    pub make_existing_atom: unsafe extern "C" fn(*mut NifEnv, *const c_char, *mut NifTerm, enif_ffi::CharEncoding) -> c_int,
     // Variadic; the make_tupleN/make_listN shims call these with N args, mirroring the C macros.
     pub make_tuple:         unsafe extern "C" fn(*mut NifEnv, c_uint, ...) -> NifTerm,
     pub make_list:          unsafe extern "C" fn(*mut NifEnv, c_uint, ...) -> NifTerm,
     pub make_list_cell:     unsafe extern "C" fn(*mut NifEnv, NifTerm, NifTerm) -> NifTerm,
-    pub make_string:        unsafe extern "C" fn(*mut NifEnv, *const c_char, NifCharEncoding) -> NifTerm,
+    pub make_string:        unsafe extern "C" fn(*mut NifEnv, *const c_char, enif_ffi::CharEncoding) -> NifTerm,
     pub make_ref:           unsafe extern "C" fn(*mut NifEnv) -> NifTerm,
 
     // =====================================================================
@@ -164,8 +164,8 @@ pub(crate) struct EnifFunctions {
     pub system_info:        unsafe extern "C" fn(*mut NifSysInfo, usize),
     pub inspect_iolist_as_binary: unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifBinary) -> c_int,
     pub make_sub_binary:    unsafe extern "C" fn(*mut NifEnv, NifTerm, usize, usize) -> NifTerm,
-    pub get_string:         unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_char, c_uint, NifCharEncoding) -> c_int,
-    pub get_atom:           unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_char, c_uint, NifCharEncoding) -> c_int,
+    pub get_string:         unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_char, c_uint, enif_ffi::CharEncoding) -> c_int,
+    pub get_atom:           unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_char, c_uint, enif_ffi::CharEncoding) -> c_int,
 
     // =====================================================================
     // NIF 2.0 (OTP R14B)
@@ -173,13 +173,13 @@ pub(crate) struct EnifFunctions {
     pub release_binary:     unsafe extern "C" fn(*mut NifBinary),
     pub is_list:            unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
     pub is_tuple:           unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
-    pub get_atom_length:    unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_uint, NifCharEncoding) -> c_int,
+    pub get_atom_length:    unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_uint, enif_ffi::CharEncoding) -> c_int,
     pub get_list_length:    unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_uint) -> c_int,
     pub make_atom_len:      unsafe extern "C" fn(*mut NifEnv, *const c_char, usize) -> NifTerm,
     pub make_existing_atom_len: unsafe extern "C" fn(
-        *mut NifEnv, *const c_char, usize, *mut NifTerm, NifCharEncoding,
+        *mut NifEnv, *const c_char, usize, *mut NifTerm, enif_ffi::CharEncoding,
     ) -> c_int,
-    pub make_string_len:    unsafe extern "C" fn(*mut NifEnv, *const c_char, usize, NifCharEncoding) -> NifTerm,
+    pub make_string_len:    unsafe extern "C" fn(*mut NifEnv, *const c_char, usize, enif_ffi::CharEncoding) -> NifTerm,
     pub alloc_env:          unsafe extern "C" fn() -> *mut NifEnv,
     pub free_env:           unsafe extern "C" fn(*mut NifEnv),
     pub clear_env:          unsafe extern "C" fn(*mut NifEnv),
@@ -361,10 +361,10 @@ pub(crate) struct EnifFunctions {
     // =====================================================================
     // NIF 2.17 (OTP 26.0)
     // =====================================================================
-    pub get_string_length:  unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_uint, NifCharEncoding) -> c_int,
-    pub make_new_atom:      unsafe extern "C" fn(*mut NifEnv, *const c_char, *mut NifTerm, NifCharEncoding) -> c_int,
+    pub get_string_length:  unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_uint, enif_ffi::CharEncoding) -> c_int,
+    pub make_new_atom:      unsafe extern "C" fn(*mut NifEnv, *const c_char, *mut NifTerm, enif_ffi::CharEncoding) -> c_int,
     pub make_new_atom_len: unsafe extern "C" fn(
-        *mut NifEnv, *const c_char, usize, *mut NifTerm, NifCharEncoding,
+        *mut NifEnv, *const c_char, usize, *mut NifTerm, enif_ffi::CharEncoding,
     ) -> c_int,
     pub set_option:         unsafe extern "C" fn(*mut NifEnv, NifOption, ...) -> c_int,
 
@@ -977,7 +977,7 @@ pub unsafe fn make_atom(env: *mut NifEnv, name: *const c_char) -> NifTerm {
 
 /// Looks up an existing atom. Returns non-zero on success. NIF 0.1 (OTP R13B03). Wraps `enif_make_existing_atom`.
 pub unsafe fn make_existing_atom(
-    env: *mut NifEnv, name: *const c_char, atom: *mut NifTerm, encoding: NifCharEncoding,
+    env: *mut NifEnv, name: *const c_char, atom: *mut NifTerm, encoding: enif_ffi::CharEncoding,
 ) -> c_int {
     unsafe { (funcs().make_existing_atom)(env, name, atom, encoding) }
 }
@@ -992,7 +992,7 @@ pub unsafe fn make_atom_len(
 /// Looks up an existing atom by name and length. Returns non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_make_existing_atom_len`.
 pub unsafe fn make_existing_atom_len(
     env: *mut NifEnv, name: *const c_char, len: usize, atom: *mut NifTerm,
-    encoding: NifCharEncoding,
+    encoding: enif_ffi::CharEncoding,
 ) -> c_int {
     unsafe { (funcs().make_existing_atom_len)(env, name, len, atom, encoding) }
 }
@@ -1001,14 +1001,14 @@ pub unsafe fn make_existing_atom_len(
 /// terminator), or 0 on failure. NIF 1.0 (OTP R13B04). Wraps `enif_get_atom`.
 pub unsafe fn get_atom(
     env: *mut NifEnv, atom: NifTerm, buf: *mut c_char, len: c_uint,
-    encoding: NifCharEncoding,
+    encoding: enif_ffi::CharEncoding,
 ) -> c_int {
     unsafe { (funcs().get_atom)(env, atom, buf, len, encoding) }
 }
 
 /// Gets the length of an atom name in bytes. Returns non-zero on success. NIF 2.0 (OTP R14B). Wraps `enif_get_atom_length`.
 pub unsafe fn get_atom_length(
-    env: *mut NifEnv, atom: NifTerm, len: *mut c_uint, encoding: NifCharEncoding,
+    env: *mut NifEnv, atom: NifTerm, len: *mut c_uint, encoding: enif_ffi::CharEncoding,
 ) -> c_int {
     unsafe { (funcs().get_atom_length)(env, atom, len, encoding) }
 }
@@ -1208,14 +1208,14 @@ pub unsafe fn make_tuple9(
 
 /// Creates a list containing the characters of a NUL-terminated string with the given encoding. NIF 0.1 (OTP R13B03). Wraps `enif_make_string`.
 pub unsafe fn make_string(
-    env: *mut NifEnv, string: *const c_char, encoding: NifCharEncoding,
+    env: *mut NifEnv, string: *const c_char, encoding: enif_ffi::CharEncoding,
 ) -> NifTerm {
     unsafe { (funcs().make_string)(env, string, encoding) }
 }
 
 /// Creates a list containing the characters of a string with the given length and encoding. NIF 2.0 (OTP R14B). Wraps `enif_make_string_len`.
 pub unsafe fn make_string_len(
-    env: *mut NifEnv, string: *const c_char, len: usize, encoding: NifCharEncoding,
+    env: *mut NifEnv, string: *const c_char, len: usize, encoding: enif_ffi::CharEncoding,
 ) -> NifTerm {
     unsafe { (funcs().make_string_len)(env, string, len, encoding) }
 }
@@ -1223,7 +1223,7 @@ pub unsafe fn make_string_len(
 /// Writes a NUL-terminated string into `buf` from a list of characters with the given encoding. NIF 1.0 (OTP R13B04). Wraps `enif_get_string`.
 pub unsafe fn get_string(
     env: *mut NifEnv, list: NifTerm, buf: *mut c_char, len: c_uint,
-    encoding: NifCharEncoding,
+    encoding: enif_ffi::CharEncoding,
 ) -> c_int {
     unsafe { (funcs().get_string)(env, list, buf, len, encoding) }
 }
@@ -2004,7 +2004,7 @@ pub unsafe fn select_error(
 
 /// Gets the length (in bytes) of a string list without extracting it. NIF 2.17 (OTP 26.0). Wraps `enif_get_string_length`.
 pub unsafe fn get_string_length(
-    env: *mut NifEnv, list: NifTerm, len: *mut c_uint, encoding: NifCharEncoding,
+    env: *mut NifEnv, list: NifTerm, len: *mut c_uint, encoding: enif_ffi::CharEncoding,
 ) -> c_int {
     unsafe { (funcs().get_string_length)(env, list, len, encoding) }
 }
@@ -2012,7 +2012,7 @@ pub unsafe fn get_string_length(
 /// Creates an atom from a NUL-terminated string, failing if the atom does not already exist and the table is full. NIF 2.17 (OTP 26.0). Wraps `enif_make_new_atom`.
 pub unsafe fn make_new_atom(
     env: *mut NifEnv, name: *const c_char, atom: *mut NifTerm,
-    encoding: NifCharEncoding,
+    encoding: enif_ffi::CharEncoding,
 ) -> c_int {
     unsafe { (funcs().make_new_atom)(env, name, atom, encoding) }
 }
@@ -2020,7 +2020,7 @@ pub unsafe fn make_new_atom(
 /// Creates an atom from a string with explicit length, failing if the atom does not already exist and the table is full. NIF 2.17 (OTP 26.0). Wraps `enif_make_new_atom_len`.
 pub unsafe fn make_new_atom_len(
     env: *mut NifEnv, name: *const c_char, len: usize, atom: *mut NifTerm,
-    encoding: NifCharEncoding,
+    encoding: enif_ffi::CharEncoding,
 ) -> c_int {
     unsafe { (funcs().make_new_atom_len)(env, name, len, atom, encoding) }
 }

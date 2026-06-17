@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifCharEncoding, NifTerm};
+use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang atom.
@@ -180,7 +180,7 @@ impl<'a> Env<'a> {
                 name.as_ptr() as *const c_char,
                 name.len(),
                 &mut term,
-                NifCharEncoding::Utf8,
+                enif_ffi::CharEncoding::Utf8,
             )
         };
         if ok != 0 { Some(Atom { term }) } else { None }
@@ -196,7 +196,7 @@ impl<'a> Env<'a> {
                 name.as_ptr() as *const c_char,
                 name.len(),
                 &mut term,
-                NifCharEncoding::Utf8,
+                enif_ffi::CharEncoding::Utf8,
             )
         };
         if ok != 0 { Some(Atom { term }) } else { None }
@@ -211,7 +211,7 @@ impl<'a> Env<'a> {
                 self.as_ptr(),
                 atom.term,
                 &mut len,
-                NifCharEncoding::Utf8,
+                enif_ffi::CharEncoding::Utf8,
             )
         };
         if ok == 0 {
@@ -224,7 +224,7 @@ impl<'a> Env<'a> {
                 atom.term,
                 buf.as_mut_ptr() as *mut c_char,
                 buf.len() as c_uint,
-                NifCharEncoding::Utf8,
+                enif_ffi::CharEncoding::Utf8,
             )
         };
         if written > 0 {

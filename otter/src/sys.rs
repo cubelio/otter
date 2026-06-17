@@ -288,20 +288,6 @@ impl NifTermType {
 }
 
 // ---------------------------------------------------------------------------
-// Character encoding
-// ---------------------------------------------------------------------------
-
-/// `ErlNifCharEncoding` — encoding used when reading/writing atom names.
-/// NIF 1.0 (OTP R13B04). `Utf8` added in NIF 2.17 (OTP 26.0).
-#[repr(i32)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum NifCharEncoding {
-    Latin1 = 1,
-    /// NIF 2.17 (OTP 26.0).
-    Utf8   = 2,
-}
-
-// ---------------------------------------------------------------------------
 // Time
 // ---------------------------------------------------------------------------
 
