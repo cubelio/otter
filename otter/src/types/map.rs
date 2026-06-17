@@ -1,6 +1,6 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifMapIterator, NifTerm};
+use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang map. Immutable — all mutations return a new map.
@@ -48,7 +48,7 @@ impl<'a> Map<'a> {
 
     /// Return an iterator over `(key, value)` pairs in unspecified order.
     pub fn iter(self) -> MapIterator<'a> {
-        let mut iter: Box<NifMapIterator> = Box::new(unsafe { std::mem::zeroed() });
+        let mut iter: Box<enif_ffi::MapIterator> = Box::new(unsafe { std::mem::zeroed() });
         self.env.map_iterator_create(self, &mut iter, enif_ffi::MapIteratorEntry::First);
         MapIterator { iter, env: self.env, exhausted: false }
     }
@@ -60,10 +60,10 @@ impl<'a> Map<'a> {
 
 /// Iterator over the key-value pairs of a `Map`.
 ///
-/// `NifMapIterator` must not move after `map_iterator_create`. The `Box`
+/// `enif_ffi::MapIterator` must not move after `map_iterator_create`. The `Box`
 /// pins it on the heap for the lifetime of the iterator.
 pub struct MapIterator<'a> {
-    iter: Box<NifMapIterator>,
+    iter: Box<enif_ffi::MapIterator>,
     env: Env<'a>,
     exhausted: bool,
 }
@@ -245,20 +245,20 @@ impl<'a> Env<'a> {
     pub fn map_iterator_create(
         self,
         map: impl AsNifTerm<'a>,
-        iter: &mut NifMapIterator,
+        iter: &mut enif_ffi::MapIterator,
         entry: enif_ffi::MapIteratorEntry,
     ) -> bool {
         unsafe { crate::enif::map_iterator_create(self.as_ptr(), map.as_nif_term(), iter, entry) != 0 }
     }
 
     /// Destroy a map iterator (`enif_map_iterator_destroy`).
-    pub fn map_iterator_destroy(self, iter: &mut NifMapIterator) {
+    pub fn map_iterator_destroy(self, iter: &mut enif_ffi::MapIterator) {
         unsafe { crate::enif::map_iterator_destroy(self.as_ptr(), iter) }
     }
 
     /// Advance a map iterator (`enif_map_iterator_next`). `false` when
     /// exhausted.
-    pub fn map_iterator_next(self, iter: &mut NifMapIterator) -> bool {
+    pub fn map_iterator_next(self, iter: &mut enif_ffi::MapIterator) -> bool {
         unsafe { crate::enif::map_iterator_next(self.as_ptr(), iter) != 0 }
     }
 
@@ -266,7 +266,7 @@ impl<'a> Env<'a> {
     /// (`enif_map_iterator_get_pair`). `None` if exhausted.
     pub fn map_iterator_get_pair(
         self,
-        iter: &mut NifMapIterator,
+        iter: &mut enif_ffi::MapIterator,
     ) -> Option<(Term<'a>, Term<'a>)> {
         let mut key: NifTerm = 0;
         let mut value: NifTerm = 0;

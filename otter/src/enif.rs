@@ -19,7 +19,6 @@ use std::sync::OnceLock;
 
 use crate::sys::{
     NifIOQueue, NifIOQueueOpts, NifIOVec,
-    NifMapIterator,
     NifTerm,
     SysIOVec,
 };
@@ -232,13 +231,13 @@ pub(crate) struct EnifFunctions {
     pub get_map_value:      unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, NifTerm, *mut NifTerm) -> c_int,
     pub make_map_update:    unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, NifTerm, NifTerm, *mut NifTerm) -> c_int,
     pub make_map_remove:    unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, NifTerm, *mut NifTerm) -> c_int,
-    pub map_iterator_create: unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, *mut NifMapIterator, enif_ffi::MapIteratorEntry) -> c_int,
-    pub map_iterator_destroy: unsafe extern "C" fn(*mut enif_ffi::Env, *mut NifMapIterator),
-    pub map_iterator_is_head: unsafe extern "C" fn(*mut enif_ffi::Env, *mut NifMapIterator) -> c_int,
-    pub map_iterator_is_tail: unsafe extern "C" fn(*mut enif_ffi::Env, *mut NifMapIterator) -> c_int,
-    pub map_iterator_next:  unsafe extern "C" fn(*mut enif_ffi::Env, *mut NifMapIterator) -> c_int,
-    pub map_iterator_prev:  unsafe extern "C" fn(*mut enif_ffi::Env, *mut NifMapIterator) -> c_int,
-    pub map_iterator_get_pair: unsafe extern "C" fn(*mut enif_ffi::Env, *mut NifMapIterator, *mut NifTerm, *mut NifTerm) -> c_int,
+    pub map_iterator_create: unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, *mut enif_ffi::MapIterator, enif_ffi::MapIteratorEntry) -> c_int,
+    pub map_iterator_destroy: unsafe extern "C" fn(*mut enif_ffi::Env, *mut enif_ffi::MapIterator),
+    pub map_iterator_is_head: unsafe extern "C" fn(*mut enif_ffi::Env, *mut enif_ffi::MapIterator) -> c_int,
+    pub map_iterator_is_tail: unsafe extern "C" fn(*mut enif_ffi::Env, *mut enif_ffi::MapIterator) -> c_int,
+    pub map_iterator_next:  unsafe extern "C" fn(*mut enif_ffi::Env, *mut enif_ffi::MapIterator) -> c_int,
+    pub map_iterator_prev:  unsafe extern "C" fn(*mut enif_ffi::Env, *mut enif_ffi::MapIterator) -> c_int,
+    pub map_iterator_get_pair: unsafe extern "C" fn(*mut enif_ffi::Env, *mut enif_ffi::MapIterator, *mut NifTerm, *mut NifTerm) -> c_int,
 
     // =====================================================================
     // NIF 2.7 (OTP 17.3)
@@ -1274,48 +1273,48 @@ pub unsafe fn make_map_remove(
 
 /// Creates an iterator for a map, positioned at first or last entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_create`.
 pub unsafe fn map_iterator_create(
-    env: *mut enif_ffi::Env, map: NifTerm, iter: *mut NifMapIterator,
+    env: *mut enif_ffi::Env, map: NifTerm, iter: *mut enif_ffi::MapIterator,
     entry: enif_ffi::MapIteratorEntry,
 ) -> c_int {
     unsafe { (funcs().map_iterator_create)(env, map, iter, entry) }
 }
 
 /// Destroys a map iterator created by `map_iterator_create`. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_destroy`.
-pub unsafe fn map_iterator_destroy(env: *mut enif_ffi::Env, iter: *mut NifMapIterator) {
+pub unsafe fn map_iterator_destroy(env: *mut enif_ffi::Env, iter: *mut enif_ffi::MapIterator) {
     unsafe { (funcs().map_iterator_destroy)(env, iter) }
 }
 
 /// Returns non-zero if the map iterator is positioned before the first entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_is_head`.
 pub unsafe fn map_iterator_is_head(
-    env: *mut enif_ffi::Env, iter: *mut NifMapIterator,
+    env: *mut enif_ffi::Env, iter: *mut enif_ffi::MapIterator,
 ) -> c_int {
     unsafe { (funcs().map_iterator_is_head)(env, iter) }
 }
 
 /// Returns non-zero if the map iterator is positioned after the last entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_is_tail`.
 pub unsafe fn map_iterator_is_tail(
-    env: *mut enif_ffi::Env, iter: *mut NifMapIterator,
+    env: *mut enif_ffi::Env, iter: *mut enif_ffi::MapIterator,
 ) -> c_int {
     unsafe { (funcs().map_iterator_is_tail)(env, iter) }
 }
 
 /// Increments the map iterator to point to the next key-value entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_next`.
 pub unsafe fn map_iterator_next(
-    env: *mut enif_ffi::Env, iter: *mut NifMapIterator,
+    env: *mut enif_ffi::Env, iter: *mut enif_ffi::MapIterator,
 ) -> c_int {
     unsafe { (funcs().map_iterator_next)(env, iter) }
 }
 
 /// Decrements the map iterator to point to the previous key-value entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_prev`.
 pub unsafe fn map_iterator_prev(
-    env: *mut enif_ffi::Env, iter: *mut NifMapIterator,
+    env: *mut enif_ffi::Env, iter: *mut enif_ffi::MapIterator,
 ) -> c_int {
     unsafe { (funcs().map_iterator_prev)(env, iter) }
 }
 
 /// Gets the key and value terms at the current map iterator position. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_get_pair`.
 pub unsafe fn map_iterator_get_pair(
-    env: *mut enif_ffi::Env, iter: *mut NifMapIterator, key: *mut NifTerm,
+    env: *mut enif_ffi::Env, iter: *mut enif_ffi::MapIterator, key: *mut NifTerm,
     value: *mut NifTerm,
 ) -> c_int {
     unsafe { (funcs().map_iterator_get_pair)(env, iter, key, value) }

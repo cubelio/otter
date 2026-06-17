@@ -91,45 +91,6 @@ pub struct NifEntry {
 pub use enif_ffi::Event as NifEvent;
 
 // ---------------------------------------------------------------------------
-// Map iterator
-// ---------------------------------------------------------------------------
-
-// Internal union variants for NifMapIterator — not public.
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct NifMapIteratorFlat {
-    ks: *mut NifTerm,
-    vs: *mut NifTerm,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct NifMapIteratorHash {
-    wstack: *mut c_void,
-    kv:     *mut NifTerm,
-}
-
-#[repr(C)]
-union NifMapIteratorUnion {
-    flat: NifMapIteratorFlat,
-    hash: NifMapIteratorHash,
-}
-
-/// `ErlNifMapIterator` — map iteration cursor. All fields are internal to the BEAM.
-///
-/// Initialized by `enif_map_iterator_create`; destroyed by `enif_map_iterator_destroy`.
-/// Must not be moved after initialization.
-/// NIF 2.6 (OTP R17).
-#[repr(C)]
-pub struct NifMapIterator {
-    pub map: NifTerm,
-    size:    usize,
-    idx:     usize,
-    u:       NifMapIteratorUnion,
-    _spare:  [*mut c_void; 2],
-}
-
-// ---------------------------------------------------------------------------
 // Time
 // ---------------------------------------------------------------------------
 
