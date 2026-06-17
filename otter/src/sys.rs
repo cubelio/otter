@@ -9,7 +9,7 @@
 //! referenced as `enif_ffi::*` (and a few re-exported under their legacy
 //! `Nif*` names while consumers catch up).
 
-use std::ffi::{c_char, c_int, c_uint, c_void};
+use std::ffi::{c_int, c_uint};
 
 // ---------------------------------------------------------------------------
 // Version constants
@@ -45,30 +45,6 @@ pub const NIF_FUNC_DIRTY_IO: c_uint = 2;
 // ---------------------------------------------------------------------------
 // Library entry point descriptor
 // ---------------------------------------------------------------------------
-
-/// `ErlNifEntry` — the library descriptor returned by `nif_init()`.
-/// NIF 1.0 (OTP R13B04), extended in later versions.
-#[repr(C)]
-pub struct NifEntry {
-    pub major:        c_int,
-    pub minor:        c_int,
-    pub name:         *const c_char,
-    pub num_of_funcs: c_int,
-    pub funcs:        *mut enif_ffi::Func,
-    pub load:    Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, enif_ffi::Term) -> c_int>,
-    pub reload:  Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, enif_ffi::Term) -> c_int>,
-    pub upgrade: Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, *mut *mut c_void, enif_ffi::Term) -> c_int>,
-    pub unload:  Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut c_void)>,
-    /// Added in NIF 2.1 (OTP R14B02).
-    pub vm_variant: *const c_char,
-    /// Added in NIF 2.7 (OTP 17.3) — unused, set to 0 or 1.
-    pub options: c_uint,
-    /// Added in NIF 2.12 (OTP 20.0) — must equal `size_of::<enif_ffi::ResourceTypeInit>()`.
-    pub sizeof_resource_type_init: usize,
-    /// Added in NIF 2.14 (OTP 21.0) — minimum ERTS version string.
-    pub min_erts: *const c_char,
-}
-
 
 // ---------------------------------------------------------------------------
 // OS event handle (for enif_select)

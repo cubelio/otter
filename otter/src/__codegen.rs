@@ -12,7 +12,7 @@ pub use crate::priv_data::{discard_priv_data, free_priv_data, install_priv_data,
 pub use crate::priv_data::{old_user_priv_field, user_priv_field};
 pub use crate::resource::{register, register_tagged, ResourceFlags};
 pub use crate::sys::{
-    NifEntry, NIF_FUNC_DIRTY_CPU,
+    NIF_FUNC_DIRTY_CPU,
     NIF_FUNC_DIRTY_IO, NIF_MAJOR_VERSION, NIF_MIN_ERTS_VERSION, NIF_MINOR_VERSION,
     NIF_VM_VARIANT,
 };
@@ -20,12 +20,13 @@ pub use crate::sys::{
 // generated registration references `__codegen::NifResourceTypeInit`. Keep the
 // legacy names as re-exports of the enif_ffi types for now.
 pub use enif_ffi::Env as NifEnv;
+pub use enif_ffi::Entry as NifEntry;
 pub use enif_ffi::ResourceTypeInit as NifResourceTypeInit;
 pub use enif_ffi::Term as NifTerm;
 pub use crate::term::{Term, TypedTerm};
 pub use crate::types::Atom;
 
-/// Value for `NifEntry.options` indicating `sizeof_resource_type_init` is set.
+/// Value for `enif_ffi::Entry.options` indicating `sizeof_resource_type_init` is set.
 pub const NIF_ENTRY_OPTIONS: u32 = 1;
 
 // ---------------------------------------------------------------------------
@@ -61,7 +62,7 @@ pub struct NifMeta {
 }
 
 impl NifMeta {
-    /// Convert to a [`enif_ffi::Func`] for inclusion in a `NifEntry`.
+    /// Convert to a [`enif_ffi::Func`] for inclusion in a `enif_ffi::Entry`.
     pub fn to_nif_func(&self) -> enif_ffi::Func {
         enif_ffi::Func {
             name: self.name.as_ptr() as *const std::ffi::c_char,
