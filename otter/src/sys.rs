@@ -89,14 +89,6 @@ pub const NIF_SELECT_ERROR_CANCELLED: c_int = 1 << 6;
 pub const NIF_SELECT_NOTSUP:          c_int = 1 << 7;
 
 // ---------------------------------------------------------------------------
-// binary_to_term options
-// ---------------------------------------------------------------------------
-
-/// Safe decoding for `enif_binary_to_term`: reject encoded atoms that don't
-/// already exist. NIF 2.11 (OTP 19.0).
-pub const NIF_BIN2TERM_SAFE: c_uint = 0x20000000;
-
-// ---------------------------------------------------------------------------
 // Schedule NIF flags
 // ---------------------------------------------------------------------------
 

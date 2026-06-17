@@ -455,7 +455,7 @@ impl<'a> Env<'a> {
     /// atom table are rejected. `None` on decode failure. The decoded value is
     /// an unresolved [`Term`]; call [`Term::resolve`] or a decoder to type it.
     pub fn deserialize(self, data: &[u8], safe: bool) -> Option<Term<'a>> {
-        let opts = if safe { crate::sys::NIF_BIN2TERM_SAFE } else { 0 };
+        let opts = if safe { enif_ffi::BIN2TERM_SAFE } else { 0 };
         let mut term: enif_ffi::Term = 0;
         let consumed = unsafe {
             crate::enif::binary_to_term(self.as_ptr(), data.as_ptr(), data.len(), &mut term, opts)
