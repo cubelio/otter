@@ -21,7 +21,7 @@ use crate::sys::{
     NifBinary, NifCharEncoding, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
     NifMapIterator, NifMapIteratorEntry, NifMonitor, NifOption, NifPid, NifPort,
     NifResourceFlags, NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
-    NifTime, NifTimeUnit, NifUniqueInteger, SysIOVec,
+    NifTime, NifTimeUnit, SysIOVec,
 };
 
 /// The BEAM's non-value marker (`THE_NON_VALUE`). No valid term is ever `0`,
@@ -274,7 +274,7 @@ pub(crate) struct EnifFunctions {
     pub now_time:           unsafe extern "C" fn(*mut NifEnv) -> NifTerm,
     /// Deprecated — use OS-level CPU time APIs.
     pub cpu_time:           unsafe extern "C" fn(*mut NifEnv) -> NifTerm,
-    pub make_unique_integer: unsafe extern "C" fn(*mut NifEnv, NifUniqueInteger) -> NifTerm,
+    pub make_unique_integer: unsafe extern "C" fn(*mut NifEnv, enif_ffi::UniqueInteger) -> NifTerm,
     pub is_current_process_alive: unsafe extern "C" fn(*mut NifEnv) -> c_int,
     pub is_process_alive:   unsafe extern "C" fn(*mut NifEnv, *mut NifPid) -> c_int,
     pub is_port_alive:      unsafe extern "C" fn(*mut NifEnv, *mut NifPort) -> c_int,
@@ -1338,7 +1338,7 @@ pub unsafe fn make_ref(env: *mut NifEnv) -> NifTerm {
 
 /// Returns a unique integer with the same properties as `erlang:unique_integer/1`. NIF 2.11 (OTP 19.0). Wraps `enif_make_unique_integer`.
 pub unsafe fn make_unique_integer(
-    env: *mut NifEnv, properties: NifUniqueInteger,
+    env: *mut NifEnv, properties: enif_ffi::UniqueInteger,
 ) -> NifTerm {
     unsafe { (funcs().make_unique_integer)(env, properties) }
 }

@@ -336,30 +336,6 @@ pub enum NifTimeUnit {
 }
 
 // ---------------------------------------------------------------------------
-// Unique integer flags
-// ---------------------------------------------------------------------------
-
-/// `ErlNifUniqueInteger` — flags for `enif_make_unique_integer`.
-///
-/// Combine with bitwise OR: `NifUniqueInteger::POSITIVE | NifUniqueInteger::MONOTONIC`.
-/// NIF 2.11 (OTP 19.0).
-#[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct NifUniqueInteger(pub c_int);
-
-impl NifUniqueInteger {
-    /// Return a positive integer only.
-    pub const POSITIVE: Self = Self(1 << 0);
-    /// Return a strictly monotonic integer.
-    pub const MONOTONIC: Self = Self(1 << 1);
-}
-
-impl std::ops::BitOr for NifUniqueInteger {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self { Self(self.0 | rhs.0) }
-}
-
-// ---------------------------------------------------------------------------
 // Select (I/O event multiplexing)
 // ---------------------------------------------------------------------------
 

@@ -2,7 +2,7 @@
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
-use crate::sys::{NifTerm, NifTermType, NifUniqueInteger};
+use crate::sys::{NifTerm, NifTermType};
 use crate::types::{
     Atom, Binary, BinaryBuf, Bitstring, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,
     Port, Reference, Tuple,
@@ -450,11 +450,12 @@ impl<'a> Env<'a> {
 
     /// Create a unique integer.
     ///
-    /// `properties` is a bitmask of `NifUniqueInteger::POSITIVE` and
-    /// `NifUniqueInteger::MONOTONIC`. Use `NifUniqueInteger(0)` for an arbitrary unique integer.
+    /// `properties` is a bitmask of `enif_ffi::UniqueInteger::POSITIVE` and
+    /// `enif_ffi::UniqueInteger::MONOTONIC`. Use `enif_ffi::UniqueInteger(0)`
+    /// for an arbitrary unique integer.
     ///
     /// Wraps `enif_make_unique_integer`.
-    pub fn make_unique_integer(self, properties: NifUniqueInteger) -> Integer<'a> {
+    pub fn make_unique_integer(self, properties: enif_ffi::UniqueInteger) -> Integer<'a> {
         let raw = unsafe {
             crate::enif::make_unique_integer(self.as_ptr(), properties)
         };
