@@ -2,7 +2,7 @@
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
-use crate::sys::{NifHash, NifTerm, NifTermType, NifUniqueInteger};
+use crate::sys::{NifTerm, NifTermType, NifUniqueInteger};
 use crate::types::{
     Atom, Binary, BinaryBuf, Bitstring, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,
     Port, Reference, Tuple,
@@ -467,11 +467,11 @@ impl<'a> Env<'a> {
 
     /// Hash a term using the specified algorithm.
     ///
-    /// `algorithm` is `NifHash::Phash2` (portable, consistent across nodes)
-    /// or `NifHash::InternalHash` (node-local, faster).
+    /// `algorithm` is `enif_ffi::Hash::Phash2` (portable, consistent across
+    /// nodes) or `enif_ffi::Hash::InternalHash` (node-local, faster).
     ///
     /// Wraps `enif_hash`.
-    pub fn hash(self, algorithm: NifHash, term: impl AsNifTerm<'a>, salt: u64) -> u64 {
+    pub fn hash(self, algorithm: enif_ffi::Hash, term: impl AsNifTerm<'a>, salt: u64) -> u64 {
         unsafe { crate::enif::hash(algorithm, term.as_nif_term(), salt) }
     }
 

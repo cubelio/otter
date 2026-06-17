@@ -18,7 +18,7 @@ use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
 use crate::sys::{
-    NifBinary, NifCharEncoding, NifEnv, NifEvent, NifHash, NifIOQueue, NifIOQueueOpts, NifIOVec,
+    NifBinary, NifCharEncoding, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
     NifMapIterator, NifMapIteratorEntry, NifMonitor, NifOption, NifPid, NifPort,
     NifResourceFlags, NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
     NifTime, NifTimeUnit, NifUniqueInteger, SysIOVec,
@@ -303,7 +303,7 @@ pub(crate) struct EnifFunctions {
         *mut NifEnv, *mut c_void, *const NifMonitor,
     ) -> c_int,
     pub compare_monitors:   unsafe extern "C" fn(*const NifMonitor, *const NifMonitor) -> c_int,
-    pub hash:               unsafe extern "C" fn(NifHash, NifTerm, u64) -> u64,
+    pub hash:               unsafe extern "C" fn(enif_ffi::Hash, NifTerm, u64) -> u64,
     pub whereis_pid:        unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifPid) -> c_int,
     pub whereis_port:       unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifPort) -> c_int,
     pub ioq_create:         unsafe extern "C" fn(NifIOQueueOpts) -> *mut NifIOQueue,
@@ -1580,7 +1580,7 @@ pub unsafe fn cpu_time(env: *mut NifEnv) -> NifTerm {
 // -- Hash -----------------------------------------------------------------
 
 /// Hashes a term using the specified hash type and salt. NIF 2.12 (OTP 20.0). Wraps `enif_hash`.
-pub unsafe fn hash(hash_type: NifHash, term: NifTerm, salt: u64) -> u64 {
+pub unsafe fn hash(hash_type: enif_ffi::Hash, term: NifTerm, salt: u64) -> u64 {
     unsafe { (funcs().hash)(hash_type, term, salt) }
 }
 
