@@ -555,9 +555,9 @@ impl<'a> Env<'a> {
 
     /// Reschedule the current NIF to run `fp` with the given arguments.
     ///
-    /// `fun_name` is the name reported to Erlang tracing. `flags` is one of
-    /// `sys::NIF_DIRTY_JOB_NORMAL`, `sys::NIF_DIRTY_JOB_CPU_BOUND`, or
-    /// `sys::NIF_DIRTY_JOB_IO_BOUND`.
+    /// `fun_name` is the name reported to Erlang tracing. `flags` is `0` for a
+    /// normal NIF, or `enif_ffi::DIRTY_JOB_CPU_BOUND` /
+    /// `enif_ffi::DIRTY_JOB_IO_BOUND` for a dirty NIF.
     ///
     /// The success value must be returned directly from the NIF. If
     /// `fun_name` cannot be converted to an atom the BEAM raises `badarg`,
