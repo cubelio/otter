@@ -10,8 +10,8 @@
 //!
 //! ## Why direct-linked, not `dlsym`
 //!
-//! The rest of otter resolves `enif_*` symbols at run time with `dlsym` (see
-//! [`crate::enif`]). A global allocator cannot: it may be called for the very
+//! The rest of otter resolves `enif_*` symbols at run time with `dlsym` (via
+//! the `enif_ffi` crate). A global allocator cannot: it may be called for the very
 //! first Rust allocation, before any initialization code runs, so it must not
 //! depend on a resolution step that itself allocates. Instead this module
 //! **direct-links** the two functions it needs as `extern "C"`. The BEAM

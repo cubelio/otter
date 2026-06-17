@@ -1,9 +1,3 @@
-// The raw 1:1 unsafe enif surface. Public escape hatch under the `raw` feature;
-// otherwise crate-private (the safe layer uses it via crate:: paths regardless).
-#[cfg(feature = "raw")]
-pub mod enif;
-#[cfg(not(feature = "raw"))]
-pub(crate) mod enif;
 pub mod env;
 pub mod types;
 pub mod term;
