@@ -2,7 +2,7 @@
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
-use crate::sys::{NifTerm, NifTermType};
+use crate::sys::NifTerm;
 use crate::types::{
     Atom, Binary, BinaryBuf, Bitstring, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,
     Port, Reference, Tuple,
@@ -58,17 +58,17 @@ impl<'a> Term<'a> {
     /// continue to use the original `Term`.
     pub fn resolve(self) -> Option<TypedTerm<'a>> {
         Some(match self.env.term_type(self)? {
-            NifTermType::Atom      => TypedTerm::Atom(Atom::from_raw(self.term)),
-            NifTermType::Bitstring => TypedTerm::Bitstring(Bitstring { term: self.term, env: self.env }),
-            NifTermType::Float     => TypedTerm::Float(Float { term: self.term, env: self.env }),
-            NifTermType::Fun       => TypedTerm::Fun(Fun { term: self.term, env: self.env }),
-            NifTermType::Integer   => TypedTerm::Integer(Integer { term: self.term, env: self.env }),
-            NifTermType::List      => TypedTerm::List(List { term: self.term, env: self.env }),
-            NifTermType::Map       => TypedTerm::Map(Map { term: self.term, env: self.env }),
-            NifTermType::Pid       => TypedTerm::Pid(Pid { term: self.term, env: self.env }),
-            NifTermType::Port      => TypedTerm::Port(Port { term: self.term, env: self.env }),
-            NifTermType::Reference => TypedTerm::Reference(Reference { term: self.term, env: self.env }),
-            NifTermType::Tuple     => TypedTerm::Tuple(Tuple { term: self.term, env: self.env }),
+            enif_ffi::TermType::Atom      => TypedTerm::Atom(Atom::from_raw(self.term)),
+            enif_ffi::TermType::Bitstring => TypedTerm::Bitstring(Bitstring { term: self.term, env: self.env }),
+            enif_ffi::TermType::Float     => TypedTerm::Float(Float { term: self.term, env: self.env }),
+            enif_ffi::TermType::Fun       => TypedTerm::Fun(Fun { term: self.term, env: self.env }),
+            enif_ffi::TermType::Integer   => TypedTerm::Integer(Integer { term: self.term, env: self.env }),
+            enif_ffi::TermType::List      => TypedTerm::List(List { term: self.term, env: self.env }),
+            enif_ffi::TermType::Map       => TypedTerm::Map(Map { term: self.term, env: self.env }),
+            enif_ffi::TermType::Pid       => TypedTerm::Pid(Pid { term: self.term, env: self.env }),
+            enif_ffi::TermType::Port      => TypedTerm::Port(Port { term: self.term, env: self.env }),
+            enif_ffi::TermType::Reference => TypedTerm::Reference(Reference { term: self.term, env: self.env }),
+            enif_ffi::TermType::Tuple     => TypedTerm::Tuple(Tuple { term: self.term, env: self.env }),
         })
     }
 
@@ -425,9 +425,9 @@ impl<'a> Env<'a> {
     /// `None` if the BEAM returns a term-type code this otter build does not
     /// recognize (a type added by a newer OTP). For the raw code, enable the
     /// `raw` feature and use `Term::term_type_raw`.
-    pub fn term_type(self, term: impl AsNifTerm<'a>) -> Option<NifTermType> {
+    pub fn term_type(self, term: impl AsNifTerm<'a>) -> Option<enif_ffi::TermType> {
         let code = unsafe { crate::enif::term_type(self.as_ptr(), term.as_nif_term()) };
-        NifTermType::from_raw(code)
+        enif_ffi::TermType::from_raw(code)
     }
 
     /// Copy `src` (which may belong to another environment) into this one,

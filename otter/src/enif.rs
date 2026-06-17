@@ -1945,8 +1945,9 @@ pub unsafe fn is_pid_undefined(pid: *const NifPid) -> c_int {
 
 /// Returns the raw `enif_term_type` code. The C header reserves the right to
 /// add term types and defines a `-1` sentinel, so this returns `c_int` rather
-/// than `NifTermType`: transmuting an out-of-range code into the enum would be
-/// undefined behavior. Map with [`NifTermType::from_raw`](crate::sys::NifTermType::from_raw). NIF 2.15 (OTP 22.0).
+/// than `enif_ffi::TermType`: transmuting an out-of-range code into the enum
+/// would be undefined behavior. Map with
+/// [`enif_ffi::TermType::from_raw`](enif_ffi::TermType::from_raw). NIF 2.15 (OTP 22.0).
 pub unsafe fn term_type(env: *mut NifEnv, term: NifTerm) -> c_int {
     unsafe { (funcs().term_type)(env, term) }
 }

@@ -1,7 +1,7 @@
 use std::str::Utf8Error;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifBinary, NifTerm, NifTermType};
+use crate::sys::{NifBinary, NifTerm};
 use crate::term::{Term, AsNifTerm};
 
 /// A byte-aligned binary (`enif_is_binary` returned true).
@@ -494,7 +494,7 @@ impl<'a> Decoder<'a> for Bitstring<'a> {
         // In BEAM every binary is a bitstring, so `Bitstring::decode` accepts
         // both byte-aligned binaries and sub-byte bitstrings. Use `Binary` if
         // you want the byte-aligned refinement.
-        if term.env.term_type(term) == Some(NifTermType::Bitstring) {
+        if term.env.term_type(term) == Some(enif_ffi::TermType::Bitstring) {
             Ok(Bitstring { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

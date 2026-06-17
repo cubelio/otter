@@ -1,6 +1,6 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifTerm, NifTermType};
+use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang integer. Arbitrary precision — small integers are tagged
@@ -134,7 +134,7 @@ impl<'b> Encoder for Integer<'b> {
 
 impl<'a> Decoder<'a> for Integer<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.term_type(term) == Some(NifTermType::Integer) {
+        if term.env.term_type(term) == Some(enif_ffi::TermType::Integer) {
             Ok(Integer { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)
