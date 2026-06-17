@@ -171,14 +171,3 @@ pub struct SysIOVec {
     pub iov_len: usize,
 }
 
-/// `ErlNifIOVec` — scatter/gather I/O vector. NIF 2.13 (OTP 20.1).
-#[repr(C)]
-pub struct NifIOVec {
-    pub iovcnt: c_int,
-    pub size: usize,
-    pub iov: *mut SysIOVec,
-    ref_bins: *mut *mut c_void,
-    flags: c_int,
-    small_iov: [SysIOVec; 16],
-    small_ref_bin: [*mut c_void; 16],
-}

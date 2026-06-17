@@ -18,7 +18,6 @@ use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
 use crate::sys::{
-    NifIOVec,
     NifTerm,
     SysIOVec,
 };
@@ -308,14 +307,14 @@ pub(crate) struct EnifFunctions {
     pub ioq_create:         unsafe extern "C" fn(enif_ffi::IOQueueOpts) -> *mut enif_ffi::IOQueue,
     pub ioq_destroy:        unsafe extern "C" fn(*mut enif_ffi::IOQueue),
     pub ioq_enq_binary:     unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut enif_ffi::Binary, usize) -> c_int,
-    pub ioq_enqv:           unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut NifIOVec, usize) -> c_int,
+    pub ioq_enqv:           unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut enif_ffi::IOVec, usize) -> c_int,
     pub ioq_size:           unsafe extern "C" fn(*mut enif_ffi::IOQueue) -> usize,
     pub ioq_deq:            unsafe extern "C" fn(*mut enif_ffi::IOQueue, usize, *mut usize) -> c_int,
     pub ioq_peek:           unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut c_int) -> *mut SysIOVec,
     pub inspect_iovec: unsafe extern "C" fn(
-        *mut enif_ffi::Env, usize, NifTerm, *mut NifTerm, *mut *mut NifIOVec,
+        *mut enif_ffi::Env, usize, NifTerm, *mut NifTerm, *mut *mut enif_ffi::IOVec,
     ) -> c_int,
-    pub free_iovec:         unsafe extern "C" fn(*mut NifIOVec),
+    pub free_iovec:         unsafe extern "C" fn(*mut enif_ffi::IOVec),
 
     // =====================================================================
     // NIF 2.14 (OTP 21.0)
@@ -1869,7 +1868,7 @@ pub unsafe fn ioq_enq_binary(
 
 /// Enqueues an iovec into the I/O queue, skipping the first `skip` bytes. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_enqv`.
 pub unsafe fn ioq_enqv(
-    q: *mut enif_ffi::IOQueue, iov: *mut NifIOVec, skip: usize,
+    q: *mut enif_ffi::IOQueue, iov: *mut enif_ffi::IOVec, skip: usize,
 ) -> c_int {
     unsafe { (funcs().ioq_enqv)(q, iov, skip) }
 }
@@ -1896,13 +1895,13 @@ pub unsafe fn ioq_peek(
 /// Inspects an iolist or binary term as an iovec, processing up to `max_length` elements. NIF 2.12 (OTP 20.0). Wraps `enif_inspect_iovec`.
 pub unsafe fn inspect_iovec(
     env: *mut enif_ffi::Env, max_length: usize, iovec_term: NifTerm,
-    tail: *mut NifTerm, iovec: *mut *mut NifIOVec,
+    tail: *mut NifTerm, iovec: *mut *mut enif_ffi::IOVec,
 ) -> c_int {
     unsafe { (funcs().inspect_iovec)(env, max_length, iovec_term, tail, iovec) }
 }
 
 /// Frees an iovec returned by `inspect_iovec`. NIF 2.12 (OTP 20.0). Wraps `enif_free_iovec`.
-pub unsafe fn free_iovec(iov: *mut NifIOVec) {
+pub unsafe fn free_iovec(iov: *mut enif_ffi::IOVec) {
     unsafe { (funcs().free_iovec)(iov) }
 }
 
