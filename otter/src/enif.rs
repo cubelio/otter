@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 use crate::sys::{
     NifBinary, NifCharEncoding, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
-    NifMapIterator, NifMapIteratorEntry, NifMonitor, NifOption, NifPid, NifPort,
+    NifMapIterator, NifMapIteratorEntry, NifOption, NifPid, NifPort,
     NifResourceFlags, NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
     NifTime, NifTimeUnit, SysIOVec,
 };
@@ -297,12 +297,12 @@ pub(crate) struct EnifFunctions {
         NifResourceFlags, *mut NifResourceFlags,
     ) -> *mut NifResourceType,
     pub monitor_process: unsafe extern "C" fn(
-        *mut NifEnv, *mut c_void, *const NifPid, *mut NifMonitor,
+        *mut NifEnv, *mut c_void, *const NifPid, *mut enif_ffi::Monitor,
     ) -> c_int,
     pub demonitor_process: unsafe extern "C" fn(
-        *mut NifEnv, *mut c_void, *const NifMonitor,
+        *mut NifEnv, *mut c_void, *const enif_ffi::Monitor,
     ) -> c_int,
-    pub compare_monitors:   unsafe extern "C" fn(*const NifMonitor, *const NifMonitor) -> c_int,
+    pub compare_monitors:   unsafe extern "C" fn(*const enif_ffi::Monitor, *const enif_ffi::Monitor) -> c_int,
     pub hash:               unsafe extern "C" fn(enif_ffi::Hash, NifTerm, u64) -> u64,
     pub whereis_pid:        unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifPid) -> c_int,
     pub whereis_port:       unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifPort) -> c_int,
@@ -342,7 +342,7 @@ pub(crate) struct EnifFunctions {
         *mut NifEnv, NifEvent, NifSelectFlags,
         *mut c_void, *const NifPid, NifTerm, *mut NifEnv,
     ) -> c_int,
-    pub make_monitor_term:  unsafe extern "C" fn(*mut NifEnv, *const NifMonitor) -> NifTerm,
+    pub make_monitor_term:  unsafe extern "C" fn(*mut NifEnv, *const enif_ffi::Monitor) -> NifTerm,
     pub set_pid_undefined:  unsafe extern "C" fn(*mut NifPid),
     pub is_pid_undefined:   unsafe extern "C" fn(*const NifPid) -> c_int,
     pub term_type:          unsafe extern "C" fn(*mut NifEnv, NifTerm) -> c_int,
@@ -1519,21 +1519,21 @@ pub unsafe fn schedule_nif(
 
 /// Starts monitoring a process from a resource; a process exit triggers the `down` callback. NIF 2.12 (OTP 20.0). Wraps `enif_monitor_process`.
 pub unsafe fn monitor_process(
-    env: *mut NifEnv, obj: *mut c_void, pid: *const NifPid, monitor: *mut NifMonitor,
+    env: *mut NifEnv, obj: *mut c_void, pid: *const NifPid, monitor: *mut enif_ffi::Monitor,
 ) -> c_int {
     unsafe { (funcs().monitor_process)(env, obj, pid, monitor) }
 }
 
 /// Cancels a monitor created with `monitor_process`. Returns 0 on success. NIF 2.12 (OTP 20.0). Wraps `enif_demonitor_process`.
 pub unsafe fn demonitor_process(
-    env: *mut NifEnv, obj: *mut c_void, monitor: *const NifMonitor,
+    env: *mut NifEnv, obj: *mut c_void, monitor: *const enif_ffi::Monitor,
 ) -> c_int {
     unsafe { (funcs().demonitor_process)(env, obj, monitor) }
 }
 
 /// Compares two monitors: returns 0 if equal, <0 if mon1 < mon2, >0 if mon1 > mon2. NIF 2.12 (OTP 20.0). Wraps `enif_compare_monitors`.
 pub unsafe fn compare_monitors(
-    mon1: *const NifMonitor, mon2: *const NifMonitor,
+    mon1: *const enif_ffi::Monitor, mon2: *const enif_ffi::Monitor,
 ) -> c_int {
     unsafe { (funcs().compare_monitors)(mon1, mon2) }
 }
@@ -1928,7 +1928,7 @@ pub unsafe fn select_x(
 
 /// Creates a term from a monitor for use in Erlang code. NIF 2.15 (OTP 22.0). Wraps `enif_make_monitor_term`.
 pub unsafe fn make_monitor_term(
-    env: *mut NifEnv, monitor: *const NifMonitor,
+    env: *mut NifEnv, monitor: *const enif_ffi::Monitor,
 ) -> NifTerm {
     unsafe { (funcs().make_monitor_term)(env, monitor) }
 }

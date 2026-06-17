@@ -130,18 +130,6 @@ pub struct NifPort {
 }
 
 // ---------------------------------------------------------------------------
-// Monitor
-// ---------------------------------------------------------------------------
-
-/// `ErlNifMonitor` (= `ErlDrvMonitor`) — process monitor handle.
-///
-/// 32 bytes, opaque. Never inspect the contents directly; pass only by pointer.
-/// NIF 2.12 (OTP 20.0).
-#[repr(C, align(8))]
-#[derive(Clone, Copy)]
-pub struct NifMonitor(pub [u8; 32]);
-
-// ---------------------------------------------------------------------------
 // Resource type
 // ---------------------------------------------------------------------------
 
@@ -163,7 +151,7 @@ pub struct NifResourceType {
 pub struct NifResourceTypeInit {
     pub dtor:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void)>,
     pub stop:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, NifEvent, c_int)>,
-    pub down:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, *mut NifPid, *mut NifMonitor)>,
+    pub down:    Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, *mut NifPid, *mut enif_ffi::Monitor)>,
     pub members: c_int,
     pub dyncall: Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, *mut c_void)>,
 }

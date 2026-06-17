@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::priv_data::{PrivData, ResourceRegistry};
-use crate::sys::{NifEnv, NifEvent, NifMonitor, NifPid, NifResourceType, NifResourceTypeInit};
+use crate::sys::{NifEnv, NifEvent, NifPid, NifResourceType, NifResourceTypeInit};
 use crate::term::{Term, AsNifTerm};
 use crate::types::LocalPid;
 
@@ -95,7 +95,7 @@ impl<'a> Env<'a> {
 ///
 /// Passed to the [`Resource::down`] callback when the monitored process exits.
 #[derive(Clone, Copy)]
-pub struct Monitor(pub(crate) NifMonitor);
+pub struct Monitor(pub(crate) enif_ffi::Monitor);
 
 impl Monitor {
     /// Convert this monitor to a term.
@@ -108,7 +108,7 @@ impl Monitor {
 
 impl<'a> Env<'a> {
     /// Create a term from a monitor handle (`enif_make_monitor_term`).
-    pub fn make_monitor_term(self, mon: &NifMonitor) -> Term<'a> {
+    pub fn make_monitor_term(self, mon: &enif_ffi::Monitor) -> Term<'a> {
         let raw = unsafe { crate::enif::make_monitor_term(self.as_ptr(), mon) };
         Term::new(self, raw)
     }
@@ -220,7 +220,7 @@ unsafe extern "C" fn down_callback<T: Resource>(
     env: *mut NifEnv,
     obj: *mut c_void,
     pid: *mut NifPid,
-    mon: *mut NifMonitor,
+    mon: *mut enif_ffi::Monitor,
 ) {
     let inner = align_ptr::<T>(obj) as *const T;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -421,7 +421,7 @@ impl<T: Resource> ResourceArc<T> {
     /// scheduler callback). Pass `Some(env)` from a normal NIF call.
     pub fn monitor(&self, env: Option<Env<'_>>, pid: &LocalPid) -> Option<Monitor> {
         let env_ptr = env.map(|e| e.as_ptr()).unwrap_or(std::ptr::null_mut());
-        let mut mon = NifMonitor([0u8; 32]);
+        let mut mon = enif_ffi::Monitor([0u8; 32]);
         let rc = unsafe {
             crate::enif::monitor_process(env_ptr, self.raw, &pid.pid, &mut mon)
         };
