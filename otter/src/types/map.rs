@@ -1,12 +1,11 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifMapIterator, NifMapIteratorEntry, NifTerm};
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang map. Immutable — all mutations return a new map.
 #[derive(Clone, Copy)]
 pub struct Map<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
@@ -48,8 +47,8 @@ impl<'a> Map<'a> {
 
     /// Return an iterator over `(key, value)` pairs in unspecified order.
     pub fn iter(self) -> MapIterator<'a> {
-        let mut iter: Box<NifMapIterator> = Box::new(unsafe { std::mem::zeroed() });
-        self.env.map_iterator_create(self, &mut iter, NifMapIteratorEntry::First);
+        let mut iter: Box<enif_ffi::MapIterator> = Box::new(unsafe { std::mem::zeroed() });
+        self.env.map_iterator_create(self, &mut iter, enif_ffi::MapIteratorEntry::First);
         MapIterator { iter, env: self.env, exhausted: false }
     }
 }
@@ -60,10 +59,10 @@ impl<'a> Map<'a> {
 
 /// Iterator over the key-value pairs of a `Map`.
 ///
-/// `NifMapIterator` must not move after `map_iterator_create`. The `Box`
+/// `enif_ffi::MapIterator` must not move after `map_iterator_create`. The `Box`
 /// pins it on the heap for the lifetime of the iterator.
 pub struct MapIterator<'a> {
-    iter: Box<NifMapIterator>,
+    iter: Box<enif_ffi::MapIterator>,
     env: Env<'a>,
     exhausted: bool,
 }
@@ -98,7 +97,7 @@ impl<'a> Drop for MapIterator<'a> {
 
 impl PartialEq for Map<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -112,7 +111,7 @@ impl PartialOrd for Map<'_> {
 
 impl Ord for Map<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -136,12 +135,12 @@ impl<'b> Encoder for Map<'b> {
 impl<'a> Env<'a> {
     /// Returns `true` if `term` is a map (`enif_is_map`).
     pub fn is_map(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { crate::enif::is_map(self.as_ptr(), term.as_nif_term()) != 0 }
+        unsafe { enif_ffi::is_map(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 
     /// Create an empty map (`enif_make_new_map`).
     pub fn make_new_map(self) -> Map<'a> {
-        let term = unsafe { crate::enif::make_new_map(self.as_ptr()) };
+        let term = unsafe { enif_ffi::make_new_map(self.as_ptr()) };
         Map { term, env: self }
     }
 
@@ -149,7 +148,7 @@ impl<'a> Env<'a> {
     /// `None` if `map` is not a map.
     pub fn get_map_size(self, map: impl AsNifTerm<'a>) -> Option<usize> {
         let mut size: usize = 0;
-        if unsafe { crate::enif::get_map_size(self.as_ptr(), map.as_nif_term(), &mut size) != 0 } {
+        if unsafe { enif_ffi::get_map_size(self.as_ptr(), map.as_nif_term(), &mut size) != 0 } {
             Some(size)
         } else {
             None
@@ -162,9 +161,9 @@ impl<'a> Env<'a> {
         map: impl AsNifTerm<'a>,
         key: impl AsNifTerm<'a>,
     ) -> Option<Term<'a>> {
-        let mut value: NifTerm = 0;
+        let mut value: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::get_map_value(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut value)
+            enif_ffi::get_map_value(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut value)
                 != 0
         } {
             Some(Term::new(self, value))
@@ -181,9 +180,9 @@ impl<'a> Env<'a> {
         key: impl AsNifTerm<'a>,
         value: impl AsNifTerm<'a>,
     ) -> Option<Map<'a>> {
-        let mut out: NifTerm = 0;
+        let mut out: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::make_map_put(
+            enif_ffi::make_map_put(
                 self.as_ptr(),
                 map.as_nif_term(),
                 key.as_nif_term(),
@@ -205,9 +204,9 @@ impl<'a> Env<'a> {
         key: impl AsNifTerm<'a>,
         value: impl AsNifTerm<'a>,
     ) -> Option<Map<'a>> {
-        let mut out: NifTerm = 0;
+        let mut out: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::make_map_update(
+            enif_ffi::make_map_update(
                 self.as_ptr(),
                 map.as_nif_term(),
                 key.as_nif_term(),
@@ -228,9 +227,9 @@ impl<'a> Env<'a> {
         map: impl AsNifTerm<'a>,
         key: impl AsNifTerm<'a>,
     ) -> Option<Map<'a>> {
-        let mut out: NifTerm = 0;
+        let mut out: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::make_map_remove(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut out)
+            enif_ffi::make_map_remove(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut out)
                 != 0
         } {
             Some(Map { term: out, env: self })
@@ -245,33 +244,33 @@ impl<'a> Env<'a> {
     pub fn map_iterator_create(
         self,
         map: impl AsNifTerm<'a>,
-        iter: &mut NifMapIterator,
-        entry: NifMapIteratorEntry,
+        iter: &mut enif_ffi::MapIterator,
+        entry: enif_ffi::MapIteratorEntry,
     ) -> bool {
-        unsafe { crate::enif::map_iterator_create(self.as_ptr(), map.as_nif_term(), iter, entry) != 0 }
+        unsafe { enif_ffi::map_iterator_create(self.as_ptr(), map.as_nif_term(), iter, entry) != 0 }
     }
 
     /// Destroy a map iterator (`enif_map_iterator_destroy`).
-    pub fn map_iterator_destroy(self, iter: &mut NifMapIterator) {
-        unsafe { crate::enif::map_iterator_destroy(self.as_ptr(), iter) }
+    pub fn map_iterator_destroy(self, iter: &mut enif_ffi::MapIterator) {
+        unsafe { enif_ffi::map_iterator_destroy(self.as_ptr(), iter) }
     }
 
     /// Advance a map iterator (`enif_map_iterator_next`). `false` when
     /// exhausted.
-    pub fn map_iterator_next(self, iter: &mut NifMapIterator) -> bool {
-        unsafe { crate::enif::map_iterator_next(self.as_ptr(), iter) != 0 }
+    pub fn map_iterator_next(self, iter: &mut enif_ffi::MapIterator) -> bool {
+        unsafe { enif_ffi::map_iterator_next(self.as_ptr(), iter) != 0 }
     }
 
     /// The current key/value pair of a map iterator
     /// (`enif_map_iterator_get_pair`). `None` if exhausted.
     pub fn map_iterator_get_pair(
         self,
-        iter: &mut NifMapIterator,
+        iter: &mut enif_ffi::MapIterator,
     ) -> Option<(Term<'a>, Term<'a>)> {
-        let mut key: NifTerm = 0;
-        let mut value: NifTerm = 0;
+        let mut key: enif_ffi::Term = 0;
+        let mut value: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::map_iterator_get_pair(self.as_ptr(), iter, &mut key, &mut value) != 0
+            enif_ffi::map_iterator_get_pair(self.as_ptr(), iter, &mut key, &mut value) != 0
         } {
             Some((Term::new(self, key), Term::new(self, value)))
         } else {

@@ -3,6 +3,15 @@
 version = 4
 
 [[package]]
+name = "enif-ffi"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d21a466d43fa1a62f8375c1602a0634a544aa5ac3c8d0f27d3eb870c2779694"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12,6 +21,7 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 name = "otter"
 version = "0.1.0"
 dependencies = [
+ "enif-ffi",
  "libc",
  "otter_codegen",
 ]

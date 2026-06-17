@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifCharEncoding, NifTerm};
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang atom.
@@ -13,7 +12,7 @@ use crate::term::{Term, AsNifTerm};
 /// has no lifetime and is `Copy`.
 #[derive(Clone, Copy)]
 pub struct Atom {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
 }
 
 impl Atom {
@@ -54,7 +53,7 @@ impl Atom {
         env.make_existing_atom(name)
     }
 
-    pub(crate) fn from_raw(term: NifTerm) -> Atom {
+    pub(crate) fn from_raw(term: enif_ffi::Term) -> Atom {
         Atom { term }
     }
 
@@ -130,7 +129,7 @@ unsafe impl Sync for StaticAtom {}
 
 impl PartialEq for Atom {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -144,7 +143,7 @@ impl PartialOrd for Atom {
 
 impl Ord for Atom {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -165,7 +164,7 @@ impl Encoder for Atom {
 impl<'a> Env<'a> {
     /// Returns `true` if `term` is an atom (`enif_is_atom`).
     pub fn is_atom(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { crate::enif::is_atom(self.as_ptr(), term.as_nif_term()) != 0 }
+        unsafe { enif_ffi::is_atom(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 
     /// Create (or intern) an atom from a string (`enif_make_new_atom_len`).
@@ -173,14 +172,14 @@ impl<'a> Env<'a> {
     /// Returns `None` if the atom table is full. See [`Atom::intern`] for the
     /// atom-table-exhaustion warning — never call this on untrusted input.
     pub fn make_atom(self, name: &str) -> Option<Atom> {
-        let mut term: NifTerm = 0;
+        let mut term: enif_ffi::Term = 0;
         let ok = unsafe {
-            crate::enif::make_new_atom_len(
+            enif_ffi::make_new_atom_len(
                 self.as_ptr(),
                 name.as_ptr() as *const c_char,
                 name.len(),
                 &mut term,
-                NifCharEncoding::Utf8,
+                enif_ffi::CharEncoding::Utf8,
             )
         };
         if ok != 0 { Some(Atom { term }) } else { None }
@@ -189,14 +188,14 @@ impl<'a> Env<'a> {
     /// Look up an existing atom by name without creating it
     /// (`enif_make_existing_atom_len`). `None` if no such atom exists.
     pub fn make_existing_atom(self, name: &str) -> Option<Atom> {
-        let mut term: NifTerm = 0;
+        let mut term: enif_ffi::Term = 0;
         let ok = unsafe {
-            crate::enif::make_existing_atom_len(
+            enif_ffi::make_existing_atom_len(
                 self.as_ptr(),
                 name.as_ptr() as *const c_char,
                 name.len(),
                 &mut term,
-                NifCharEncoding::Utf8,
+                enif_ffi::CharEncoding::Utf8,
             )
         };
         if ok != 0 { Some(Atom { term }) } else { None }
@@ -207,11 +206,11 @@ impl<'a> Env<'a> {
     pub fn atom_name(self, atom: Atom) -> Option<String> {
         let mut len: c_uint = 0;
         let ok = unsafe {
-            crate::enif::get_atom_length(
+            enif_ffi::get_atom_length(
                 self.as_ptr(),
                 atom.term,
                 &mut len,
-                NifCharEncoding::Utf8,
+                enif_ffi::CharEncoding::Utf8,
             )
         };
         if ok == 0 {
@@ -219,12 +218,12 @@ impl<'a> Env<'a> {
         }
         let mut buf = vec![0u8; len as usize + 1];
         let written = unsafe {
-            crate::enif::get_atom(
+            enif_ffi::get_atom(
                 self.as_ptr(),
                 atom.term,
                 buf.as_mut_ptr() as *mut c_char,
                 buf.len() as c_uint,
-                NifCharEncoding::Utf8,
+                enif_ffi::CharEncoding::Utf8,
             )
         };
         if written > 0 {

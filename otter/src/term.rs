@@ -2,7 +2,6 @@
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
-use crate::sys::{NifHash, NifTerm, NifTermType, NifUniqueInteger};
 use crate::types::{
     Atom, Binary, BinaryBuf, Bitstring, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,
     Port, Reference, Tuple,
@@ -23,14 +22,14 @@ use crate::types::{
 /// etc.), which always produce a known type.
 #[derive(Clone, Copy)]
 pub struct Term<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
 impl<'a> Term<'a> {
     /// Wrap a raw term pointer. Used internally by NIF argument unpacking.
     #[inline]
-    pub(crate) fn new(env: Env<'a>, term: NifTerm) -> Term<'a> {
+    pub(crate) fn new(env: Env<'a>, term: enif_ffi::Term) -> Term<'a> {
         Term { term, env }
     }
 
@@ -43,7 +42,7 @@ impl<'a> Term<'a> {
     /// The underlying machine word. Returned directly from a NIF with zero
     /// additional work.
     #[inline]
-    pub fn as_raw(self) -> NifTerm {
+    pub fn as_raw(self) -> enif_ffi::Term {
         self.term
     }
 
@@ -58,17 +57,17 @@ impl<'a> Term<'a> {
     /// continue to use the original `Term`.
     pub fn resolve(self) -> Option<TypedTerm<'a>> {
         Some(match self.env.term_type(self)? {
-            NifTermType::Atom      => TypedTerm::Atom(Atom::from_raw(self.term)),
-            NifTermType::Bitstring => TypedTerm::Bitstring(Bitstring { term: self.term, env: self.env }),
-            NifTermType::Float     => TypedTerm::Float(Float { term: self.term, env: self.env }),
-            NifTermType::Fun       => TypedTerm::Fun(Fun { term: self.term, env: self.env }),
-            NifTermType::Integer   => TypedTerm::Integer(Integer { term: self.term, env: self.env }),
-            NifTermType::List      => TypedTerm::List(List { term: self.term, env: self.env }),
-            NifTermType::Map       => TypedTerm::Map(Map { term: self.term, env: self.env }),
-            NifTermType::Pid       => TypedTerm::Pid(Pid { term: self.term, env: self.env }),
-            NifTermType::Port      => TypedTerm::Port(Port { term: self.term, env: self.env }),
-            NifTermType::Reference => TypedTerm::Reference(Reference { term: self.term, env: self.env }),
-            NifTermType::Tuple     => TypedTerm::Tuple(Tuple { term: self.term, env: self.env }),
+            enif_ffi::TermType::Atom      => TypedTerm::Atom(Atom::from_raw(self.term)),
+            enif_ffi::TermType::Bitstring => TypedTerm::Bitstring(Bitstring { term: self.term, env: self.env }),
+            enif_ffi::TermType::Float     => TypedTerm::Float(Float { term: self.term, env: self.env }),
+            enif_ffi::TermType::Fun       => TypedTerm::Fun(Fun { term: self.term, env: self.env }),
+            enif_ffi::TermType::Integer   => TypedTerm::Integer(Integer { term: self.term, env: self.env }),
+            enif_ffi::TermType::List      => TypedTerm::List(List { term: self.term, env: self.env }),
+            enif_ffi::TermType::Map       => TypedTerm::Map(Map { term: self.term, env: self.env }),
+            enif_ffi::TermType::Pid       => TypedTerm::Pid(Pid { term: self.term, env: self.env }),
+            enif_ffi::TermType::Port      => TypedTerm::Port(Port { term: self.term, env: self.env }),
+            enif_ffi::TermType::Reference => TypedTerm::Reference(Reference { term: self.term, env: self.env }),
+            enif_ffi::TermType::Tuple     => TypedTerm::Tuple(Tuple { term: self.term, env: self.env }),
         })
     }
 
@@ -76,7 +75,7 @@ impl<'a> Term<'a> {
     /// OTP may return that [`resolve`](Self::resolve) maps to `None`.
     #[cfg(feature = "raw")]
     pub fn term_type_raw(self) -> std::ffi::c_int {
-        unsafe { crate::enif::term_type(self.env.as_ptr(), self.term) }
+        unsafe { enif_ffi::term_type(self.env.as_ptr(), self.term) }
     }
 
     /// Serialize this term to the Erlang external term format, returning the
@@ -89,7 +88,7 @@ impl<'a> Term<'a> {
     ///
     /// Wraps `enif_term_to_binary`.
     pub fn serialize(self) -> Option<BinaryBuf> {
-        let mut bin: crate::sys::NifBinary = unsafe { std::mem::zeroed() };
+        let mut bin: enif_ffi::Binary = unsafe { std::mem::zeroed() };
         if self.env.term_to_binary(self, &mut bin) {
             Some(BinaryBuf::from_filled(bin))
         } else {
@@ -130,7 +129,7 @@ pub enum TypedTerm<'a> {
 impl<'a> TypedTerm<'a> {
     /// Extract the underlying machine word. Discards the variant tag.
     /// Use this when returning a `TypedTerm` from a NIF at the C boundary.
-    pub fn as_raw(self) -> NifTerm {
+    pub fn as_raw(self) -> enif_ffi::Term {
         match self {
             TypedTerm::Atom(v)      => v.term,
             TypedTerm::Bitstring(v) => v.term,
@@ -149,7 +148,7 @@ impl<'a> TypedTerm<'a> {
 
 impl<'a> PartialEq for Term<'a> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -163,14 +162,14 @@ impl<'a> PartialOrd for Term<'a> {
 
 impl<'a> Ord for Term<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
 
 impl<'a> PartialEq for TypedTerm<'a> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.as_raw(), other.as_raw()) != 0 }
+        unsafe { enif_ffi::is_identical(self.as_raw(), other.as_raw()) != 0 }
     }
 }
 
@@ -184,7 +183,7 @@ impl<'a> PartialOrd for TypedTerm<'a> {
 
 impl<'a> Ord for TypedTerm<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.as_raw(), other.as_raw()) };
+        let c = unsafe { enif_ffi::compare(self.as_raw(), other.as_raw()) };
         c.cmp(&0)
     }
 }
@@ -303,7 +302,7 @@ mod sealed {
 pub trait AsNifTerm<'a>: sealed::Sealed {
     /// Extract the underlying NIF term word.
     #[doc(hidden)]
-    fn as_nif_term(&self) -> NifTerm;
+    fn as_nif_term(&self) -> enif_ffi::Term;
 }
 
 impl sealed::Sealed for Atom {}
@@ -326,60 +325,60 @@ impl<T: sealed::Sealed + ?Sized> sealed::Sealed for &T {}
 
 // Env-portable: any 'a works.
 impl<'a> AsNifTerm<'a> for Atom {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 // LocalPid/LocalPort hold internal (immediate) ids, valid in any env.
 impl<'a> AsNifTerm<'a> for LocalPid {
-    fn as_nif_term(&self) -> NifTerm { self.pid.pid }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.pid.pid }
 }
 impl<'a> AsNifTerm<'a> for LocalPort {
-    fn as_nif_term(&self) -> NifTerm { self.port.port_id }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.port.port_id }
 }
 // Env-bound: a pid/port of unestablished locality is tied to its env.
 impl<'a> AsNifTerm<'a> for Pid<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for Port<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 
 // Env-bound: tied to the type's lifetime.
 impl<'a> AsNifTerm<'a> for Binary<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for Bitstring<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for Float<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for Fun<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for Integer<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for List<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for Map<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for Reference<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for Tuple<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for Term<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.term }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.term }
 }
 impl<'a> AsNifTerm<'a> for TypedTerm<'a> {
-    fn as_nif_term(&self) -> NifTerm { self.as_raw() }
+    fn as_nif_term(&self) -> enif_ffi::Term { self.as_raw() }
 }
 
 impl<'a, T: AsNifTerm<'a> + ?Sized> AsNifTerm<'a> for &T {
-    fn as_nif_term(&self) -> NifTerm { (**self).as_nif_term() }
+    fn as_nif_term(&self) -> enif_ffi::Term { (**self).as_nif_term() }
 }
 
 // ---------------------------------------------------------------------------
@@ -410,7 +409,7 @@ impl<'a> Raised<'a> {
     /// The machine word to return from the NIF. With the exception already
     /// pending, returning it triggers the raise.
     #[inline]
-    pub(crate) fn raw(&self) -> NifTerm {
+    pub(crate) fn raw(&self) -> enif_ffi::Term {
         self.marker.as_raw()
     }
 }
@@ -425,15 +424,15 @@ impl<'a> Env<'a> {
     /// `None` if the BEAM returns a term-type code this otter build does not
     /// recognize (a type added by a newer OTP). For the raw code, enable the
     /// `raw` feature and use `Term::term_type_raw`.
-    pub fn term_type(self, term: impl AsNifTerm<'a>) -> Option<NifTermType> {
-        let code = unsafe { crate::enif::term_type(self.as_ptr(), term.as_nif_term()) };
-        NifTermType::from_raw(code)
+    pub fn term_type(self, term: impl AsNifTerm<'a>) -> Option<enif_ffi::TermType> {
+        let code = unsafe { enif_ffi::term_type(self.as_ptr(), term.as_nif_term()) };
+        enif_ffi::TermType::from_raw(code)
     }
 
     /// Copy `src` (which may belong to another environment) into this one,
     /// returning a term owned by this env (`enif_make_copy`).
     pub fn make_copy<'b>(self, src: impl AsNifTerm<'b>) -> Term<'a> {
-        let raw = unsafe { crate::enif::make_copy(self.as_ptr(), src.as_nif_term()) };
+        let raw = unsafe { enif_ffi::make_copy(self.as_ptr(), src.as_nif_term()) };
         Term::new(self, raw)
     }
 
@@ -445,18 +444,19 @@ impl<'a> Env<'a> {
     ///
     /// Wraps `enif_consume_timeslice`.
     pub fn consume_timeslice(self, percent: i32) -> bool {
-        unsafe { crate::enif::consume_timeslice(self.as_ptr(), percent) != 0 }
+        unsafe { enif_ffi::consume_timeslice(self.as_ptr(), percent) != 0 }
     }
 
     /// Create a unique integer.
     ///
-    /// `properties` is a bitmask of `NifUniqueInteger::POSITIVE` and
-    /// `NifUniqueInteger::MONOTONIC`. Use `NifUniqueInteger(0)` for an arbitrary unique integer.
+    /// `properties` is a bitmask of `enif_ffi::UniqueInteger::POSITIVE` and
+    /// `enif_ffi::UniqueInteger::MONOTONIC`. Use `enif_ffi::UniqueInteger(0)`
+    /// for an arbitrary unique integer.
     ///
     /// Wraps `enif_make_unique_integer`.
-    pub fn make_unique_integer(self, properties: NifUniqueInteger) -> Integer<'a> {
+    pub fn make_unique_integer(self, properties: enif_ffi::UniqueInteger) -> Integer<'a> {
         let raw = unsafe {
-            crate::enif::make_unique_integer(self.as_ptr(), properties)
+            enif_ffi::make_unique_integer(self.as_ptr(), properties)
         };
         debug_assert!(
             matches!(Term::new(self, raw).resolve(), Some(TypedTerm::Integer(_))),
@@ -467,12 +467,12 @@ impl<'a> Env<'a> {
 
     /// Hash a term using the specified algorithm.
     ///
-    /// `algorithm` is `NifHash::Phash2` (portable, consistent across nodes)
-    /// or `NifHash::InternalHash` (node-local, faster).
+    /// `algorithm` is `enif_ffi::Hash::Phash2` (portable, consistent across
+    /// nodes) or `enif_ffi::Hash::InternalHash` (node-local, faster).
     ///
     /// Wraps `enif_hash`.
-    pub fn hash(self, algorithm: NifHash, term: impl AsNifTerm<'a>, salt: u64) -> u64 {
-        unsafe { crate::enif::hash(algorithm, term.as_nif_term(), salt) }
+    pub fn hash(self, algorithm: enif_ffi::Hash, term: impl AsNifTerm<'a>, salt: u64) -> u64 {
+        unsafe { enif_ffi::hash(algorithm, term.as_nif_term(), salt) }
     }
 
     /// Check if the calling process is still alive.
@@ -480,7 +480,7 @@ impl<'a> Env<'a> {
     /// Returns `true` if the process that invoked this NIF is still alive.
     /// Wraps `enif_is_current_process_alive`.
     pub fn is_current_process_alive(self) -> bool {
-        unsafe { crate::enif::is_current_process_alive(self.as_ptr()) != 0 }
+        unsafe { enif_ffi::is_current_process_alive(self.as_ptr()) != 0 }
     }
 
     /// The current logical CPU's execution time since some arbitrary point in
@@ -489,7 +489,7 @@ impl<'a> Env<'a> {
     /// Returns `Err(Raised)` (`badarg`) if the OS does not support fetching
     /// CPU time.
     pub fn cpu_time(self) -> Result<Tuple<'a>, Raised<'a>> {
-        let raw = unsafe { crate::enif::cpu_time(self.as_ptr()) };
+        let raw = unsafe { enif_ffi::cpu_time(self.as_ptr()) };
         let term = self.check_raised(raw)?;
         debug_assert!(
             matches!(term.resolve(), Some(TypedTerm::Tuple(_))),
@@ -517,7 +517,7 @@ impl<'a> Env<'a> {
             matches!(self.kind, EnvKind::ProcessBound),
             "raise_exception on a non-process-bound env has no effect",
         );
-        let marker = unsafe { crate::enif::raise_exception(self.as_ptr(), reason.as_nif_term()) };
+        let marker = unsafe { enif_ffi::raise_exception(self.as_ptr(), reason.as_nif_term()) };
         Err(Raised::new(Term::new(self, marker)))
     }
 
@@ -533,7 +533,7 @@ impl<'a> Env<'a> {
             matches!(self.kind, EnvKind::ProcessBound),
             "make_badarg on a non-process-bound env has no effect",
         );
-        let marker = unsafe { crate::enif::make_badarg(self.as_ptr()) };
+        let marker = unsafe { enif_ffi::make_badarg(self.as_ptr()) };
         Err(Raised::new(Term::new(self, marker)))
     }
 
@@ -545,8 +545,8 @@ impl<'a> Env<'a> {
     ///
     /// This is how to safely call a `raw`-surface enif function that may raise:
     /// pass its returned term straight through `check_raised`.
-    pub fn check_raised(self, term: NifTerm) -> Result<Term<'a>, Raised<'a>> {
-        if unsafe { crate::enif::has_pending_exception(self.as_ptr(), std::ptr::null_mut()) } != 0 {
+    pub fn check_raised(self, term: enif_ffi::Term) -> Result<Term<'a>, Raised<'a>> {
+        if unsafe { enif_ffi::has_pending_exception(self.as_ptr(), std::ptr::null_mut()) } != 0 {
             Err(Raised::new(Term::new(self, term)))
         } else {
             Ok(Term::new(self, term))
@@ -555,9 +555,9 @@ impl<'a> Env<'a> {
 
     /// Reschedule the current NIF to run `fp` with the given arguments.
     ///
-    /// `fun_name` is the name reported to Erlang tracing. `flags` is one of
-    /// `sys::NIF_DIRTY_JOB_NORMAL`, `sys::NIF_DIRTY_JOB_CPU_BOUND`, or
-    /// `sys::NIF_DIRTY_JOB_IO_BOUND`.
+    /// `fun_name` is the name reported to Erlang tracing. `flags` is `0` for a
+    /// normal NIF, or `enif_ffi::DIRTY_JOB_CPU_BOUND` /
+    /// `enif_ffi::DIRTY_JOB_IO_BOUND` for a dirty NIF.
     ///
     /// The success value must be returned directly from the NIF. If
     /// `fun_name` cannot be converted to an atom the BEAM raises `badarg`,
@@ -574,15 +574,15 @@ impl<'a> Env<'a> {
         fun_name: &std::ffi::CStr,
         flags: i32,
         fp: unsafe extern "C" fn(
-            *mut crate::sys::NifEnv,
+            *mut enif_ffi::Env,
             std::ffi::c_int,
-            *const crate::sys::NifTerm,
-        ) -> crate::sys::NifTerm,
+            *const enif_ffi::Term,
+        ) -> enif_ffi::Term,
         argc: i32,
-        argv: *const crate::sys::NifTerm,
+        argv: *const enif_ffi::Term,
     ) -> Result<Term<'a>, Raised<'a>> {
         let raw = unsafe {
-            crate::enif::schedule_nif(
+            enif_ffi::schedule_nif(
                 self.as_ptr(),
                 fun_name.as_ptr(),
                 flags,
@@ -607,7 +607,7 @@ impl<'a> Env<'a> {
             matches!(self.kind, EnvKind::Load | EnvKind::Upgrade),
             "set_option_delay_halt must be called from the NIF load or upgrade callback"
         );
-        unsafe { crate::enif::set_option_delay_halt(self.as_ptr()) == 0 }
+        unsafe { enif_ffi::set_option_delay_halt(self.as_ptr()) == 0 }
     }
 
     /// Set the on-halt callback. Must be called from the load or upgrade callback.
@@ -625,7 +625,7 @@ impl<'a> Env<'a> {
             matches!(self.kind, EnvKind::Load | EnvKind::Upgrade),
             "set_option_on_halt must be called from the NIF load or upgrade callback"
         );
-        unsafe { crate::enif::set_option_on_halt(self.as_ptr(), callback) == 0 }
+        unsafe { enif_ffi::set_option_on_halt(self.as_ptr(), callback) == 0 }
     }
 
     /// Set the on-unload-thread callback. Must be called from the load or upgrade callback.
@@ -643,6 +643,6 @@ impl<'a> Env<'a> {
             matches!(self.kind, EnvKind::Load | EnvKind::Upgrade),
             "set_option_on_unload_thread must be called from the NIF load or upgrade callback"
         );
-        unsafe { crate::enif::set_option_on_unload_thread(self.as_ptr(), callback) == 0 }
+        unsafe { enif_ffi::set_option_on_unload_thread(self.as_ptr(), callback) == 0 }
     }
 }

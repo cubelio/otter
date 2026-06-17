@@ -2,13 +2,12 @@ use std::ffi::{c_int, c_uint};
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang tuple.
 #[derive(Clone, Copy)]
 pub struct Tuple<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
@@ -50,7 +49,7 @@ impl<'a> Tuple<'a> {
 
 impl PartialEq for Tuple<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -64,7 +63,7 @@ impl PartialOrd for Tuple<'_> {
 
 impl Ord for Tuple<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -88,18 +87,18 @@ impl<'b> Encoder for Tuple<'b> {
 impl<'a> Env<'a> {
     /// Returns `true` if `term` is a tuple (`enif_is_tuple`).
     pub fn is_tuple(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { crate::enif::is_tuple(self.as_ptr(), term.as_nif_term()) != 0 }
+        unsafe { enif_ffi::is_tuple(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 
     /// Decompose a tuple into its elements (`enif_get_tuple`).
     ///
     /// Returns `None` if `term` is not a tuple. The returned slice points into
     /// the BEAM heap and is valid for the environment lifetime `'a`.
-    pub fn get_tuple(self, term: impl AsNifTerm<'a>) -> Option<&'a [NifTerm]> {
+    pub fn get_tuple(self, term: impl AsNifTerm<'a>) -> Option<&'a [enif_ffi::Term]> {
         let mut arity: c_int = 0;
-        let mut array: *const NifTerm = std::ptr::null();
+        let mut array: *const enif_ffi::Term = std::ptr::null();
         if unsafe {
-            crate::enif::get_tuple(self.as_ptr(), term.as_nif_term(), &mut arity, &mut array) != 0
+            enif_ffi::get_tuple(self.as_ptr(), term.as_nif_term(), &mut arity, &mut array) != 0
         } {
             // enif_get_tuple may leave `array` null for the empty tuple; never
             // hand a null pointer to from_raw_parts.
@@ -121,9 +120,9 @@ impl<'a> Env<'a> {
         I: IntoIterator<Item = T>,
         T: AsNifTerm<'a>,
     {
-        let raw: Vec<NifTerm> = terms.into_iter().map(|t| t.as_nif_term()).collect();
+        let raw: Vec<enif_ffi::Term> = terms.into_iter().map(|t| t.as_nif_term()).collect();
         let term = unsafe {
-            crate::enif::make_tuple_from_array(self.as_ptr(), raw.as_ptr(), raw.len() as c_uint)
+            enif_ffi::make_tuple_from_array(self.as_ptr(), raw.as_ptr(), raw.len() as c_uint)
         };
         Tuple { term, env: self }
     }

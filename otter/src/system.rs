@@ -2,7 +2,7 @@
 
 use std::ffi::c_int;
 
-pub use crate::sys::NifSysInfo as SysInfo;
+pub use enif_ffi::SysInfo;
 
 /// The type of thread the current code is running on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -23,13 +23,12 @@ pub enum ThreadType {
 ///
 /// Wraps `enif_thread_type`.
 pub fn thread_type() -> ThreadType {
-    use crate::sys::{NIF_THR_UNDEFINED, NIF_THR_NORMAL_SCHEDULER, NIF_THR_DIRTY_CPU_SCHEDULER, NIF_THR_DIRTY_IO_SCHEDULER};
-    match unsafe { crate::enif::thread_type() } {
-        NIF_THR_UNDEFINED          => ThreadType::NonScheduler,
-        NIF_THR_NORMAL_SCHEDULER   => ThreadType::Scheduler,
-        NIF_THR_DIRTY_CPU_SCHEDULER => ThreadType::DirtyCpu,
-        NIF_THR_DIRTY_IO_SCHEDULER => ThreadType::DirtyIo,
-        other                  => ThreadType::Unknown(other),
+    match unsafe { enif_ffi::thread_type() } {
+        enif_ffi::THR_UNDEFINED           => ThreadType::NonScheduler,
+        enif_ffi::THR_NORMAL_SCHEDULER    => ThreadType::Scheduler,
+        enif_ffi::THR_DIRTY_CPU_SCHEDULER => ThreadType::DirtyCpu,
+        enif_ffi::THR_DIRTY_IO_SCHEDULER  => ThreadType::DirtyIo,
+        other                             => ThreadType::Unknown(other),
     }
 }
 
@@ -37,5 +36,5 @@ pub fn thread_type() -> ThreadType {
 ///
 /// Wraps `enif_system_info`.
 pub fn system_info(info: &mut SysInfo) {
-    unsafe { crate::enif::system_info(info, std::mem::size_of::<SysInfo>()) };
+    unsafe { enif_ffi::system_info(info, std::mem::size_of::<SysInfo>()) };
 }

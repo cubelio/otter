@@ -10,7 +10,6 @@ use std::marker::PhantomData;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::priv_data::{PrivData, ResourceRegistry};
-use crate::sys::{NifEnv, NifEvent, NifMonitor, NifPid, NifResourceType, NifResourceTypeInit};
 use crate::term::{Term, AsNifTerm};
 use crate::types::LocalPid;
 
@@ -27,11 +26,11 @@ use crate::types::LocalPid;
 /// [`OwnedTermBuilder`](crate::env::OwnedTermBuilder) where no module-bound
 /// env is available.
 pub struct ResourceTypeHandle<T: Resource> {
-    ptr: *mut NifResourceType,
+    ptr: *mut enif_ffi::ResourceType,
     _t:  PhantomData<fn() -> T>,
 }
 
-// SAFETY: NifResourceType is BEAM-internal data that lives for the lifetime
+// SAFETY: enif_ffi::ResourceType is BEAM-internal data that lives for the lifetime
 // of the VM. Safe to share across threads once registered.
 unsafe impl<T: Resource> Send for ResourceTypeHandle<T> {}
 unsafe impl<T: Resource> Sync for ResourceTypeHandle<T> {}
@@ -41,7 +40,7 @@ impl<T: Resource> ResourceTypeHandle<T> {
     pub fn make(self, val: T) -> ResourceArc<T> {
         // Allocate enough for T at its required alignment (see ResourceArc docs).
         let alloc_size = std::mem::size_of::<T>() + std::mem::align_of::<T>() - 1;
-        let raw = unsafe { crate::enif::alloc_resource(self.ptr, alloc_size) };
+        let raw = unsafe { enif_ffi::alloc_resource(self.ptr, alloc_size) };
         assert!(!raw.is_null(), "enif_alloc_resource returned null");
         let inner = align_ptr::<T>(raw);
         unsafe { std::ptr::write(inner, val) };
@@ -52,7 +51,7 @@ impl<T: Resource> ResourceTypeHandle<T> {
 /// Look up this build's resource registry from a module-bound env. Returns
 /// `None` if the library has no `PrivData` installed (no load callback).
 fn registry<'a>(env: Env<'a>) -> Option<&'a ResourceRegistry> {
-    let pd = unsafe { crate::enif::priv_data(env.as_ptr()) } as *const PrivData;
+    let pd = unsafe { enif_ffi::priv_data(env.as_ptr()) } as *const PrivData;
     if pd.is_null() {
         return None;
     }
@@ -95,7 +94,7 @@ impl<'a> Env<'a> {
 ///
 /// Passed to the [`Resource::down`] callback when the monitored process exits.
 #[derive(Clone, Copy)]
-pub struct Monitor(pub(crate) NifMonitor);
+pub struct Monitor(pub(crate) enif_ffi::Monitor);
 
 impl Monitor {
     /// Convert this monitor to a term.
@@ -108,8 +107,8 @@ impl Monitor {
 
 impl<'a> Env<'a> {
     /// Create a term from a monitor handle (`enif_make_monitor_term`).
-    pub fn make_monitor_term(self, mon: &NifMonitor) -> Term<'a> {
-        let raw = unsafe { crate::enif::make_monitor_term(self.as_ptr(), mon) };
+    pub fn make_monitor_term(self, mon: &enif_ffi::Monitor) -> Term<'a> {
+        let raw = unsafe { enif_ffi::make_monitor_term(self.as_ptr(), mon) };
         Term::new(self, raw)
     }
 }
@@ -117,7 +116,7 @@ impl<'a> Env<'a> {
 impl PartialEq for Monitor {
     fn eq(&self, other: &Self) -> bool {
         // enif_compare_monitors is env-less.
-        unsafe { crate::enif::compare_monitors(&self.0, &other.0) == 0 }
+        unsafe { enif_ffi::compare_monitors(&self.0, &other.0) == 0 }
     }
 }
 
@@ -178,7 +177,7 @@ pub trait Resource: Sized + Send + Sync + 'static {
     /// type (the BEAM requires one for any resource passed to `enif_select`),
     /// so leaving this as the default no-op is harmless for resources that are
     /// never selected.
-    fn stop(&self, _env: Env<'_>, _event: NifEvent, _is_direct_call: bool) {}
+    fn stop(&self, _env: Env<'_>, _event: enif_ffi::Event, _is_direct_call: bool) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -203,7 +202,7 @@ fn absorb_callback_panic(what: &str, result: std::thread::Result<()>) {
     }
 }
 
-unsafe extern "C" fn destructor_callback<T: Resource>(env: *mut NifEnv, obj: *mut c_void) {
+unsafe extern "C" fn destructor_callback<T: Resource>(env: *mut enif_ffi::Env, obj: *mut c_void) {
     let inner = align_ptr::<T>(obj);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // SAFETY: obj was written by ResourceTypeHandle::make and is not yet dropped.
@@ -217,10 +216,10 @@ unsafe extern "C" fn destructor_callback<T: Resource>(env: *mut NifEnv, obj: *mu
 }
 
 unsafe extern "C" fn down_callback<T: Resource>(
-    env: *mut NifEnv,
+    env: *mut enif_ffi::Env,
     obj: *mut c_void,
-    pid: *mut NifPid,
-    mon: *mut NifMonitor,
+    pid: *mut enif_ffi::Pid,
+    mon: *mut enif_ffi::Monitor,
 ) {
     let inner = align_ptr::<T>(obj) as *const T;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -235,9 +234,9 @@ unsafe extern "C" fn down_callback<T: Resource>(
 }
 
 unsafe extern "C" fn stop_callback<T: Resource>(
-    env: *mut NifEnv,
+    env: *mut enif_ffi::Env,
     obj: *mut c_void,
-    event: NifEvent,
+    event: enif_ffi::Event,
     is_direct_call: c_int,
 ) {
     let inner = align_ptr::<T>(obj) as *const T;
@@ -259,7 +258,7 @@ unsafe extern "C" fn stop_callback<T: Resource>(
 /// Flags controlling resource type registration. `CREATE` opens a new type;
 /// `CREATE | TAKEOVER` additionally takes over a matching type from a previous
 /// build of the library during a hot upgrade.
-pub use crate::sys::NifResourceFlags as ResourceFlags;
+pub use enif_ffi::ResourceFlags;
 
 /// Register resource type `T` with the BEAM, using the fully-qualified Rust
 /// type path as the identifier.
@@ -331,7 +330,7 @@ fn register_named<T: Resource>(env: Env<'_>, flags: ResourceFlags, name: &str) {
     let cname = std::ffi::CString::new(name)
         .expect("resource type name must not contain null bytes");
 
-    let init = NifResourceTypeInit {
+    let init = enif_ffi::ResourceTypeInit {
         dtor:     Some(destructor_callback::<T>),
         stop:     Some(stop_callback::<T>),
         down:     Some(down_callback::<T>),
@@ -341,7 +340,7 @@ fn register_named<T: Resource>(env: Env<'_>, flags: ResourceFlags, name: &str) {
 
     let mut tried = flags;
     let type_ptr = unsafe {
-        crate::enif::init_resource_type(
+        enif_ffi::init_resource_type(
             env.as_ptr(),
             cname.as_ptr(),
             &init,
@@ -357,7 +356,7 @@ fn register_named<T: Resource>(env: Env<'_>, flags: ResourceFlags, name: &str) {
 
     // The load scaffolding installs PrivData before dispatching the user
     // callback, so the slot is non-null here.
-    let pd = unsafe { crate::enif::priv_data(env.as_ptr()) } as *mut PrivData;
+    let pd = unsafe { enif_ffi::priv_data(env.as_ptr()) } as *mut PrivData;
     assert!(
         !pd.is_null(),
         "priv_data not installed — register must run inside otter's load scaffolding"
@@ -421,9 +420,9 @@ impl<T: Resource> ResourceArc<T> {
     /// scheduler callback). Pass `Some(env)` from a normal NIF call.
     pub fn monitor(&self, env: Option<Env<'_>>, pid: &LocalPid) -> Option<Monitor> {
         let env_ptr = env.map(|e| e.as_ptr()).unwrap_or(std::ptr::null_mut());
-        let mut mon = NifMonitor([0u8; 32]);
+        let mut mon = enif_ffi::Monitor([0u8; 32]);
         let rc = unsafe {
-            crate::enif::monitor_process(env_ptr, self.raw, &pid.pid, &mut mon)
+            enif_ffi::monitor_process(env_ptr, self.raw, &pid.pid, &mut mon)
         };
         if rc == 0 { Some(Monitor(mon)) } else { None }
     }
@@ -437,7 +436,7 @@ impl<T: Resource> ResourceArc<T> {
     pub fn demonitor(&self, env: Option<Env<'_>>, mon: &Monitor) -> bool {
         let env_ptr = env.map(|e| e.as_ptr()).unwrap_or(std::ptr::null_mut());
         unsafe {
-            crate::enif::demonitor_process(env_ptr, self.raw, &mon.0) == 0
+            enif_ffi::demonitor_process(env_ptr, self.raw, &mon.0) == 0
         }
     }
 }
@@ -448,7 +447,7 @@ impl<T: Resource> ResourceArc<T> {
 
 impl<T: Resource> Clone for ResourceArc<T> {
     fn clone(&self) -> ResourceArc<T> {
-        unsafe { crate::enif::keep_resource(self.raw) };
+        unsafe { enif_ffi::keep_resource(self.raw) };
         ResourceArc { raw: self.raw, inner: self.inner }
     }
 }
@@ -457,7 +456,7 @@ impl<T: Resource> Drop for ResourceArc<T> {
     fn drop(&mut self) {
         // Decrement ref count. When it hits zero, the BEAM calls
         // destructor_callback which reads and drops the T value.
-        unsafe { crate::enif::release_resource(self.raw) };
+        unsafe { enif_ffi::release_resource(self.raw) };
     }
 }
 
@@ -480,7 +479,7 @@ impl<T: Resource> Encoder for ResourceArc<T> {
     /// The BEAM will release that reference when the term is garbage collected.
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         let raw_term = unsafe {
-            crate::enif::make_resource(env.as_ptr(), self.raw)
+            enif_ffi::make_resource(env.as_ptr(), self.raw)
         };
         Term::new(env, raw_term)
     }
@@ -501,13 +500,13 @@ impl<'a, T: Resource> Decoder<'a> for ResourceArc<T> {
 
         let mut obj: *mut c_void = std::ptr::null_mut();
         if unsafe {
-            crate::enif::get_resource(term.env.as_ptr(), term.term, type_ptr, &mut obj) == 0
+            enif_ffi::get_resource(term.env.as_ptr(), term.term, type_ptr, &mut obj) == 0
         } {
             return Err(CodecError::WrongType);
         }
 
         // We are creating a new Rust-side reference; increment the ref count.
-        unsafe { crate::enif::keep_resource(obj) };
+        unsafe { enif_ffi::keep_resource(obj) };
 
         let inner = align_ptr::<T>(obj);
         Ok(ResourceArc { raw: obj, inner })
@@ -539,7 +538,7 @@ pub unsafe fn dynamic_resource_call<'a>(
     call_data: *mut c_void,
 ) -> i32 {
     unsafe {
-        crate::enif::dynamic_resource_call(
+        enif_ffi::dynamic_resource_call(
             env.as_ptr(),
             mod_name.as_nif_term(),
             name.as_nif_term(),

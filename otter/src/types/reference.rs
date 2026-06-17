@@ -1,12 +1,11 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang reference.
 #[derive(Clone, Copy)]
 pub struct Reference<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
@@ -21,7 +20,7 @@ impl<'a> Reference<'a> {
 
 impl PartialEq for Reference<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -35,7 +34,7 @@ impl PartialOrd for Reference<'_> {
 
 impl Ord for Reference<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -59,12 +58,12 @@ impl<'b> Encoder for Reference<'b> {
 impl<'a> Env<'a> {
     /// Returns `true` if `term` is a reference (`enif_is_ref`).
     pub fn is_ref(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { crate::enif::is_ref(self.as_ptr(), term.as_nif_term()) != 0 }
+        unsafe { enif_ffi::is_ref(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 
     /// Create a new unique reference (`enif_make_ref`).
     pub fn make_ref(self) -> Reference<'a> {
-        let term = unsafe { crate::enif::make_ref(self.as_ptr()) };
+        let term = unsafe { enif_ffi::make_ref(self.as_ptr()) };
         Reference { term, env: self }
     }
 }

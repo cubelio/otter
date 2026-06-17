@@ -15,8 +15,6 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::ffi::c_void;
 
-use crate::sys::NifResourceType;
-
 /// Layout-version tag for the frozen header. The trailing digit is bumped only
 /// if the two header fields below ever change; it subsumes any separate
 /// version field. Both sides of any upgrade are otter, so a mismatch is a
@@ -69,10 +67,10 @@ impl Default for PrivData {
     }
 }
 
-/// Maps each registered resource type to its BEAM-side `NifResourceType`
+/// Maps each registered resource type to its BEAM-side `enif_ffi::ResourceType`
 /// pointer. Build-private; reconstructed fresh by every build.
 pub struct ResourceRegistry {
-    types: HashMap<TypeId, *mut NifResourceType>,
+    types: HashMap<TypeId, *mut enif_ffi::ResourceType>,
 }
 
 impl ResourceRegistry {
@@ -82,13 +80,13 @@ impl ResourceRegistry {
 
     /// Record the resource type pointer for `T`. Panics if `T` is already
     /// registered (registration must happen exactly once per type).
-    pub(crate) fn insert<T: 'static>(&mut self, ptr: *mut NifResourceType) {
+    pub(crate) fn insert<T: 'static>(&mut self, ptr: *mut enif_ffi::ResourceType) {
         let prev = self.types.insert(TypeId::of::<T>(), ptr);
         assert!(prev.is_none(), "resource type already registered");
     }
 
     /// Look up the resource type pointer for `T`, if registered.
-    pub(crate) fn get<T: 'static>(&self) -> Option<*mut NifResourceType> {
+    pub(crate) fn get<T: 'static>(&self) -> Option<*mut enif_ffi::ResourceType> {
         self.types.get(&TypeId::of::<T>()).copied()
     }
 }

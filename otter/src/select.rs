@@ -5,15 +5,13 @@
 
 use crate::env::Env;
 use crate::resource::{Resource, ResourceArc};
-use crate::sys::{NifEvent, NifSelectFlags};
 use crate::term::AsNifTerm;
 use crate::types::LocalPid;
 
-pub use crate::sys::{
-    NIF_SELECT_STOP_CALLED, NIF_SELECT_STOP_SCHEDULED, NIF_SELECT_INVALID_EVENT,
-    NIF_SELECT_FAILED, NIF_SELECT_READ_CANCELLED, NIF_SELECT_WRITE_CANCELLED,
-    NIF_SELECT_ERROR_CANCELLED, NIF_SELECT_NOTSUP,
-};
+// `select`/`select_x` return a raw `i32` bitmask of result flags. otter does not
+// yet wrap that in a typed result, so callers decode it against the raw
+// `enif_ffi::SELECT_*` constants (`SELECT_STOP_CALLED`, `SELECT_NOTSUP`, …). A
+// proper typed surface is tracked as issue enhance-12.
 
 /// Register interest in I/O events on an OS-level event handle.
 ///
@@ -22,19 +20,19 @@ pub use crate::sys::{
 /// callback will be invoked on cleanup). `ref_term` is included in the
 /// notification message.
 ///
-/// Returns a bitmask of `SELECT_*` result flags.
+/// Returns a raw `i32` bitmask of `enif_ffi::SELECT_*` result flags.
 ///
 /// Wraps `enif_select`.
 pub fn select<'a, T: Resource>(
     env: Env<'a>,
-    event: NifEvent,
-    flags: NifSelectFlags,
+    event: enif_ffi::Event,
+    flags: enif_ffi::SelectFlags,
     obj: &ResourceArc<T>,
     pid: &LocalPid,
     ref_term: impl AsNifTerm<'a>,
 ) -> i32 {
     unsafe {
-        crate::enif::select(
+        enif_ffi::select(
             env.as_ptr(),
             event,
             flags,
@@ -53,8 +51,8 @@ pub fn select<'a, T: Resource>(
 /// Wraps `enif_select_x`.
 pub fn select_x<'a, T: Resource>(
     env: Env<'a>,
-    event: NifEvent,
-    flags: NifSelectFlags,
+    event: enif_ffi::Event,
+    flags: enif_ffi::SelectFlags,
     obj: &ResourceArc<T>,
     pid: &LocalPid,
     msg: impl AsNifTerm<'a>,
@@ -62,7 +60,7 @@ pub fn select_x<'a, T: Resource>(
 ) -> i32 {
     let msg_env_ptr = msg_env.map(|e| e.as_ptr()).unwrap_or(std::ptr::null_mut());
     unsafe {
-        crate::enif::select_x(
+        enif_ffi::select_x(
             env.as_ptr(),
             event,
             flags,

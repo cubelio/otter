@@ -1,6 +1,5 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifPort, NifTerm};
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang port identifier whose locality is not yet established.
@@ -11,7 +10,7 @@ use crate::term::{Term, AsNifTerm};
 /// liveness, refine it to a [`LocalPort`] with [`to_local`](Port::to_local).
 #[derive(Clone, Copy)]
 pub struct Port<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
@@ -31,7 +30,7 @@ impl<'a> Port<'a> {
 /// APIs take `&LocalPort`.
 #[derive(Clone, Copy)]
 pub struct LocalPort {
-    pub(crate) port: NifPort,
+    pub(crate) port: enif_ffi::Port,
 }
 
 impl LocalPort {
@@ -49,7 +48,7 @@ impl LocalPort {
 
 impl PartialEq for Port<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 impl Eq for Port<'_> {}
@@ -60,7 +59,7 @@ impl PartialOrd for Port<'_> {
 }
 impl Ord for Port<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        unsafe { crate::enif::compare(self.term, other.term) }.cmp(&0)
+        unsafe { enif_ffi::compare(self.term, other.term) }.cmp(&0)
     }
 }
 impl std::fmt::Debug for Port<'_> {
@@ -71,7 +70,7 @@ impl std::fmt::Debug for Port<'_> {
 
 impl PartialEq for LocalPort {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.port.port_id, other.port.port_id) != 0 }
+        unsafe { enif_ffi::is_identical(self.port.port_id, other.port.port_id) != 0 }
     }
 }
 impl Eq for LocalPort {}
@@ -82,7 +81,7 @@ impl PartialOrd for LocalPort {
 }
 impl Ord for LocalPort {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        unsafe { crate::enif::compare(self.port.port_id, other.port.port_id) }.cmp(&0)
+        unsafe { enif_ffi::compare(self.port.port_id, other.port.port_id) }.cmp(&0)
     }
 }
 impl std::fmt::Debug for LocalPort {
@@ -106,14 +105,14 @@ impl Encoder for LocalPort {
 impl<'a> Env<'a> {
     /// Returns `true` if `term` is a port (`enif_is_port`).
     pub fn is_port(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { crate::enif::is_port(self.as_ptr(), term.as_nif_term()) != 0 }
+        unsafe { enif_ffi::is_port(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 
-    /// Decode a term into a local `NifPort` (`enif_get_local_port`).
+    /// Decode a term into a local `enif_ffi::Port` (`enif_get_local_port`).
     /// `None` if `term` is not a local port.
-    pub fn get_local_port(self, term: impl AsNifTerm<'a>) -> Option<NifPort> {
-        let mut out = NifPort { port_id: 0 };
-        if unsafe { crate::enif::get_local_port(self.as_ptr(), term.as_nif_term(), &mut out) != 0 } {
+    pub fn get_local_port(self, term: impl AsNifTerm<'a>) -> Option<enif_ffi::Port> {
+        let mut out = enif_ffi::Port { port_id: 0 };
+        if unsafe { enif_ffi::get_local_port(self.as_ptr(), term.as_nif_term(), &mut out) != 0 } {
             Some(out)
         } else {
             None
@@ -121,16 +120,15 @@ impl<'a> Env<'a> {
     }
 
     /// Whether the port identified by `port` is alive (`enif_is_port_alive`).
-    pub fn is_port_alive(self, port: NifPort) -> bool {
-        let mut port = port;
-        unsafe { crate::enif::is_port_alive(self.as_ptr(), &mut port) != 0 }
+    pub fn is_port_alive(self, port: enif_ffi::Port) -> bool {
+        unsafe { enif_ffi::is_port_alive(self.as_ptr(), &port) != 0 }
     }
 
     /// Look up a port by its registered name (`enif_whereis_port`).
     /// `None` if no port is registered under `name`.
     pub fn whereis_port(self, name: impl AsNifTerm<'a>) -> Option<LocalPort> {
-        let mut out = NifPort { port_id: 0 };
-        if unsafe { crate::enif::whereis_port(self.as_ptr(), name.as_nif_term(), &mut out) != 0 } {
+        let mut out = enif_ffi::Port { port_id: 0 };
+        if unsafe { enif_ffi::whereis_port(self.as_ptr(), name.as_nif_term(), &mut out) != 0 } {
             Some(LocalPort { port: out })
         } else {
             None
@@ -140,7 +138,7 @@ impl<'a> Env<'a> {
     /// Send a command to local port `port` (`enif_port_command`).
     ///
     /// `msg` is a term in this (caller) env and is copied into the port. This
-    /// is the in-NIF form, mirroring [`LocalPid::send_from`]: `enif_port_command`
+    /// is the in-NIF form, mirroring [`LocalPid::send_from`](crate::types::LocalPid::send_from): `enif_port_command`
     /// requires its `msg_env` to be process-independent or NULL, and the call
     /// env is neither, so NULL (copy-from-caller) is the only correct choice.
     /// There is no off-thread form: `enif_port_command` aborts the VM when its
@@ -150,7 +148,7 @@ impl<'a> Env<'a> {
     /// Returns `true` if the command was accepted.
     pub fn port_command(self, port: &LocalPort, msg: impl AsNifTerm<'a>) -> bool {
         unsafe {
-            crate::enif::port_command(
+            enif_ffi::port_command(
                 self.as_ptr(),
                 &port.port,
                 std::ptr::null_mut(),

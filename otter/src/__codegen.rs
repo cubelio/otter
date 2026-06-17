@@ -11,15 +11,10 @@ pub use crate::priv_data::{discard_priv_data, free_priv_data, install_priv_data,
 #[cfg(feature = "raw")]
 pub use crate::priv_data::{old_user_priv_field, user_priv_field};
 pub use crate::resource::{register, register_tagged, ResourceFlags};
-pub use crate::sys::{
-    NifEnv, NifEntry, NifFunc, NifResourceTypeInit, NifTerm, NIF_FUNC_DIRTY_CPU,
-    NIF_FUNC_DIRTY_IO, NIF_MAJOR_VERSION, NIF_MIN_ERTS_VERSION, NIF_MINOR_VERSION,
-    NIF_VM_VARIANT,
-};
 pub use crate::term::{Term, TypedTerm};
 pub use crate::types::Atom;
 
-/// Value for `NifEntry.options` indicating `sizeof_resource_type_init` is set.
+/// Value for `enif_ffi::Entry.options` indicating `sizeof_resource_type_init` is set.
 pub const NIF_ENTRY_OPTIONS: u32 = 1;
 
 // ---------------------------------------------------------------------------
@@ -50,14 +45,14 @@ pub const LOAD_FAILED_DECODE: c_int = 3;
 pub struct NifMeta {
     pub name: &'static [u8],
     pub arity: u32,
-    pub raw_fptr: unsafe extern "C" fn(*mut NifEnv, c_int, *const NifTerm) -> NifTerm,
+    pub raw_fptr: unsafe extern "C" fn(*mut enif_ffi::Env, c_int, *const enif_ffi::Term) -> enif_ffi::Term,
     pub flags: u32,
 }
 
 impl NifMeta {
-    /// Convert to a [`NifFunc`] for inclusion in a `NifEntry`.
-    pub fn to_nif_func(&self) -> NifFunc {
-        NifFunc {
+    /// Convert to a [`enif_ffi::Func`] for inclusion in a `enif_ffi::Entry`.
+    pub fn to_nif_func(&self) -> enif_ffi::Func {
+        enif_ffi::Func {
             name: self.name.as_ptr() as *const std::ffi::c_char,
             arity: self.arity as std::ffi::c_uint,
             fptr: self.raw_fptr,
@@ -74,26 +69,26 @@ impl NifMeta {
 #[inline]
 pub unsafe fn new_env<'a>(
     marker: &'a (),
-    env: *mut NifEnv,
+    env: *mut enif_ffi::Env,
     kind: EnvKind,
 ) -> Env<'a> {
     unsafe { Env::new(marker, env, kind) }
 }
 
-/// Wrap a raw `NifTerm` into a [`Term`].
+/// Wrap a raw `enif_ffi::Term` into a [`Term`].
 #[inline]
-pub fn new_raw_term<'a>(env: Env<'a>, term: NifTerm) -> Term<'a> {
+pub fn new_raw_term<'a>(env: Env<'a>, term: enif_ffi::Term) -> Term<'a> {
     Term::new(env, term)
 }
 
 /// Raise `badarg` and return the machine word to hand back from the NIF.
 #[inline]
-pub fn raise_badarg(env: Env<'_>) -> NifTerm {
+pub fn raise_badarg(env: Env<'_>) -> enif_ffi::Term {
     env.make_badarg::<()>().unwrap_err().raw()
 }
 
 /// Raise an exception with reason term `reason` and return the machine word.
 #[inline]
-pub fn raise(env: Env<'_>, reason: NifTerm) -> NifTerm {
+pub fn raise(env: Env<'_>, reason: enif_ffi::Term) -> enif_ffi::Term {
     env.raise_exception::<()>(Term::new(env, reason)).unwrap_err().raw()
 }

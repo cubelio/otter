@@ -1,10 +1,3 @@
-pub mod sys;
-// The raw 1:1 unsafe enif surface. Public escape hatch under the `raw` feature;
-// otherwise crate-private (the safe layer uses it via crate:: paths regardless).
-#[cfg(feature = "raw")]
-pub mod enif;
-#[cfg(not(feature = "raw"))]
-pub(crate) mod enif;
 pub mod env;
 pub mod types;
 pub mod term;
@@ -20,6 +13,21 @@ pub mod select;
 #[doc(hidden)]
 #[path = "__codegen.rs"]
 pub mod __codegen;
+
+// Re-export the raw enif-ffi crate so codegen-generated code — which is spliced
+// into the *user's* crate and can therefore only name `::otter::…` paths — can
+// reference the raw C ABI types (`Env`, `Term`, `Entry`, …) that appear in the
+// `extern "C"` entry points it emits. Unconditional and only `#[doc(hidden)]`
+// for now; gating it behind `raw` is tracked as issue enhance-11.
+#[doc(hidden)]
+pub use enif_ffi;
+
+// enif-ffi's `nif_init!` builds the platform entry point and resolves the
+// enif_* table at load. `#[macro_export]` macros aren't reachable through the
+// re-exported crate path (`otter::enif_ffi::nif_init!`), so re-export it by name
+// into otter's root; the `init!`-generated code invokes `::otter::nif_init!`.
+#[doc(hidden)]
+pub use enif_ffi::nif_init;
 
 pub use otter_codegen::nif;
 pub use otter_codegen::init;
@@ -45,19 +53,4 @@ macro_rules! atom {
     ($id:ident) => {
         __otter_atoms::$id.get()
     };
-}
-
-/// Load all `enif_*` function pointers via `dlsym`.
-///
-/// Must be called exactly once, from the generated `nif_init` entry point,
-/// before any other otter API is used.
-///
-/// Returns `Ok(())` on success, or `Err(name)` with the first symbol that
-/// could not be resolved.
-///
-/// # Safety
-///
-/// Must be called from the BEAM's NIF loading context.
-pub unsafe fn init() -> Result<(), &'static str> {
-    unsafe { crate::enif::init() }
 }

@@ -1,6 +1,5 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifTerm, NifTermType};
 use crate::term::{Term, AsNifTerm, Raised};
 
 /// An Erlang float. Always IEEE 754 double precision.
@@ -8,7 +7,7 @@ use crate::term::{Term, AsNifTerm, Raised};
 /// Floats are heap-allocated in the BEAM even though the value is always `f64`.
 #[derive(Clone, Copy)]
 pub struct Float<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
@@ -28,7 +27,7 @@ impl<'a> Env<'a> {
     /// Returns `Err(Raised)` if `val` is not finite (NaN or infinity), which
     /// the BEAM rejects with `badarg`.
     pub fn make_double(self, val: f64) -> Result<Float<'a>, Raised<'a>> {
-        let term = unsafe { crate::enif::make_double(self.as_ptr(), val) };
+        let term = unsafe { enif_ffi::make_double(self.as_ptr(), val) };
         Ok(Float { term: self.check_raised(term)?.as_raw(), env: self })
     }
 
@@ -36,7 +35,7 @@ impl<'a> Env<'a> {
     /// `None` if the term is not a float.
     pub fn get_double(self, term: impl AsNifTerm<'a>) -> Option<f64> {
         let mut val: f64 = 0.0;
-        if unsafe { crate::enif::get_double(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
+        if unsafe { enif_ffi::get_double(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
             Some(val)
         } else {
             None
@@ -53,7 +52,7 @@ impl From<Float<'_>> for f64 {
 
 impl PartialEq for Float<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -67,7 +66,7 @@ impl PartialOrd for Float<'_> {
 
 impl Ord for Float<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -90,7 +89,7 @@ impl<'b> Encoder for Float<'b> {
 
 impl<'a> Decoder<'a> for Float<'a> {
     fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.term_type(term) == Some(NifTermType::Float) {
+        if term.env.term_type(term) == Some(enif_ffi::TermType::Float) {
             Ok(Float { term: term.term, env: term.env })
         } else {
             Err(CodecError::WrongType)

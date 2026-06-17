@@ -1,6 +1,5 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang fun (closure or function reference).
@@ -9,7 +8,7 @@ use crate::term::{Term, AsNifTerm};
 /// held and passed back to Erlang, or used as an argument to `apply`.
 #[derive(Clone, Copy)]
 pub struct Fun<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     // Env is stored for lifetime tracking only — the NIF API provides no
     // inspection functions for funs, so `env` is never read directly.
     #[allow(dead_code)]
@@ -18,7 +17,7 @@ pub struct Fun<'a> {
 
 impl PartialEq for Fun<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -32,7 +31,7 @@ impl PartialOrd for Fun<'_> {
 
 impl Ord for Fun<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -56,7 +55,7 @@ impl<'b> Encoder for Fun<'b> {
 impl<'a> Env<'a> {
     /// Returns `true` if `term` is a fun (`enif_is_fun`).
     pub fn is_fun(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { crate::enif::is_fun(self.as_ptr(), term.as_nif_term()) != 0 }
+        unsafe { enif_ffi::is_fun(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 }
 
