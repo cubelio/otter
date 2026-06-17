@@ -389,21 +389,6 @@ pub struct NifSysInfo {
 }
 
 // ---------------------------------------------------------------------------
-// NIF options
-// ---------------------------------------------------------------------------
-
-/// `ErlNifOption` — option key for `enif_set_option`. NIF 2.17 (OTP 26.0).
-/// `OnUnloadThread` added in NIF 2.17 (OTP 27.0).
-#[repr(i32)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum NifOption {
-    DelayHalt      = 1,
-    OnHalt         = 2,
-    /// NIF 2.17 (OTP 27.0).
-    OnUnloadThread = 3,
-}
-
-// ---------------------------------------------------------------------------
 // Thread type (return values from enif_thread_type)
 // ---------------------------------------------------------------------------
 

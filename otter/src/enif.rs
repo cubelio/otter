@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 use crate::sys::{
     NifBinary, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
-    NifMapIterator, NifMapIteratorEntry, NifOption, NifPid, NifPort,
+    NifMapIterator, NifMapIteratorEntry, NifPid, NifPort,
     NifResourceFlags, NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
     NifTime, NifTimeUnit, SysIOVec,
 };
@@ -366,7 +366,7 @@ pub(crate) struct EnifFunctions {
     pub make_new_atom_len: unsafe extern "C" fn(
         *mut NifEnv, *const c_char, usize, *mut NifTerm, enif_ffi::CharEncoding,
     ) -> c_int,
-    pub set_option:         unsafe extern "C" fn(*mut NifEnv, NifOption, ...) -> c_int,
+    pub set_option:         unsafe extern "C" fn(*mut NifEnv, enif_ffi::Option_, ...) -> c_int,
 
     // =====================================================================
     // NIF 2.18 (OTP 29.0)
@@ -1636,7 +1636,7 @@ pub unsafe fn thread_type() -> c_int {
 /// Enable the delay-halt option. `ERL_NIF_OPT_DELAY_HALT` takes no third
 /// argument. NIF 2.17 (OTP 26).
 pub unsafe fn set_option_delay_halt(env: *mut NifEnv) -> c_int {
-    unsafe { (funcs().set_option)(env, NifOption::DelayHalt) }
+    unsafe { (funcs().set_option)(env, enif_ffi::Option_::DelayHalt) }
 }
 
 /// Set the on-halt callback. NIF 2.17 (OTP 26).
@@ -1644,7 +1644,7 @@ pub unsafe fn set_option_on_halt(
     env: *mut NifEnv,
     callback: unsafe extern "C" fn(*mut c_void),
 ) -> c_int {
-    unsafe { (funcs().set_option)(env, NifOption::OnHalt, callback) }
+    unsafe { (funcs().set_option)(env, enif_ffi::Option_::OnHalt, callback) }
 }
 
 /// Set the on-unload-thread callback. NIF 2.17 (OTP 26).
@@ -1652,7 +1652,7 @@ pub unsafe fn set_option_on_unload_thread(
     env: *mut NifEnv,
     callback: unsafe extern "C" fn(*mut c_void),
 ) -> c_int {
-    unsafe { (funcs().set_option)(env, NifOption::OnUnloadThread, callback) }
+    unsafe { (funcs().set_option)(env, enif_ffi::Option_::OnUnloadThread, callback) }
 }
 
 // -- Dynamic loading ------------------------------------------------------
