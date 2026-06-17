@@ -21,6 +21,14 @@ pub mod select;
 #[path = "__codegen.rs"]
 pub mod __codegen;
 
+// Re-export the raw enif-ffi crate so codegen-generated code — which is spliced
+// into the *user's* crate and can therefore only name `::otter::…` paths — can
+// reference the raw C ABI types (`Env`, `Term`, `Entry`, …) that appear in the
+// `extern "C"` entry points it emits. Unconditional and only `#[doc(hidden)]`
+// for now; gating it behind `raw` is tracked as issue enhance-11.
+#[doc(hidden)]
+pub use enif_ffi;
+
 pub use otter_codegen::nif;
 pub use otter_codegen::init;
 pub use otter_codegen::resource_impl;

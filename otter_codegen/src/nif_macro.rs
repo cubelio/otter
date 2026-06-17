@@ -173,8 +173,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
     // Emit the otter-exported constants rather than bare literals so the
     // generated flags stay in lockstep with the crate's own definitions.
     let flags = match attrs.schedule.as_deref() {
-        Some("DirtyCpu") => quote! { ::otter::__codegen::NIF_FUNC_DIRTY_CPU as u32 },
-        Some("DirtyIo") => quote! { ::otter::__codegen::NIF_FUNC_DIRTY_IO as u32 },
+        Some("DirtyCpu") => quote! { ::otter::enif_ffi::DIRTY_JOB_CPU_BOUND as u32 },
+        Some("DirtyIo") => quote! { ::otter::enif_ffi::DIRTY_JOB_IO_BOUND as u32 },
         _ => quote! { 0u32 },
     };
 
@@ -186,10 +186,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
         #[doc(hidden)]
         #[allow(non_snake_case, unused_variables)]
         pub unsafe extern "C" fn #wrapper_name(
-            __otter_nif_env: *mut ::otter::__codegen::NifEnv,
+            __otter_nif_env: *mut ::otter::enif_ffi::Env,
             __otter_argc: ::std::ffi::c_int,
-            __otter_argv: *const ::otter::__codegen::NifTerm,
-        ) -> ::otter::__codegen::NifTerm {
+            __otter_argv: *const ::otter::enif_ffi::Term,
+        ) -> ::otter::enif_ffi::Term {
             let __otter_marker = ();
             let __otter_env = unsafe {
                 ::otter::__codegen::new_env(
