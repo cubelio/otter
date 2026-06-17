@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang atom.
@@ -13,7 +12,7 @@ use crate::term::{Term, AsNifTerm};
 /// has no lifetime and is `Copy`.
 #[derive(Clone, Copy)]
 pub struct Atom {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
 }
 
 impl Atom {
@@ -54,7 +53,7 @@ impl Atom {
         env.make_existing_atom(name)
     }
 
-    pub(crate) fn from_raw(term: NifTerm) -> Atom {
+    pub(crate) fn from_raw(term: enif_ffi::Term) -> Atom {
         Atom { term }
     }
 
@@ -173,7 +172,7 @@ impl<'a> Env<'a> {
     /// Returns `None` if the atom table is full. See [`Atom::intern`] for the
     /// atom-table-exhaustion warning — never call this on untrusted input.
     pub fn make_atom(self, name: &str) -> Option<Atom> {
-        let mut term: NifTerm = 0;
+        let mut term: enif_ffi::Term = 0;
         let ok = unsafe {
             crate::enif::make_new_atom_len(
                 self.as_ptr(),
@@ -189,7 +188,7 @@ impl<'a> Env<'a> {
     /// Look up an existing atom by name without creating it
     /// (`enif_make_existing_atom_len`). `None` if no such atom exists.
     pub fn make_existing_atom(self, name: &str) -> Option<Atom> {
-        let mut term: NifTerm = 0;
+        let mut term: enif_ffi::Term = 0;
         let ok = unsafe {
             crate::enif::make_existing_atom_len(
                 self.as_ptr(),

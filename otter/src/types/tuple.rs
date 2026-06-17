@@ -2,13 +2,12 @@ use std::ffi::{c_int, c_uint};
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang tuple.
 #[derive(Clone, Copy)]
 pub struct Tuple<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
@@ -95,9 +94,9 @@ impl<'a> Env<'a> {
     ///
     /// Returns `None` if `term` is not a tuple. The returned slice points into
     /// the BEAM heap and is valid for the environment lifetime `'a`.
-    pub fn get_tuple(self, term: impl AsNifTerm<'a>) -> Option<&'a [NifTerm]> {
+    pub fn get_tuple(self, term: impl AsNifTerm<'a>) -> Option<&'a [enif_ffi::Term]> {
         let mut arity: c_int = 0;
-        let mut array: *const NifTerm = std::ptr::null();
+        let mut array: *const enif_ffi::Term = std::ptr::null();
         if unsafe {
             crate::enif::get_tuple(self.as_ptr(), term.as_nif_term(), &mut arity, &mut array) != 0
         } {
@@ -121,7 +120,7 @@ impl<'a> Env<'a> {
         I: IntoIterator<Item = T>,
         T: AsNifTerm<'a>,
     {
-        let raw: Vec<NifTerm> = terms.into_iter().map(|t| t.as_nif_term()).collect();
+        let raw: Vec<enif_ffi::Term> = terms.into_iter().map(|t| t.as_nif_term()).collect();
         let term = unsafe {
             crate::enif::make_tuple_from_array(self.as_ptr(), raw.as_ptr(), raw.len() as c_uint)
         };

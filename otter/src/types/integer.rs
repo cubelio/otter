@@ -1,6 +1,5 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang integer. Arbitrary precision — small integers are tagged
@@ -9,7 +8,7 @@ use crate::term::{Term, AsNifTerm};
 /// The lifetime `'a` covers the bignum case.
 #[derive(Clone, Copy)]
 pub struct Integer<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 

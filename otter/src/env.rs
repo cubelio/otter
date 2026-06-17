@@ -3,7 +3,6 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
 
-use crate::sys::NifTerm;
 use crate::term::Term;
 
 // ---------------------------------------------------------------------------
@@ -104,14 +103,14 @@ pub struct OwnedTermBuilder {
     env: *mut enif_ffi::Env,
     // Borrowing `&self._anchor` gives `env()` its lifetime.
     _anchor: (),
-    msg: Cell<NifTerm>,
+    msg: Cell<enif_ffi::Term>,
 }
 
 /// A message term that owns its process-independent environment, ready to send.
 /// Produced by [`OwnedTermBuilder::build`].
 pub struct OwnedTerm {
     pub(crate) env: *mut enif_ffi::Env,
-    pub(crate) msg: NifTerm,
+    pub(crate) msg: enif_ffi::Term,
 }
 
 // SAFETY: the BEAM's process-independent envs are designed for cross-thread

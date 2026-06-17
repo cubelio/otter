@@ -1,7 +1,6 @@
 use std::str::Utf8Error;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// A byte-aligned binary (`enif_is_binary` returned true).
@@ -10,7 +9,7 @@ use crate::term::{Term, AsNifTerm};
 /// `from_bytes` is called.
 #[derive(Clone, Copy)]
 pub struct Binary<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
@@ -24,7 +23,7 @@ pub struct Binary<'a> {
 /// `Bitstring` can only be held and passed back to Erlang unchanged.
 #[derive(Clone, Copy)]
 pub struct Bitstring<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
@@ -100,7 +99,7 @@ impl<'a> Binary<'a> {
 
     /// Allocate a new binary on the BEAM heap and copy `data` into it.
     pub fn from_bytes(env: Env<'a>, data: &[u8]) -> Binary<'a> {
-        let mut term: NifTerm = 0;
+        let mut term: enif_ffi::Term = 0;
         unsafe {
             let ptr = env.make_new_binary(data.len(), &mut term);
             std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
@@ -433,7 +432,7 @@ impl<'a> Env<'a> {
     ///
     /// All `size` bytes must be initialized before `term_out` is observed by
     /// Erlang.
-    pub unsafe fn make_new_binary(self, size: usize, term_out: &mut NifTerm) -> *mut u8 {
+    pub unsafe fn make_new_binary(self, size: usize, term_out: &mut enif_ffi::Term) -> *mut u8 {
         unsafe { crate::enif::make_new_binary(self.as_ptr(), size, term_out) }
     }
 
@@ -457,7 +456,7 @@ impl<'a> Env<'a> {
     /// an unresolved [`Term`]; call [`Term::resolve`] or a decoder to type it.
     pub fn deserialize(self, data: &[u8], safe: bool) -> Option<Term<'a>> {
         let opts = if safe { crate::sys::NIF_BIN2TERM_SAFE } else { 0 };
-        let mut term: NifTerm = 0;
+        let mut term: enif_ffi::Term = 0;
         let consumed = unsafe {
             crate::enif::binary_to_term(self.as_ptr(), data.as_ptr(), data.len(), &mut term, opts)
         };

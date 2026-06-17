@@ -1,6 +1,5 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm, Raised};
 
 /// An Erlang float. Always IEEE 754 double precision.
@@ -8,7 +7,7 @@ use crate::term::{Term, AsNifTerm, Raised};
 /// Floats are heap-allocated in the BEAM even though the value is always `f64`.
 #[derive(Clone, Copy)]
 pub struct Float<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 

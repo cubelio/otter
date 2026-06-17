@@ -12,7 +12,7 @@ pub use crate::priv_data::{discard_priv_data, free_priv_data, install_priv_data,
 pub use crate::priv_data::{old_user_priv_field, user_priv_field};
 pub use crate::resource::{register, register_tagged, ResourceFlags};
 pub use crate::sys::{
-    NifEntry, NifFunc, NifTerm, NIF_FUNC_DIRTY_CPU,
+    NifEntry, NifFunc, NIF_FUNC_DIRTY_CPU,
     NIF_FUNC_DIRTY_IO, NIF_MAJOR_VERSION, NIF_MIN_ERTS_VERSION, NIF_MINOR_VERSION,
     NIF_VM_VARIANT,
 };
@@ -21,6 +21,7 @@ pub use crate::sys::{
 // legacy names as re-exports of the enif_ffi types for now.
 pub use enif_ffi::Env as NifEnv;
 pub use enif_ffi::ResourceTypeInit as NifResourceTypeInit;
+pub use enif_ffi::Term as NifTerm;
 pub use crate::term::{Term, TypedTerm};
 pub use crate::types::Atom;
 
@@ -55,7 +56,7 @@ pub const LOAD_FAILED_DECODE: c_int = 3;
 pub struct NifMeta {
     pub name: &'static [u8],
     pub arity: u32,
-    pub raw_fptr: unsafe extern "C" fn(*mut enif_ffi::Env, c_int, *const NifTerm) -> NifTerm,
+    pub raw_fptr: unsafe extern "C" fn(*mut enif_ffi::Env, c_int, *const enif_ffi::Term) -> enif_ffi::Term,
     pub flags: u32,
 }
 
@@ -85,20 +86,20 @@ pub unsafe fn new_env<'a>(
     unsafe { Env::new(marker, env, kind) }
 }
 
-/// Wrap a raw `NifTerm` into a [`Term`].
+/// Wrap a raw `enif_ffi::Term` into a [`Term`].
 #[inline]
-pub fn new_raw_term<'a>(env: Env<'a>, term: NifTerm) -> Term<'a> {
+pub fn new_raw_term<'a>(env: Env<'a>, term: enif_ffi::Term) -> Term<'a> {
     Term::new(env, term)
 }
 
 /// Raise `badarg` and return the machine word to hand back from the NIF.
 #[inline]
-pub fn raise_badarg(env: Env<'_>) -> NifTerm {
+pub fn raise_badarg(env: Env<'_>) -> enif_ffi::Term {
     env.make_badarg::<()>().unwrap_err().raw()
 }
 
 /// Raise an exception with reason term `reason` and return the machine word.
 #[inline]
-pub fn raise(env: Env<'_>, reason: NifTerm) -> NifTerm {
+pub fn raise(env: Env<'_>, reason: enif_ffi::Term) -> enif_ffi::Term {
     env.raise_exception::<()>(Term::new(env, reason)).unwrap_err().raw()
 }

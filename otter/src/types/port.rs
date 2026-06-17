@@ -1,6 +1,5 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang port identifier whose locality is not yet established.
@@ -11,7 +10,7 @@ use crate::term::{Term, AsNifTerm};
 /// liveness, refine it to a [`LocalPort`] with [`to_local`](Port::to_local).
 #[derive(Clone, Copy)]
 pub struct Port<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 

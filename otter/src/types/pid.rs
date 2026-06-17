@@ -1,6 +1,5 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, OwnedTerm};
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang process identifier whose locality is not yet established.
@@ -13,7 +12,7 @@ use crate::term::{Term, AsNifTerm};
 /// [`to_local`](Pid::to_local); the NIF API can only act on local processes.
 #[derive(Clone, Copy)]
 pub struct Pid<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 

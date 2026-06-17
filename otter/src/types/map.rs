@@ -1,12 +1,11 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang map. Immutable — all mutations return a new map.
 #[derive(Clone, Copy)]
 pub struct Map<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
@@ -162,7 +161,7 @@ impl<'a> Env<'a> {
         map: impl AsNifTerm<'a>,
         key: impl AsNifTerm<'a>,
     ) -> Option<Term<'a>> {
-        let mut value: NifTerm = 0;
+        let mut value: enif_ffi::Term = 0;
         if unsafe {
             crate::enif::get_map_value(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut value)
                 != 0
@@ -181,7 +180,7 @@ impl<'a> Env<'a> {
         key: impl AsNifTerm<'a>,
         value: impl AsNifTerm<'a>,
     ) -> Option<Map<'a>> {
-        let mut out: NifTerm = 0;
+        let mut out: enif_ffi::Term = 0;
         if unsafe {
             crate::enif::make_map_put(
                 self.as_ptr(),
@@ -205,7 +204,7 @@ impl<'a> Env<'a> {
         key: impl AsNifTerm<'a>,
         value: impl AsNifTerm<'a>,
     ) -> Option<Map<'a>> {
-        let mut out: NifTerm = 0;
+        let mut out: enif_ffi::Term = 0;
         if unsafe {
             crate::enif::make_map_update(
                 self.as_ptr(),
@@ -228,7 +227,7 @@ impl<'a> Env<'a> {
         map: impl AsNifTerm<'a>,
         key: impl AsNifTerm<'a>,
     ) -> Option<Map<'a>> {
-        let mut out: NifTerm = 0;
+        let mut out: enif_ffi::Term = 0;
         if unsafe {
             crate::enif::make_map_remove(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut out)
                 != 0
@@ -268,8 +267,8 @@ impl<'a> Env<'a> {
         self,
         iter: &mut enif_ffi::MapIterator,
     ) -> Option<(Term<'a>, Term<'a>)> {
-        let mut key: NifTerm = 0;
-        let mut value: NifTerm = 0;
+        let mut key: enif_ffi::Term = 0;
+        let mut value: enif_ffi::Term = 0;
         if unsafe {
             crate::enif::map_iterator_get_pair(self.as_ptr(), iter, &mut key, &mut value) != 0
         } {

@@ -4,9 +4,10 @@
 //! no safety wrappers — only type definitions and constants. All struct types
 //! are `#[repr(C)]` to match the C ABI exactly.
 //!
-//! Naming convention: `Erl` prefix dropped, `Nif` prefix retained.
-//! `ERL_NIF_TERM` → `NifTerm`, etc. Types already migrated to `enif-ffi` are
-//! re-exported or referenced as `enif_ffi::*`.
+//! Naming convention: `Erl` prefix dropped, `Nif` prefix retained for the
+//! items still defined here. Types already migrated to `enif-ffi` are
+//! referenced as `enif_ffi::*` (and a few re-exported under their legacy
+//! `Nif*` names while consumers catch up).
 
 use std::ffi::{c_char, c_int, c_uint, c_void};
 
@@ -31,9 +32,6 @@ pub const NIF_MIN_ERTS_VERSION: &std::ffi::CStr = c"erts-14.0";
 // Core term type
 // ---------------------------------------------------------------------------
 
-/// `ERL_NIF_TERM` — a tagged machine word. Opaque to the NIF library.
-/// NIF 1.0 (OTP R13B04).
-pub type NifTerm = usize;
 
 // ---------------------------------------------------------------------------
 // Function descriptor
@@ -45,7 +43,7 @@ pub type NifTerm = usize;
 pub struct NifFunc {
     pub name:  *const c_char,
     pub arity: c_uint,
-    pub fptr:  unsafe extern "C" fn(env: *mut enif_ffi::Env, argc: c_int, argv: *const NifTerm) -> NifTerm,
+    pub fptr:  unsafe extern "C" fn(env: *mut enif_ffi::Env, argc: c_int, argv: *const enif_ffi::Term) -> enif_ffi::Term,
     pub flags: c_uint,
 }
 
@@ -67,9 +65,9 @@ pub struct NifEntry {
     pub name:         *const c_char,
     pub num_of_funcs: c_int,
     pub funcs:        *mut NifFunc,
-    pub load:    Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, NifTerm) -> c_int>,
-    pub reload:  Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, NifTerm) -> c_int>,
-    pub upgrade: Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, *mut *mut c_void, NifTerm) -> c_int>,
+    pub load:    Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, enif_ffi::Term) -> c_int>,
+    pub reload:  Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, enif_ffi::Term) -> c_int>,
+    pub upgrade: Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, *mut *mut c_void, enif_ffi::Term) -> c_int>,
     pub unload:  Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut c_void)>,
     /// Added in NIF 2.1 (OTP R14B02).
     pub vm_variant: *const c_char,

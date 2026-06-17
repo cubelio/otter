@@ -1,6 +1,5 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang fun (closure or function reference).
@@ -9,7 +8,7 @@ use crate::term::{Term, AsNifTerm};
 /// held and passed back to Erlang, or used as an argument to `apply`.
 #[derive(Clone, Copy)]
 pub struct Fun<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     // Env is stored for lifetime tracking only — the NIF API provides no
     // inspection functions for funs, so `env` is never read directly.
     #[allow(dead_code)]

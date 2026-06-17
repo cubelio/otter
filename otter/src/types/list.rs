@@ -2,7 +2,6 @@ use std::ffi::{c_char, c_uint};
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::NifTerm;
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang list term.
@@ -12,7 +11,7 @@ use crate::term::{Term, AsNifTerm};
 /// [`Node::Cell`] with one `enif_get_list_cell` call.
 #[derive(Clone, Copy)]
 pub struct List<'a> {
-    pub(crate) term: NifTerm,
+    pub(crate) term: enif_ffi::Term,
     pub(crate) env: Env<'a>,
 }
 
@@ -124,7 +123,7 @@ impl<'a> List<'a> {
 ///
 /// [`tail`]: ListIterator::tail
 pub struct ListIterator<'a> {
-    current: NifTerm,
+    current: enif_ffi::Term,
     env: Env<'a>,
     tail: Option<Term<'a>>,
 }
@@ -220,8 +219,8 @@ impl<'a> Env<'a> {
     /// Returns `None` if `term` is not a non-empty list (i.e. it is `[]` or
     /// not a list). Head and tail are unresolved [`Term`]s in this env.
     pub fn get_list_cell(self, term: impl AsNifTerm<'a>) -> Option<(Term<'a>, Term<'a>)> {
-        let mut head: NifTerm = 0;
-        let mut tail: NifTerm = 0;
+        let mut head: enif_ffi::Term = 0;
+        let mut tail: enif_ffi::Term = 0;
         if unsafe {
             crate::enif::get_list_cell(self.as_ptr(), term.as_nif_term(), &mut head, &mut tail) != 0
         } {
@@ -249,7 +248,7 @@ impl<'a> Env<'a> {
         I: IntoIterator<Item = T>,
         T: AsNifTerm<'a>,
     {
-        let raw: Vec<NifTerm> = terms.into_iter().map(|t| t.as_nif_term()).collect();
+        let raw: Vec<enif_ffi::Term> = terms.into_iter().map(|t| t.as_nif_term()).collect();
         let term = unsafe {
             crate::enif::make_list_from_array(self.as_ptr(), raw.as_ptr(), raw.len() as c_uint)
         };
@@ -272,7 +271,7 @@ impl<'a> Env<'a> {
     /// Reverse a proper list (`enif_make_reverse_list`).
     /// `None` for improper lists (final tail not `[]`).
     pub fn make_reverse_list(self, term: impl AsNifTerm<'a>) -> Option<List<'a>> {
-        let mut result: NifTerm = 0;
+        let mut result: enif_ffi::Term = 0;
         if unsafe { crate::enif::make_reverse_list(self.as_ptr(), term.as_nif_term(), &mut result) != 0 }
         {
             Some(List { term: result, env: self })
