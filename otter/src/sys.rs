@@ -97,19 +97,6 @@ pub const NIF_SELECT_NOTSUP:          c_int = 1 << 7;
 pub const NIF_BIN2TERM_SAFE: c_uint = 0x20000000;
 
 // ---------------------------------------------------------------------------
-// Thread type (return values from enif_thread_type)
-// ---------------------------------------------------------------------------
-
-/// Not a scheduler thread. NIF 2.11 (OTP 19.0).
-pub const NIF_THR_UNDEFINED:          c_int = 0;
-/// Normal BEAM scheduler thread. NIF 2.11 (OTP 19.0).
-pub const NIF_THR_NORMAL_SCHEDULER:   c_int = 1;
-/// Dirty CPU scheduler thread. NIF 2.11 (OTP 19.0).
-pub const NIF_THR_DIRTY_CPU_SCHEDULER: c_int = 2;
-/// Dirty I/O scheduler thread. NIF 2.11 (OTP 19.0).
-pub const NIF_THR_DIRTY_IO_SCHEDULER: c_int = 3;
-
-// ---------------------------------------------------------------------------
 // Schedule NIF flags
 // ---------------------------------------------------------------------------
 
