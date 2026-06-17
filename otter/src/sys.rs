@@ -209,17 +209,6 @@ pub type NifTime = i64;
 /// NIF 2.10 (OTP 18.3).
 pub const NIF_TIME_ERROR: NifTime = i64::MIN;
 
-/// `ErlNifTimeUnit` — time unit for `enif_monotonic_time` etc.
-/// NIF 2.10 (OTP 18.3).
-#[repr(i32)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum NifTimeUnit {
-    Second      = 0,
-    Millisecond = 1,
-    Microsecond = 2,
-    Nanosecond  = 3,
-}
-
 // ---------------------------------------------------------------------------
 // Select (I/O event multiplexing)
 // ---------------------------------------------------------------------------
