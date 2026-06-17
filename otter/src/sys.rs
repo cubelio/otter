@@ -138,26 +138,6 @@ pub struct NifResourceTypeInit {
     pub dyncall: Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void, *mut c_void)>,
 }
 
-/// `ErlNifResourceFlags` — passed to resource type registration functions.
-///
-/// Combinable with bitwise OR: `NifResourceFlags::CREATE | NifResourceFlags::TAKEOVER`.
-/// NIF 2.0 (OTP R14A).
-#[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct NifResourceFlags(pub c_int);
-
-impl NifResourceFlags {
-    /// Create a new resource type.
-    pub const CREATE: Self = Self(1);
-    /// Take over from an old NIF library during upgrade.
-    pub const TAKEOVER: Self = Self(2);
-}
-
-impl std::ops::BitOr for NifResourceFlags {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self { Self(self.0 | rhs.0) }
-}
-
 // ---------------------------------------------------------------------------
 // OS event handle (for enif_select)
 // ---------------------------------------------------------------------------

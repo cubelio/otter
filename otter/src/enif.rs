@@ -20,7 +20,7 @@ use std::sync::OnceLock;
 use crate::sys::{
     NifBinary, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
     NifMapIterator, NifMapIteratorEntry,
-    NifResourceFlags, NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
+    NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
     NifTime, NifTimeUnit, SysIOVec,
 };
 
@@ -117,7 +117,7 @@ pub(crate) struct EnifFunctions {
     pub open_resource_type: unsafe extern "C" fn(
         *mut NifEnv, *const c_char, *const c_char,
         Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void)>,
-        NifResourceFlags, *mut NifResourceFlags,
+        enif_ffi::ResourceFlags, *mut enif_ffi::ResourceFlags,
     ) -> *mut NifResourceType,
     pub alloc_resource:     unsafe extern "C" fn(*mut NifResourceType, usize) -> *mut c_void,
     pub release_resource:   unsafe extern "C" fn(*mut c_void),
@@ -294,7 +294,7 @@ pub(crate) struct EnifFunctions {
     ) -> c_int,
     pub open_resource_type_x: unsafe extern "C" fn(
         *mut NifEnv, *const c_char, *const NifResourceTypeInit,
-        NifResourceFlags, *mut NifResourceFlags,
+        enif_ffi::ResourceFlags, *mut enif_ffi::ResourceFlags,
     ) -> *mut NifResourceType,
     pub monitor_process: unsafe extern "C" fn(
         *mut NifEnv, *mut c_void, *const enif_ffi::Pid, *mut enif_ffi::Monitor,
@@ -352,7 +352,7 @@ pub(crate) struct EnifFunctions {
     // =====================================================================
     pub init_resource_type: unsafe extern "C" fn(
         *mut NifEnv, *const c_char, *const NifResourceTypeInit,
-        NifResourceFlags, *mut NifResourceFlags,
+        enif_ffi::ResourceFlags, *mut enif_ffi::ResourceFlags,
     ) -> *mut NifResourceType,
     pub dynamic_resource_call: unsafe extern "C" fn(
         *mut NifEnv, NifTerm, NifTerm, NifTerm, *mut c_void,
@@ -1437,7 +1437,7 @@ pub unsafe fn make_copy(dst_env: *mut NifEnv, src_term: NifTerm) -> NifTerm {
 pub unsafe fn open_resource_type(
     env: *mut NifEnv, module_str: *const c_char, name_str: *const c_char,
     dtor: Option<unsafe extern "C" fn(*mut NifEnv, *mut c_void)>,
-    flags: NifResourceFlags, tried: *mut NifResourceFlags,
+    flags: enif_ffi::ResourceFlags, tried: *mut enif_ffi::ResourceFlags,
 ) -> *mut NifResourceType {
     unsafe { (funcs().open_resource_type)(env, module_str, name_str, dtor, flags, tried) }
 }
@@ -1445,7 +1445,7 @@ pub unsafe fn open_resource_type(
 /// Opens or takes over a resource type with extended callbacks (select stop, down). NIF 2.12 (OTP 20.0). Wraps `enif_open_resource_type_x`.
 pub unsafe fn open_resource_type_x(
     env: *mut NifEnv, name_str: *const c_char, init: *const NifResourceTypeInit,
-    flags: NifResourceFlags, tried: *mut NifResourceFlags,
+    flags: enif_ffi::ResourceFlags, tried: *mut enif_ffi::ResourceFlags,
 ) -> *mut NifResourceType {
     unsafe { (funcs().open_resource_type_x)(env, name_str, init, flags, tried) }
 }
@@ -1977,7 +1977,7 @@ pub unsafe fn select_write(
 /// Opens or takes over a resource type with versioned init struct. NIF 2.16 (OTP 24.0). Wraps `enif_init_resource_type`.
 pub unsafe fn init_resource_type(
     env: *mut NifEnv, name_str: *const c_char, init: *const NifResourceTypeInit,
-    flags: NifResourceFlags, tried: *mut NifResourceFlags,
+    flags: enif_ffi::ResourceFlags, tried: *mut enif_ffi::ResourceFlags,
 ) -> *mut NifResourceType {
     unsafe { (funcs().init_resource_type)(env, name_str, init, flags, tried) }
 }

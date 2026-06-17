@@ -259,7 +259,7 @@ unsafe extern "C" fn stop_callback<T: Resource>(
 /// Flags controlling resource type registration. `CREATE` opens a new type;
 /// `CREATE | TAKEOVER` additionally takes over a matching type from a previous
 /// build of the library during a hot upgrade.
-pub use crate::sys::NifResourceFlags as ResourceFlags;
+pub use enif_ffi::ResourceFlags;
 
 /// Register resource type `T` with the BEAM, using the fully-qualified Rust
 /// type path as the identifier.
