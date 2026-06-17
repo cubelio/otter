@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use otter::codec::Encoder;
 use otter::env::{Env, OwnedTermBuilder};
 use otter::resource::{Resource, ResourceArc};
-use otter::sys::NifSelectFlags;
+use otter::enif_ffi::SelectFlags;
 use otter::term::{Term, TypedTerm, Raised};
 use otter::types::{Atom, Binary, BinaryBuf, Float, Integer, List, LocalPid, LocalPort, Map, Reference, Tuple};
 
@@ -508,7 +508,7 @@ struct FdResource {
 }
 
 impl Resource for FdResource {
-    fn stop(&self, _env: Env<'_>, _event: otter::sys::NifEvent, _is_direct_call: bool) {
+    fn stop(&self, _env: Env<'_>, _event: otter::enif_ffi::Event, _is_direct_call: bool) {
         self.stop_count.fetch_add(1, Ordering::Relaxed);
     }
 }
@@ -523,7 +523,7 @@ fn select_resource_new(env: Env) -> ResourceArc<FdResource> {
 fn select_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
     let pid = LocalPid::self_(env);
     let flags = otter::select::select(
-        env, arc.a.as_raw_fd(), NifSelectFlags::READ, &arc, &pid, Reference::new(env),
+        env, arc.a.as_raw_fd(), SelectFlags::READ, &arc, &pid, Reference::new(env),
     );
     Integer::from_i64(env, flags as i64)
 }
@@ -532,7 +532,7 @@ fn select_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a
 fn select_stop<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
     let pid = LocalPid::self_(env);
     let flags = otter::select::select(
-        env, arc.a.as_raw_fd(), NifSelectFlags::STOP, &arc, &pid, Reference::new(env),
+        env, arc.a.as_raw_fd(), SelectFlags::STOP, &arc, &pid, Reference::new(env),
     );
     Integer::from_i64(env, flags as i64)
 }
@@ -552,7 +552,7 @@ fn select_x_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>, msg: Term<'
     // CUSTOM_MSG is required for select_x to deliver `msg` itself; without it
     // the BEAM sends the default {select,...} tuple with msg nested as the ref.
     let flags = otter::select::select_x(
-        env, arc.a.as_raw_fd(), NifSelectFlags::READ | NifSelectFlags::CUSTOM_MSG,
+        env, arc.a.as_raw_fd(), SelectFlags::READ | SelectFlags::CUSTOM_MSG,
         &arc, &pid, msg, None,
     );
     let mut peer = &arc.b;
