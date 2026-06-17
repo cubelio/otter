@@ -37,19 +37,9 @@ pub const NIF_MIN_ERTS_VERSION: &std::ffi::CStr = c"erts-14.0";
 // Function descriptor
 // ---------------------------------------------------------------------------
 
-/// `ErlNifFunc` — describes one NIF: Erlang name, arity, function pointer, flags.
-/// NIF 1.0 (OTP R13B04). `flags` field added in NIF 2.7 (OTP 17.3).
-#[repr(C)]
-pub struct NifFunc {
-    pub name:  *const c_char,
-    pub arity: c_uint,
-    pub fptr:  unsafe extern "C" fn(env: *mut enif_ffi::Env, argc: c_int, argv: *const enif_ffi::Term) -> enif_ffi::Term,
-    pub flags: c_uint,
-}
-
-/// `NifFunc.flags` value: run on dirty CPU scheduler. NIF 2.7 (OTP 17.3).
+/// `enif_ffi::Func.flags` value: run on dirty CPU scheduler. NIF 2.7 (OTP 17.3).
 pub const NIF_FUNC_DIRTY_CPU: c_uint = 1;
-/// `NifFunc.flags` value: run on dirty I/O scheduler. NIF 2.7 (OTP 17.3).
+/// `enif_ffi::Func.flags` value: run on dirty I/O scheduler. NIF 2.7 (OTP 17.3).
 pub const NIF_FUNC_DIRTY_IO: c_uint = 2;
 
 // ---------------------------------------------------------------------------
@@ -64,7 +54,7 @@ pub struct NifEntry {
     pub minor:        c_int,
     pub name:         *const c_char,
     pub num_of_funcs: c_int,
-    pub funcs:        *mut NifFunc,
+    pub funcs:        *mut enif_ffi::Func,
     pub load:    Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, enif_ffi::Term) -> c_int>,
     pub reload:  Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, enif_ffi::Term) -> c_int>,
     pub upgrade: Option<unsafe extern "C" fn(*mut enif_ffi::Env, *mut *mut c_void, *mut *mut c_void, enif_ffi::Term) -> c_int>,

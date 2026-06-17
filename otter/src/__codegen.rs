@@ -12,7 +12,7 @@ pub use crate::priv_data::{discard_priv_data, free_priv_data, install_priv_data,
 pub use crate::priv_data::{old_user_priv_field, user_priv_field};
 pub use crate::resource::{register, register_tagged, ResourceFlags};
 pub use crate::sys::{
-    NifEntry, NifFunc, NIF_FUNC_DIRTY_CPU,
+    NifEntry, NIF_FUNC_DIRTY_CPU,
     NIF_FUNC_DIRTY_IO, NIF_MAJOR_VERSION, NIF_MIN_ERTS_VERSION, NIF_MINOR_VERSION,
     NIF_VM_VARIANT,
 };
@@ -61,9 +61,9 @@ pub struct NifMeta {
 }
 
 impl NifMeta {
-    /// Convert to a [`NifFunc`] for inclusion in a `NifEntry`.
-    pub fn to_nif_func(&self) -> NifFunc {
-        NifFunc {
+    /// Convert to a [`enif_ffi::Func`] for inclusion in a `NifEntry`.
+    pub fn to_nif_func(&self) -> enif_ffi::Func {
+        enif_ffi::Func {
             name: self.name.as_ptr() as *const std::ffi::c_char,
             arity: self.arity as std::ffi::c_uint,
             fptr: self.raw_fptr,
