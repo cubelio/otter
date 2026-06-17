@@ -17,10 +17,7 @@
 use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
-use crate::sys::{
-    NifTerm,
-    SysIOVec,
-};
+use crate::sys::NifTerm;
 
 /// The BEAM's non-value marker (`THE_NON_VALUE`). No valid term is ever `0`,
 /// so it doubles as an "absent term" sentinel.
@@ -310,7 +307,7 @@ pub(crate) struct EnifFunctions {
     pub ioq_enqv:           unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut enif_ffi::IOVec, usize) -> c_int,
     pub ioq_size:           unsafe extern "C" fn(*mut enif_ffi::IOQueue) -> usize,
     pub ioq_deq:            unsafe extern "C" fn(*mut enif_ffi::IOQueue, usize, *mut usize) -> c_int,
-    pub ioq_peek:           unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut c_int) -> *mut SysIOVec,
+    pub ioq_peek:           unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut c_int) -> *mut enif_ffi::SysIOVec,
     pub inspect_iovec: unsafe extern "C" fn(
         *mut enif_ffi::Env, usize, NifTerm, *mut NifTerm, *mut *mut enif_ffi::IOVec,
     ) -> c_int,
@@ -1885,10 +1882,10 @@ pub unsafe fn ioq_deq(
     unsafe { (funcs().ioq_deq)(q, count, size) }
 }
 
-/// Returns the I/O queue contents as a `SysIOVec` array suitable for `writev`. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_peek`.
+/// Returns the I/O queue contents as a `enif_ffi::SysIOVec` array suitable for `writev`. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_peek`.
 pub unsafe fn ioq_peek(
     q: *mut enif_ffi::IOQueue, iovlen: *mut c_int,
-) -> *mut SysIOVec {
+) -> *mut enif_ffi::SysIOVec {
     unsafe { (funcs().ioq_peek)(q, iovlen) }
 }
 

@@ -163,11 +163,4 @@ pub const NIF_DIRTY_JOB_IO_BOUND:  c_int = 2;
 /// Normal I/O queue mode. NIF 2.13 (OTP 20.1).
 pub const NIF_IOQ_NORMAL: enif_ffi::IOQueueOpts = 1;
 
-/// `SysIOVec` — iovec on Unix. Matches `struct iovec`. NIF 2.13 (OTP 20.1).
-#[cfg(unix)]
-#[repr(C)]
-pub struct SysIOVec {
-    pub iov_base: *mut c_void,
-    pub iov_len: usize,
-}
 
