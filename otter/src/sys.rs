@@ -202,12 +202,9 @@ pub struct NifMapIterator {
 // Time
 // ---------------------------------------------------------------------------
 
-/// `ErlNifTime` — time value in BEAM time units. NIF 2.10 (OTP 18.3).
-pub type NifTime = i64;
-
 /// `ERL_NIF_TIME_ERROR` — sentinel returned by time functions on error.
 /// NIF 2.10 (OTP 18.3).
-pub const NIF_TIME_ERROR: NifTime = i64::MIN;
+pub const NIF_TIME_ERROR: enif_ffi::Time = i64::MIN;
 
 // ---------------------------------------------------------------------------
 // Select (I/O event multiplexing)

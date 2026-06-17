@@ -3,7 +3,7 @@
 //! Wraps `enif_monotonic_time`, `enif_time_offset`, and
 //! `enif_convert_time_unit`.
 
-pub use crate::sys::NifTime as Time;
+pub use enif_ffi::Time;
 pub use enif_ffi::TimeUnit;
 
 /// Return the current BEAM monotonic time in the given unit.

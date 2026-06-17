@@ -21,7 +21,7 @@ use crate::sys::{
     NifBinary, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
     NifMapIterator, NifMapIteratorEntry,
     NifResourceType, NifResourceTypeInit, NifSelectFlags, NifTerm,
-    NifTime, SysIOVec,
+    SysIOVec,
 };
 
 /// The BEAM's non-value marker (`THE_NON_VALUE`). No valid term is ever `0`,
@@ -263,9 +263,9 @@ pub(crate) struct EnifFunctions {
     // =====================================================================
     // NIF 2.10 (OTP 18.3)
     // =====================================================================
-    pub monotonic_time:     unsafe extern "C" fn(enif_ffi::TimeUnit) -> NifTime,
-    pub time_offset:        unsafe extern "C" fn(enif_ffi::TimeUnit) -> NifTime,
-    pub convert_time_unit:  unsafe extern "C" fn(NifTime, enif_ffi::TimeUnit, enif_ffi::TimeUnit) -> NifTime,
+    pub monotonic_time:     unsafe extern "C" fn(enif_ffi::TimeUnit) -> enif_ffi::Time,
+    pub time_offset:        unsafe extern "C" fn(enif_ffi::TimeUnit) -> enif_ffi::Time,
+    pub convert_time_unit:  unsafe extern "C" fn(enif_ffi::Time, enif_ffi::TimeUnit, enif_ffi::TimeUnit) -> enif_ffi::Time,
 
     // =====================================================================
     // NIF 2.11 (OTP 19.0)
@@ -1551,19 +1551,19 @@ pub unsafe fn select(
 // -- Time -----------------------------------------------------------------
 
 /// Returns the current Erlang monotonic time in the given time unit; may be negative. NIF 2.10 (OTP 18.3). Wraps `enif_monotonic_time`.
-pub unsafe fn monotonic_time(unit: enif_ffi::TimeUnit) -> NifTime {
+pub unsafe fn monotonic_time(unit: enif_ffi::TimeUnit) -> enif_ffi::Time {
     unsafe { (funcs().monotonic_time)(unit) }
 }
 
 /// Returns the current time offset between Erlang monotonic time and Erlang system time. NIF 2.10 (OTP 18.3). Wraps `enif_time_offset`.
-pub unsafe fn time_offset(unit: enif_ffi::TimeUnit) -> NifTime {
+pub unsafe fn time_offset(unit: enif_ffi::TimeUnit) -> enif_ffi::Time {
     unsafe { (funcs().time_offset)(unit) }
 }
 
 /// Converts a time value from one time unit to another. NIF 2.10 (OTP 18.3). Wraps `enif_convert_time_unit`.
 pub unsafe fn convert_time_unit(
-    time: NifTime, from: enif_ffi::TimeUnit, to: enif_ffi::TimeUnit,
-) -> NifTime {
+    time: enif_ffi::Time, from: enif_ffi::TimeUnit, to: enif_ffi::TimeUnit,
+) -> enif_ffi::Time {
     unsafe { (funcs().convert_time_unit)(time, from, to) }
 }
 
