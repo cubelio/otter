@@ -279,27 +279,6 @@ pub const NIF_SELECT_NOTSUP:          c_int = 1 << 7;
 pub const NIF_BIN2TERM_SAFE: c_uint = 0x20000000;
 
 // ---------------------------------------------------------------------------
-// System info
-// ---------------------------------------------------------------------------
-
-/// `ErlNifSysInfo` (= `ErlDrvSysInfo`) — BEAM system information.
-/// NIF 1.0 (OTP R13B04).
-#[repr(C)]
-pub struct NifSysInfo {
-    pub driver_major_version: c_int,
-    pub driver_minor_version: c_int,
-    pub erts_version:         *mut c_char,
-    pub otp_release:          *mut c_char,
-    pub thread_support:       c_int,
-    pub smp_support:          c_int,
-    pub async_threads:        c_int,
-    pub scheduler_threads:    c_int,
-    pub nif_major_version:    c_int,
-    pub nif_minor_version:    c_int,
-    pub dirty_scheduler_support: c_int,
-}
-
-// ---------------------------------------------------------------------------
 // Thread type (return values from enif_thread_type)
 // ---------------------------------------------------------------------------
 

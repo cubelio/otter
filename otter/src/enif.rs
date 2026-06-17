@@ -20,7 +20,7 @@ use std::sync::OnceLock;
 use crate::sys::{
     NifBinary, NifEnv, NifEvent, NifIOQueue, NifIOQueueOpts, NifIOVec,
     NifMapIterator, NifMapIteratorEntry,
-    NifResourceType, NifResourceTypeInit, NifSelectFlags, NifSysInfo, NifTerm,
+    NifResourceType, NifResourceTypeInit, NifSelectFlags, NifTerm,
     NifTime, NifTimeUnit, SysIOVec,
 };
 
@@ -161,7 +161,7 @@ pub(crate) struct EnifFunctions {
     pub alloc:              unsafe extern "C" fn(usize) -> *mut c_void,
     pub free:               unsafe extern "C" fn(*mut c_void),
     pub realloc:            unsafe extern "C" fn(*mut c_void, usize) -> *mut c_void,
-    pub system_info:        unsafe extern "C" fn(*mut NifSysInfo, usize),
+    pub system_info:        unsafe extern "C" fn(*mut enif_ffi::SysInfo, usize),
     pub inspect_iolist_as_binary: unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut NifBinary) -> c_int,
     pub make_sub_binary:    unsafe extern "C" fn(*mut NifEnv, NifTerm, usize, usize) -> NifTerm,
     pub get_string:         unsafe extern "C" fn(*mut NifEnv, NifTerm, *mut c_char, c_uint, enif_ffi::CharEncoding) -> c_int,
@@ -1609,8 +1609,8 @@ pub unsafe fn consume_timeslice(env: *mut NifEnv, percent: c_int) -> c_int {
 
 // -- System ---------------------------------------------------------------
 
-/// Fills a `NifSysInfo` struct with runtime system information. NIF 1.0 (OTP R13B04). Wraps `enif_system_info`.
-pub unsafe fn system_info(sip: *mut NifSysInfo, si_size: usize) {
+/// Fills a `enif_ffi::SysInfo` struct with runtime system information. NIF 1.0 (OTP R13B04). Wraps `enif_system_info`.
+pub unsafe fn system_info(sip: *mut enif_ffi::SysInfo, si_size: usize) {
     unsafe { (funcs().system_info)(sip, si_size) }
 }
 

@@ -2,7 +2,7 @@
 
 use std::ffi::c_int;
 
-pub use crate::sys::NifSysInfo as SysInfo;
+pub use enif_ffi::SysInfo;
 
 /// The type of thread the current code is running on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
