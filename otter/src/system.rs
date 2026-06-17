@@ -23,7 +23,7 @@ pub enum ThreadType {
 ///
 /// Wraps `enif_thread_type`.
 pub fn thread_type() -> ThreadType {
-    match unsafe { crate::enif::thread_type() } {
+    match unsafe { enif_ffi::thread_type() } {
         enif_ffi::THR_UNDEFINED           => ThreadType::NonScheduler,
         enif_ffi::THR_NORMAL_SCHEDULER    => ThreadType::Scheduler,
         enif_ffi::THR_DIRTY_CPU_SCHEDULER => ThreadType::DirtyCpu,
@@ -36,5 +36,5 @@ pub fn thread_type() -> ThreadType {
 ///
 /// Wraps `enif_system_info`.
 pub fn system_info(info: &mut SysInfo) {
-    unsafe { crate::enif::system_info(info, std::mem::size_of::<SysInfo>()) };
+    unsafe { enif_ffi::system_info(info, std::mem::size_of::<SysInfo>()) };
 }

@@ -497,15 +497,11 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
         #upgrade_wrapper
         #unload_wrapper
 
-        #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn nif_init() -> *const ::otter::enif_ffi::Entry {
-            if let Err(sym) = unsafe { ::otter::init() } {
-                eprintln!("otter: failed to resolve symbol `{sym}` — the NIF \
-                    was compiled for a newer NIF API version than this BEAM supports. \
-                    NIF load aborted.");
-                return ::std::ptr::null();
-            }
-
+        // enif_ffi::nif_init! emits the platform-correct `nif_init` entry point,
+        // resolves the enif_* table (dlsym on Unix / the BEAM callback table on
+        // Windows), and on success calls this builder. So the builder runs only
+        // after the table is live and can use the enif_ffi wrappers freely.
+        fn __otter_build_entry() -> *const ::otter::enif_ffi::Entry {
             let mut __otter_funcs = ::std::vec![
                 #( #meta_paths .to_nif_func() ),*
             ];
@@ -531,5 +527,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             });
             ::std::boxed::Box::leak(__otter_entry) as *const _
         }
+
+        ::otter::nif_init!(__otter_build_entry);
     })
 }

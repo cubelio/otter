@@ -172,7 +172,7 @@ impl<'a> ListIterator<'a> {
 
 impl PartialEq for List<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -186,7 +186,7 @@ impl PartialOrd for List<'_> {
 
 impl Ord for List<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -211,7 +211,7 @@ impl<'a> Env<'a> {
     /// Returns `true` if `term` is a list, including improper and empty lists
     /// (`enif_is_list`).
     pub fn is_list(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { crate::enif::is_list(self.as_ptr(), term.as_nif_term()) != 0 }
+        unsafe { enif_ffi::is_list(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 
     /// Decompose a list into its head and tail (`enif_get_list_cell`).
@@ -222,7 +222,7 @@ impl<'a> Env<'a> {
         let mut head: enif_ffi::Term = 0;
         let mut tail: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::get_list_cell(self.as_ptr(), term.as_nif_term(), &mut head, &mut tail) != 0
+            enif_ffi::get_list_cell(self.as_ptr(), term.as_nif_term(), &mut head, &mut tail) != 0
         } {
             Some((Term::new(self, head), Term::new(self, tail)))
         } else {
@@ -234,7 +234,7 @@ impl<'a> Env<'a> {
     /// `None` for an improper list. Traverses the whole list — O(n).
     pub fn get_list_length(self, term: impl AsNifTerm<'a>) -> Option<usize> {
         let mut len: c_uint = 0;
-        if unsafe { crate::enif::get_list_length(self.as_ptr(), term.as_nif_term(), &mut len) != 0 } {
+        if unsafe { enif_ffi::get_list_length(self.as_ptr(), term.as_nif_term(), &mut len) != 0 } {
             Some(len as usize)
         } else {
             None
@@ -250,7 +250,7 @@ impl<'a> Env<'a> {
     {
         let raw: Vec<enif_ffi::Term> = terms.into_iter().map(|t| t.as_nif_term()).collect();
         let term = unsafe {
-            crate::enif::make_list_from_array(self.as_ptr(), raw.as_ptr(), raw.len() as c_uint)
+            enif_ffi::make_list_from_array(self.as_ptr(), raw.as_ptr(), raw.len() as c_uint)
         };
         List { term, env: self }
     }
@@ -263,7 +263,7 @@ impl<'a> Env<'a> {
         tail: impl AsNifTerm<'a>,
     ) -> List<'a> {
         let term = unsafe {
-            crate::enif::make_list_cell(self.as_ptr(), head.as_nif_term(), tail.as_nif_term())
+            enif_ffi::make_list_cell(self.as_ptr(), head.as_nif_term(), tail.as_nif_term())
         };
         List { term, env: self }
     }
@@ -272,7 +272,7 @@ impl<'a> Env<'a> {
     /// `None` for improper lists (final tail not `[]`).
     pub fn make_reverse_list(self, term: impl AsNifTerm<'a>) -> Option<List<'a>> {
         let mut result: enif_ffi::Term = 0;
-        if unsafe { crate::enif::make_reverse_list(self.as_ptr(), term.as_nif_term(), &mut result) != 0 }
+        if unsafe { enif_ffi::make_reverse_list(self.as_ptr(), term.as_nif_term(), &mut result) != 0 }
         {
             Some(List { term: result, env: self })
         } else {
@@ -284,7 +284,7 @@ impl<'a> Env<'a> {
     /// (`enif_make_string_len`, `ERL_NIF_UTF8`).
     pub fn make_string(self, s: &str) -> List<'a> {
         let term = unsafe {
-            crate::enif::make_string_len(
+            enif_ffi::make_string_len(
                 self.as_ptr(),
                 s.as_ptr() as *const c_char,
                 s.len(),
@@ -301,7 +301,7 @@ impl<'a> Env<'a> {
         let raw = term.as_nif_term();
         let mut len: c_uint = 0;
         if unsafe {
-            crate::enif::get_string_length(self.as_ptr(), raw, &mut len, enif_ffi::CharEncoding::Utf8) == 0
+            enif_ffi::get_string_length(self.as_ptr(), raw, &mut len, enif_ffi::CharEncoding::Utf8) == 0
         } {
             return None;
         }
@@ -311,7 +311,7 @@ impl<'a> Env<'a> {
         }
         let mut buf = vec![0u8; len + 1]; // +1 for null terminator
         let ret = unsafe {
-            crate::enif::get_string(
+            enif_ffi::get_string(
                 self.as_ptr(),
                 raw,
                 buf.as_mut_ptr() as *mut c_char,

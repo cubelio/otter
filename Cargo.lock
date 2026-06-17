@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "enif-ffi"
 version = "0.1.0"
-source = "git+https://github.com/cubelio/enif-ffi#681032640beef3be3c2af42ff4b77cec157eed8d"
+source = "git+https://github.com/cubelio/enif-ffi#3d9e878ab9663d96ecde962a19e3e149611615dd"
 dependencies = [
  "libc",
 ]

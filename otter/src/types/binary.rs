@@ -129,7 +129,7 @@ impl std::fmt::Debug for Binary<'_> {
 
 impl PartialEq for Binary<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -143,7 +143,7 @@ impl PartialOrd for Binary<'_> {
 
 impl Ord for Binary<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -156,7 +156,7 @@ impl std::fmt::Debug for Bitstring<'_> {
 
 impl PartialEq for Bitstring<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -170,7 +170,7 @@ impl PartialOrd for Bitstring<'_> {
 
 impl Ord for Bitstring<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -212,7 +212,7 @@ impl BinaryBuf {
     /// Panics if the allocation fails.
     pub fn with_capacity(capacity: usize) -> BinaryBuf {
         let mut bin: enif_ffi::Binary = unsafe { std::mem::zeroed() };
-        let ok = unsafe { crate::enif::alloc_binary(capacity, &mut bin) != 0 };
+        let ok = unsafe { enif_ffi::alloc_binary(capacity, &mut bin) != 0 };
         assert!(ok, "enif_alloc_binary failed");
         BinaryBuf { bin, len: 0, released: false }
     }
@@ -287,7 +287,7 @@ impl BinaryBuf {
             return;
         }
         let new_cap = required.max(self.bin.size.checked_mul(2).unwrap_or(required));
-        let ok = unsafe { crate::enif::realloc_binary(&mut self.bin, new_cap) != 0 };
+        let ok = unsafe { enif_ffi::realloc_binary(&mut self.bin, new_cap) != 0 };
         assert!(ok, "enif_realloc_binary failed");
     }
 
@@ -297,7 +297,7 @@ impl BinaryBuf {
     /// Shrinks the allocation to the exact written length first.
     pub fn into_binary<'a>(mut self, env: Env<'a>) -> Binary<'a> {
         if self.len < self.bin.size {
-            let ok = unsafe { crate::enif::realloc_binary(&mut self.bin, self.len) != 0 };
+            let ok = unsafe { enif_ffi::realloc_binary(&mut self.bin, self.len) != 0 };
             assert!(ok, "enif_realloc_binary failed on shrink");
         }
         self.released = true;
@@ -325,7 +325,7 @@ impl std::io::Write for BinaryBuf {
 impl Drop for BinaryBuf {
     fn drop(&mut self) {
         if !self.released {
-            unsafe { crate::enif::release_binary(&mut self.bin) };
+            unsafe { enif_ffi::release_binary(&mut self.bin) };
         }
     }
 }
@@ -408,19 +408,19 @@ impl<'a> Env<'a> {
     /// Returns `true` if `term` is a byte-aligned binary (`enif_is_binary`).
     /// Sub-byte bitstrings return `false`.
     pub fn is_binary(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { crate::enif::is_binary(self.as_ptr(), term.as_nif_term()) != 0 }
+        unsafe { enif_ffi::is_binary(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 
     /// Inspect a binary term, filling `bin` (`enif_inspect_binary`).
     /// Returns `false` if `term` is not a byte-aligned binary.
     pub fn inspect_binary(self, term: impl AsNifTerm<'a>, bin: &mut enif_ffi::Binary) -> bool {
-        unsafe { crate::enif::inspect_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
+        unsafe { enif_ffi::inspect_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
     }
 
     /// Convert an allocated `enif_ffi::Binary` into a binary term (`enif_make_binary`).
     /// After this call the BEAM owns the binary; `bin` must not be used again.
     pub fn make_binary(self, bin: &mut enif_ffi::Binary) -> Binary<'a> {
-        let term = unsafe { crate::enif::make_binary(self.as_ptr(), bin) };
+        let term = unsafe { enif_ffi::make_binary(self.as_ptr(), bin) };
         Binary { term, env: self }
     }
 
@@ -433,13 +433,13 @@ impl<'a> Env<'a> {
     /// All `size` bytes must be initialized before `term_out` is observed by
     /// Erlang.
     pub unsafe fn make_new_binary(self, size: usize, term_out: &mut enif_ffi::Term) -> *mut u8 {
-        unsafe { crate::enif::make_new_binary(self.as_ptr(), size, term_out) }
+        unsafe { enif_ffi::make_new_binary(self.as_ptr(), size, term_out) }
     }
 
     /// Create a zero-copy sub-binary of `term` spanning `pos..pos+len`
     /// (`enif_make_sub_binary`). The caller is responsible for bounds.
     pub fn make_sub_binary(self, term: impl AsNifTerm<'a>, pos: usize, len: usize) -> Binary<'a> {
-        let t = unsafe { crate::enif::make_sub_binary(self.as_ptr(), term.as_nif_term(), pos, len) };
+        let t = unsafe { enif_ffi::make_sub_binary(self.as_ptr(), term.as_nif_term(), pos, len) };
         Binary { term: t, env: self }
     }
 
@@ -447,7 +447,7 @@ impl<'a> Env<'a> {
     /// (`enif_term_to_binary`). Returns `false` on failure. `bin` is allocated
     /// via enif_alloc_binary; pass it to `make_binary` or release it.
     pub fn term_to_binary(self, term: impl AsNifTerm<'a>, bin: &mut enif_ffi::Binary) -> bool {
-        unsafe { crate::enif::term_to_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
+        unsafe { enif_ffi::term_to_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
     }
 
     /// Deserialize a term from external-term-format bytes
@@ -458,7 +458,7 @@ impl<'a> Env<'a> {
         let opts = if safe { enif_ffi::BIN2TERM_SAFE } else { 0 };
         let mut term: enif_ffi::Term = 0;
         let consumed = unsafe {
-            crate::enif::binary_to_term(self.as_ptr(), data.as_ptr(), data.len(), &mut term, opts)
+            enif_ffi::binary_to_term(self.as_ptr(), data.as_ptr(), data.len(), &mut term, opts)
         };
         if consumed == 0 {
             None

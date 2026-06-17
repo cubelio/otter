@@ -17,7 +17,7 @@ pub struct Fun<'a> {
 
 impl PartialEq for Fun<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -31,7 +31,7 @@ impl PartialOrd for Fun<'_> {
 
 impl Ord for Fun<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -55,7 +55,7 @@ impl<'b> Encoder for Fun<'b> {
 impl<'a> Env<'a> {
     /// Returns `true` if `term` is a fun (`enif_is_fun`).
     pub fn is_fun(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { crate::enif::is_fun(self.as_ptr(), term.as_nif_term()) != 0 }
+        unsafe { enif_ffi::is_fun(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 }
 

@@ -97,7 +97,7 @@ impl<'a> Drop for MapIterator<'a> {
 
 impl PartialEq for Map<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -111,7 +111,7 @@ impl PartialOrd for Map<'_> {
 
 impl Ord for Map<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
@@ -135,12 +135,12 @@ impl<'b> Encoder for Map<'b> {
 impl<'a> Env<'a> {
     /// Returns `true` if `term` is a map (`enif_is_map`).
     pub fn is_map(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { crate::enif::is_map(self.as_ptr(), term.as_nif_term()) != 0 }
+        unsafe { enif_ffi::is_map(self.as_ptr(), term.as_nif_term()) != 0 }
     }
 
     /// Create an empty map (`enif_make_new_map`).
     pub fn make_new_map(self) -> Map<'a> {
-        let term = unsafe { crate::enif::make_new_map(self.as_ptr()) };
+        let term = unsafe { enif_ffi::make_new_map(self.as_ptr()) };
         Map { term, env: self }
     }
 
@@ -148,7 +148,7 @@ impl<'a> Env<'a> {
     /// `None` if `map` is not a map.
     pub fn get_map_size(self, map: impl AsNifTerm<'a>) -> Option<usize> {
         let mut size: usize = 0;
-        if unsafe { crate::enif::get_map_size(self.as_ptr(), map.as_nif_term(), &mut size) != 0 } {
+        if unsafe { enif_ffi::get_map_size(self.as_ptr(), map.as_nif_term(), &mut size) != 0 } {
             Some(size)
         } else {
             None
@@ -163,7 +163,7 @@ impl<'a> Env<'a> {
     ) -> Option<Term<'a>> {
         let mut value: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::get_map_value(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut value)
+            enif_ffi::get_map_value(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut value)
                 != 0
         } {
             Some(Term::new(self, value))
@@ -182,7 +182,7 @@ impl<'a> Env<'a> {
     ) -> Option<Map<'a>> {
         let mut out: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::make_map_put(
+            enif_ffi::make_map_put(
                 self.as_ptr(),
                 map.as_nif_term(),
                 key.as_nif_term(),
@@ -206,7 +206,7 @@ impl<'a> Env<'a> {
     ) -> Option<Map<'a>> {
         let mut out: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::make_map_update(
+            enif_ffi::make_map_update(
                 self.as_ptr(),
                 map.as_nif_term(),
                 key.as_nif_term(),
@@ -229,7 +229,7 @@ impl<'a> Env<'a> {
     ) -> Option<Map<'a>> {
         let mut out: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::make_map_remove(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut out)
+            enif_ffi::make_map_remove(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut out)
                 != 0
         } {
             Some(Map { term: out, env: self })
@@ -247,18 +247,18 @@ impl<'a> Env<'a> {
         iter: &mut enif_ffi::MapIterator,
         entry: enif_ffi::MapIteratorEntry,
     ) -> bool {
-        unsafe { crate::enif::map_iterator_create(self.as_ptr(), map.as_nif_term(), iter, entry) != 0 }
+        unsafe { enif_ffi::map_iterator_create(self.as_ptr(), map.as_nif_term(), iter, entry) != 0 }
     }
 
     /// Destroy a map iterator (`enif_map_iterator_destroy`).
     pub fn map_iterator_destroy(self, iter: &mut enif_ffi::MapIterator) {
-        unsafe { crate::enif::map_iterator_destroy(self.as_ptr(), iter) }
+        unsafe { enif_ffi::map_iterator_destroy(self.as_ptr(), iter) }
     }
 
     /// Advance a map iterator (`enif_map_iterator_next`). `false` when
     /// exhausted.
     pub fn map_iterator_next(self, iter: &mut enif_ffi::MapIterator) -> bool {
-        unsafe { crate::enif::map_iterator_next(self.as_ptr(), iter) != 0 }
+        unsafe { enif_ffi::map_iterator_next(self.as_ptr(), iter) != 0 }
     }
 
     /// The current key/value pair of a map iterator
@@ -270,7 +270,7 @@ impl<'a> Env<'a> {
         let mut key: enif_ffi::Term = 0;
         let mut value: enif_ffi::Term = 0;
         if unsafe {
-            crate::enif::map_iterator_get_pair(self.as_ptr(), iter, &mut key, &mut value) != 0
+            enif_ffi::map_iterator_get_pair(self.as_ptr(), iter, &mut key, &mut value) != 0
         } {
             Some((Term::new(self, key), Term::new(self, value)))
         } else {

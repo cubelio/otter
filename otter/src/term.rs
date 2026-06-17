@@ -75,7 +75,7 @@ impl<'a> Term<'a> {
     /// OTP may return that [`resolve`](Self::resolve) maps to `None`.
     #[cfg(feature = "raw")]
     pub fn term_type_raw(self) -> std::ffi::c_int {
-        unsafe { crate::enif::term_type(self.env.as_ptr(), self.term) }
+        unsafe { enif_ffi::term_type(self.env.as_ptr(), self.term) }
     }
 
     /// Serialize this term to the Erlang external term format, returning the
@@ -148,7 +148,7 @@ impl<'a> TypedTerm<'a> {
 
 impl<'a> PartialEq for Term<'a> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -162,14 +162,14 @@ impl<'a> PartialOrd for Term<'a> {
 
 impl<'a> Ord for Term<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }
 
 impl<'a> PartialEq for TypedTerm<'a> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.as_raw(), other.as_raw()) != 0 }
+        unsafe { enif_ffi::is_identical(self.as_raw(), other.as_raw()) != 0 }
     }
 }
 
@@ -183,7 +183,7 @@ impl<'a> PartialOrd for TypedTerm<'a> {
 
 impl<'a> Ord for TypedTerm<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.as_raw(), other.as_raw()) };
+        let c = unsafe { enif_ffi::compare(self.as_raw(), other.as_raw()) };
         c.cmp(&0)
     }
 }
@@ -425,14 +425,14 @@ impl<'a> Env<'a> {
     /// recognize (a type added by a newer OTP). For the raw code, enable the
     /// `raw` feature and use `Term::term_type_raw`.
     pub fn term_type(self, term: impl AsNifTerm<'a>) -> Option<enif_ffi::TermType> {
-        let code = unsafe { crate::enif::term_type(self.as_ptr(), term.as_nif_term()) };
+        let code = unsafe { enif_ffi::term_type(self.as_ptr(), term.as_nif_term()) };
         enif_ffi::TermType::from_raw(code)
     }
 
     /// Copy `src` (which may belong to another environment) into this one,
     /// returning a term owned by this env (`enif_make_copy`).
     pub fn make_copy<'b>(self, src: impl AsNifTerm<'b>) -> Term<'a> {
-        let raw = unsafe { crate::enif::make_copy(self.as_ptr(), src.as_nif_term()) };
+        let raw = unsafe { enif_ffi::make_copy(self.as_ptr(), src.as_nif_term()) };
         Term::new(self, raw)
     }
 
@@ -444,7 +444,7 @@ impl<'a> Env<'a> {
     ///
     /// Wraps `enif_consume_timeslice`.
     pub fn consume_timeslice(self, percent: i32) -> bool {
-        unsafe { crate::enif::consume_timeslice(self.as_ptr(), percent) != 0 }
+        unsafe { enif_ffi::consume_timeslice(self.as_ptr(), percent) != 0 }
     }
 
     /// Create a unique integer.
@@ -456,7 +456,7 @@ impl<'a> Env<'a> {
     /// Wraps `enif_make_unique_integer`.
     pub fn make_unique_integer(self, properties: enif_ffi::UniqueInteger) -> Integer<'a> {
         let raw = unsafe {
-            crate::enif::make_unique_integer(self.as_ptr(), properties)
+            enif_ffi::make_unique_integer(self.as_ptr(), properties)
         };
         debug_assert!(
             matches!(Term::new(self, raw).resolve(), Some(TypedTerm::Integer(_))),
@@ -472,7 +472,7 @@ impl<'a> Env<'a> {
     ///
     /// Wraps `enif_hash`.
     pub fn hash(self, algorithm: enif_ffi::Hash, term: impl AsNifTerm<'a>, salt: u64) -> u64 {
-        unsafe { crate::enif::hash(algorithm, term.as_nif_term(), salt) }
+        unsafe { enif_ffi::hash(algorithm, term.as_nif_term(), salt) }
     }
 
     /// Check if the calling process is still alive.
@@ -480,7 +480,7 @@ impl<'a> Env<'a> {
     /// Returns `true` if the process that invoked this NIF is still alive.
     /// Wraps `enif_is_current_process_alive`.
     pub fn is_current_process_alive(self) -> bool {
-        unsafe { crate::enif::is_current_process_alive(self.as_ptr()) != 0 }
+        unsafe { enif_ffi::is_current_process_alive(self.as_ptr()) != 0 }
     }
 
     /// The current logical CPU's execution time since some arbitrary point in
@@ -489,7 +489,7 @@ impl<'a> Env<'a> {
     /// Returns `Err(Raised)` (`badarg`) if the OS does not support fetching
     /// CPU time.
     pub fn cpu_time(self) -> Result<Tuple<'a>, Raised<'a>> {
-        let raw = unsafe { crate::enif::cpu_time(self.as_ptr()) };
+        let raw = unsafe { enif_ffi::cpu_time(self.as_ptr()) };
         let term = self.check_raised(raw)?;
         debug_assert!(
             matches!(term.resolve(), Some(TypedTerm::Tuple(_))),
@@ -517,7 +517,7 @@ impl<'a> Env<'a> {
             matches!(self.kind, EnvKind::ProcessBound),
             "raise_exception on a non-process-bound env has no effect",
         );
-        let marker = unsafe { crate::enif::raise_exception(self.as_ptr(), reason.as_nif_term()) };
+        let marker = unsafe { enif_ffi::raise_exception(self.as_ptr(), reason.as_nif_term()) };
         Err(Raised::new(Term::new(self, marker)))
     }
 
@@ -533,7 +533,7 @@ impl<'a> Env<'a> {
             matches!(self.kind, EnvKind::ProcessBound),
             "make_badarg on a non-process-bound env has no effect",
         );
-        let marker = unsafe { crate::enif::make_badarg(self.as_ptr()) };
+        let marker = unsafe { enif_ffi::make_badarg(self.as_ptr()) };
         Err(Raised::new(Term::new(self, marker)))
     }
 
@@ -546,7 +546,7 @@ impl<'a> Env<'a> {
     /// This is how to safely call a `raw`-surface enif function that may raise:
     /// pass its returned term straight through `check_raised`.
     pub fn check_raised(self, term: enif_ffi::Term) -> Result<Term<'a>, Raised<'a>> {
-        if unsafe { crate::enif::has_pending_exception(self.as_ptr(), std::ptr::null_mut()) } != 0 {
+        if unsafe { enif_ffi::has_pending_exception(self.as_ptr(), std::ptr::null_mut()) } != 0 {
             Err(Raised::new(Term::new(self, term)))
         } else {
             Ok(Term::new(self, term))
@@ -582,7 +582,7 @@ impl<'a> Env<'a> {
         argv: *const enif_ffi::Term,
     ) -> Result<Term<'a>, Raised<'a>> {
         let raw = unsafe {
-            crate::enif::schedule_nif(
+            enif_ffi::schedule_nif(
                 self.as_ptr(),
                 fun_name.as_ptr(),
                 flags,
@@ -607,7 +607,7 @@ impl<'a> Env<'a> {
             matches!(self.kind, EnvKind::Load | EnvKind::Upgrade),
             "set_option_delay_halt must be called from the NIF load or upgrade callback"
         );
-        unsafe { crate::enif::set_option_delay_halt(self.as_ptr()) == 0 }
+        unsafe { enif_ffi::set_option_delay_halt(self.as_ptr()) == 0 }
     }
 
     /// Set the on-halt callback. Must be called from the load or upgrade callback.
@@ -625,7 +625,7 @@ impl<'a> Env<'a> {
             matches!(self.kind, EnvKind::Load | EnvKind::Upgrade),
             "set_option_on_halt must be called from the NIF load or upgrade callback"
         );
-        unsafe { crate::enif::set_option_on_halt(self.as_ptr(), callback) == 0 }
+        unsafe { enif_ffi::set_option_on_halt(self.as_ptr(), callback) == 0 }
     }
 
     /// Set the on-unload-thread callback. Must be called from the load or upgrade callback.
@@ -643,6 +643,6 @@ impl<'a> Env<'a> {
             matches!(self.kind, EnvKind::Load | EnvKind::Upgrade),
             "set_option_on_unload_thread must be called from the NIF load or upgrade callback"
         );
-        unsafe { crate::enif::set_option_on_unload_thread(self.as_ptr(), callback) == 0 }
+        unsafe { enif_ffi::set_option_on_unload_thread(self.as_ptr(), callback) == 0 }
     }
 }

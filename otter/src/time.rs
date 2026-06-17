@@ -10,7 +10,7 @@ pub use enif_ffi::TimeUnit;
 ///
 /// Wraps `enif_monotonic_time`.
 pub fn monotonic_time(unit: TimeUnit) -> Time {
-    unsafe { crate::enif::monotonic_time(unit) }
+    unsafe { enif_ffi::monotonic_time(unit) }
 }
 
 /// Return the current BEAM time offset in the given unit.
@@ -19,12 +19,12 @@ pub fn monotonic_time(unit: TimeUnit) -> Time {
 ///
 /// Wraps `enif_time_offset`.
 pub fn time_offset(unit: TimeUnit) -> Time {
-    unsafe { crate::enif::time_offset(unit) }
+    unsafe { enif_ffi::time_offset(unit) }
 }
 
 /// Convert a time value from one unit to another.
 ///
 /// Wraps `enif_convert_time_unit`.
 pub fn convert_time_unit(val: Time, from: TimeUnit, to: TimeUnit) -> Time {
-    unsafe { crate::enif::convert_time_unit(val, from, to) }
+    unsafe { enif_ffi::convert_time_unit(val, from, to) }
 }

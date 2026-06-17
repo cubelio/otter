@@ -27,13 +27,13 @@ impl<'a> Integer<'a> {
 impl<'a> Env<'a> {
     /// Construct an integer term from an `i64` (`enif_make_int64`).
     pub fn make_int64(self, val: i64) -> Integer<'a> {
-        let term = unsafe { crate::enif::make_int64(self.as_ptr(), val) };
+        let term = unsafe { enif_ffi::make_int64(self.as_ptr(), val) };
         Integer { term, env: self }
     }
 
     /// Construct an integer term from a `u64` (`enif_make_uint64`).
     pub fn make_uint64(self, val: u64) -> Integer<'a> {
-        let term = unsafe { crate::enif::make_uint64(self.as_ptr(), val) };
+        let term = unsafe { enif_ffi::make_uint64(self.as_ptr(), val) };
         Integer { term, env: self }
     }
 
@@ -41,7 +41,7 @@ impl<'a> Env<'a> {
     /// `None` if the term is not an integer or does not fit in `i64`.
     pub fn get_int64(self, term: impl AsNifTerm<'a>) -> Option<i64> {
         let mut val: i64 = 0;
-        if unsafe { crate::enif::get_int64(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
+        if unsafe { enif_ffi::get_int64(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
             Some(val)
         } else {
             None
@@ -52,7 +52,7 @@ impl<'a> Env<'a> {
     /// `None` if the term is not an integer or does not fit in `u64`.
     pub fn get_uint64(self, term: impl AsNifTerm<'a>) -> Option<u64> {
         let mut val: u64 = 0;
-        if unsafe { crate::enif::get_uint64(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
+        if unsafe { enif_ffi::get_uint64(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
             Some(val)
         } else {
             None
@@ -96,7 +96,7 @@ impl TryFrom<Integer<'_>> for i128 {
 
 impl PartialEq for Integer<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { crate::enif::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
     }
 }
 
@@ -110,7 +110,7 @@ impl PartialOrd for Integer<'_> {
 
 impl Ord for Integer<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { crate::enif::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.term, other.term) };
         c.cmp(&0)
     }
 }

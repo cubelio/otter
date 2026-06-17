@@ -5,6 +5,10 @@ use std::marker::PhantomData;
 
 use crate::term::Term;
 
+/// The BEAM's non-value marker (`THE_NON_VALUE`). No valid term is ever `0`, so
+/// it doubles as an "absent term" sentinel for the message slot below.
+const THE_NON_VALUE: enif_ffi::Term = 0;
+
 // ---------------------------------------------------------------------------
 // EnvKind
 // ---------------------------------------------------------------------------
@@ -121,9 +125,9 @@ unsafe impl Send for OwnedTerm {}
 impl OwnedTermBuilder {
     /// Allocate a builder over a fresh process-independent environment.
     pub fn new() -> OwnedTermBuilder {
-        let env = unsafe { crate::enif::alloc_env() };
+        let env = unsafe { enif_ffi::alloc_env() };
         assert!(!env.is_null(), "enif_alloc_env returned null");
-        OwnedTermBuilder { env, _anchor: (), msg: Cell::new(crate::enif::THE_NON_VALUE) }
+        OwnedTermBuilder { env, _anchor: (), msg: Cell::new(THE_NON_VALUE) }
     }
 
     /// Borrow the environment to build terms. The returned terms borrow the
@@ -145,7 +149,7 @@ impl OwnedTermBuilder {
     /// Panics if no term was [`set`](Self::set).
     pub fn build(self) -> OwnedTerm {
         let msg = self.msg.get();
-        assert!(msg != crate::enif::THE_NON_VALUE, "build() called without set()");
+        assert!(msg != THE_NON_VALUE, "build() called without set()");
         let env = self.env;
         // Transfer env ownership to OwnedTerm; skip OwnedTermBuilder::drop.
         std::mem::forget(self);
@@ -161,12 +165,12 @@ impl Default for OwnedTermBuilder {
 
 impl Drop for OwnedTermBuilder {
     fn drop(&mut self) {
-        unsafe { crate::enif::free_env(self.env) };
+        unsafe { enif_ffi::free_env(self.env) };
     }
 }
 
 impl Drop for OwnedTerm {
     fn drop(&mut self) {
-        unsafe { crate::enif::free_env(self.env) };
+        unsafe { enif_ffi::free_env(self.env) };
     }
 }

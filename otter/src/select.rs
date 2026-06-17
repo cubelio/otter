@@ -32,7 +32,7 @@ pub fn select<'a, T: Resource>(
     ref_term: impl AsNifTerm<'a>,
 ) -> i32 {
     unsafe {
-        crate::enif::select(
+        enif_ffi::select(
             env.as_ptr(),
             event,
             flags,
@@ -60,7 +60,7 @@ pub fn select_x<'a, T: Resource>(
 ) -> i32 {
     let msg_env_ptr = msg_env.map(|e| e.as_ptr()).unwrap_or(std::ptr::null_mut());
     unsafe {
-        crate::enif::select_x(
+        enif_ffi::select_x(
             env.as_ptr(),
             event,
             flags,
