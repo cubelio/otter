@@ -71,23 +71,6 @@ pub const NIF_TIME_ERROR: enif_ffi::Time = i64::MIN;
 /// NIF 2.12 (OTP 20.0).
 pub use enif_ffi::SelectFlags as NifSelectFlags;
 
-/// Return bits from `enif_select`. NIF 2.12 (OTP 20.0).
-pub const NIF_SELECT_STOP_CALLED:     c_int = 1 << 0;
-/// NIF 2.12 (OTP 20.0).
-pub const NIF_SELECT_STOP_SCHEDULED:  c_int = 1 << 1;
-/// NIF 2.12 (OTP 20.0).
-pub const NIF_SELECT_INVALID_EVENT:   c_int = 1 << 2;
-/// NIF 2.12 (OTP 20.0).
-pub const NIF_SELECT_FAILED:          c_int = 1 << 3;
-/// NIF 2.15 (OTP 22.0).
-pub const NIF_SELECT_READ_CANCELLED:  c_int = 1 << 4;
-/// NIF 2.15 (OTP 22.0).
-pub const NIF_SELECT_WRITE_CANCELLED: c_int = 1 << 5;
-/// NIF 2.16 (OTP 24.0).
-pub const NIF_SELECT_ERROR_CANCELLED: c_int = 1 << 6;
-/// NIF 2.16 (OTP 24.0).
-pub const NIF_SELECT_NOTSUP:          c_int = 1 << 7;
-
 // ---------------------------------------------------------------------------
 // Schedule NIF flags
 // ---------------------------------------------------------------------------
