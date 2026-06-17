@@ -160,13 +160,6 @@ pub const NIF_DIRTY_JOB_IO_BOUND:  c_int = 2;
 // I/O queue and iovec
 // ---------------------------------------------------------------------------
 
-/// `ErlNifIOQueue` — opaque I/O queue handle. NIF 2.13 (OTP 20.1).
-#[repr(C)]
-pub struct NifIOQueue {
-    _opaque: [u8; 0],
-    _marker: std::marker::PhantomData<(*mut u8, std::marker::PhantomPinned)>,
-}
-
 /// `ErlNifIOQueueOpts` — I/O queue creation options. NIF 2.13 (OTP 20.1).
 pub type NifIOQueueOpts = c_int;
 

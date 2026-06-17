@@ -18,7 +18,7 @@ use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
 use crate::sys::{
-    NifIOQueue, NifIOQueueOpts, NifIOVec,
+    NifIOQueueOpts, NifIOVec,
     NifTerm,
     SysIOVec,
 };
@@ -305,13 +305,13 @@ pub(crate) struct EnifFunctions {
     pub hash:               unsafe extern "C" fn(enif_ffi::Hash, NifTerm, u64) -> u64,
     pub whereis_pid:        unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, *mut enif_ffi::Pid) -> c_int,
     pub whereis_port:       unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, *mut enif_ffi::Port) -> c_int,
-    pub ioq_create:         unsafe extern "C" fn(NifIOQueueOpts) -> *mut NifIOQueue,
-    pub ioq_destroy:        unsafe extern "C" fn(*mut NifIOQueue),
-    pub ioq_enq_binary:     unsafe extern "C" fn(*mut NifIOQueue, *mut enif_ffi::Binary, usize) -> c_int,
-    pub ioq_enqv:           unsafe extern "C" fn(*mut NifIOQueue, *mut NifIOVec, usize) -> c_int,
-    pub ioq_size:           unsafe extern "C" fn(*mut NifIOQueue) -> usize,
-    pub ioq_deq:            unsafe extern "C" fn(*mut NifIOQueue, usize, *mut usize) -> c_int,
-    pub ioq_peek:           unsafe extern "C" fn(*mut NifIOQueue, *mut c_int) -> *mut SysIOVec,
+    pub ioq_create:         unsafe extern "C" fn(NifIOQueueOpts) -> *mut enif_ffi::IOQueue,
+    pub ioq_destroy:        unsafe extern "C" fn(*mut enif_ffi::IOQueue),
+    pub ioq_enq_binary:     unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut enif_ffi::Binary, usize) -> c_int,
+    pub ioq_enqv:           unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut NifIOVec, usize) -> c_int,
+    pub ioq_size:           unsafe extern "C" fn(*mut enif_ffi::IOQueue) -> usize,
+    pub ioq_deq:            unsafe extern "C" fn(*mut enif_ffi::IOQueue, usize, *mut usize) -> c_int,
+    pub ioq_peek:           unsafe extern "C" fn(*mut enif_ffi::IOQueue, *mut c_int) -> *mut SysIOVec,
     pub inspect_iovec: unsafe extern "C" fn(
         *mut enif_ffi::Env, usize, NifTerm, *mut NifTerm, *mut *mut NifIOVec,
     ) -> c_int,
@@ -322,7 +322,7 @@ pub(crate) struct EnifFunctions {
     // =====================================================================
     pub fprintf:            *mut c_void, // variadic — replaces NIF 1.0 version with FILE* support
     pub ioq_peek_head: unsafe extern "C" fn(
-        *mut enif_ffi::Env, *mut NifIOQueue, *mut usize, *mut NifTerm,
+        *mut enif_ffi::Env, *mut enif_ffi::IOQueue, *mut usize, *mut NifTerm,
     ) -> c_int,
     pub mutex_name:         unsafe extern "C" fn(*mut NifMutex) -> *mut c_char,
     pub cond_name:          unsafe extern "C" fn(*mut NifCond) -> *mut c_char,
@@ -1851,44 +1851,44 @@ pub unsafe fn thread_name(tid: NifTid) -> *mut c_char {
 // NIF 2.13 (IOQ core), NIF 2.14 (ioq_peek_head)
 
 /// Creates a new I/O queue; `opts` must be `ERL_NIF_IOQ_NORMAL`. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_create`.
-pub unsafe fn ioq_create(opts: NifIOQueueOpts) -> *mut NifIOQueue {
+pub unsafe fn ioq_create(opts: NifIOQueueOpts) -> *mut enif_ffi::IOQueue {
     unsafe { (funcs().ioq_create)(opts) }
 }
 
 /// Destroys an I/O queue and frees all of its contents. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_destroy`.
-pub unsafe fn ioq_destroy(q: *mut NifIOQueue) {
+pub unsafe fn ioq_destroy(q: *mut enif_ffi::IOQueue) {
     unsafe { (funcs().ioq_destroy)(q) }
 }
 
 /// Enqueues a binary into the I/O queue, skipping the first `skip` bytes; ownership transfers to the queue. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_enq_binary`.
 pub unsafe fn ioq_enq_binary(
-    q: *mut NifIOQueue, bin: *mut enif_ffi::Binary, skip: usize,
+    q: *mut enif_ffi::IOQueue, bin: *mut enif_ffi::Binary, skip: usize,
 ) -> c_int {
     unsafe { (funcs().ioq_enq_binary)(q, bin, skip) }
 }
 
 /// Enqueues an iovec into the I/O queue, skipping the first `skip` bytes. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_enqv`.
 pub unsafe fn ioq_enqv(
-    q: *mut NifIOQueue, iov: *mut NifIOVec, skip: usize,
+    q: *mut enif_ffi::IOQueue, iov: *mut NifIOVec, skip: usize,
 ) -> c_int {
     unsafe { (funcs().ioq_enqv)(q, iov, skip) }
 }
 
 /// Returns the total byte size of the I/O queue. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_size`.
-pub unsafe fn ioq_size(q: *mut NifIOQueue) -> usize {
+pub unsafe fn ioq_size(q: *mut enif_ffi::IOQueue) -> usize {
     unsafe { (funcs().ioq_size)(q) }
 }
 
 /// Dequeues `count` bytes from the I/O queue; optionally stores the new size in `*size`. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_deq`.
 pub unsafe fn ioq_deq(
-    q: *mut NifIOQueue, count: usize, size: *mut usize,
+    q: *mut enif_ffi::IOQueue, count: usize, size: *mut usize,
 ) -> c_int {
     unsafe { (funcs().ioq_deq)(q, count, size) }
 }
 
 /// Returns the I/O queue contents as a `SysIOVec` array suitable for `writev`. NIF 2.12 (OTP 20.0). Wraps `enif_ioq_peek`.
 pub unsafe fn ioq_peek(
-    q: *mut NifIOQueue, iovlen: *mut c_int,
+    q: *mut enif_ffi::IOQueue, iovlen: *mut c_int,
 ) -> *mut SysIOVec {
     unsafe { (funcs().ioq_peek)(q, iovlen) }
 }
@@ -1908,7 +1908,7 @@ pub unsafe fn free_iovec(iov: *mut NifIOVec) {
 
 /// Gets the head of the I/O queue as a binary term, returning non-zero on success. NIF 2.14 (OTP 21.0). Wraps `enif_ioq_peek_head`.
 pub unsafe fn ioq_peek_head(
-    env: *mut enif_ffi::Env, q: *mut NifIOQueue, size: *mut usize, head: *mut NifTerm,
+    env: *mut enif_ffi::Env, q: *mut enif_ffi::IOQueue, size: *mut usize, head: *mut NifTerm,
 ) -> c_int {
     unsafe { (funcs().ioq_peek_head)(env, q, size, head) }
 }
