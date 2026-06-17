@@ -8,16 +8,10 @@ use crate::resource::{Resource, ResourceArc};
 use crate::term::AsNifTerm;
 use crate::types::LocalPid;
 
-pub use enif_ffi::{
-    SELECT_STOP_CALLED as NIF_SELECT_STOP_CALLED,
-    SELECT_STOP_SCHEDULED as NIF_SELECT_STOP_SCHEDULED,
-    SELECT_INVALID_EVENT as NIF_SELECT_INVALID_EVENT,
-    SELECT_FAILED as NIF_SELECT_FAILED,
-    SELECT_READ_CANCELLED as NIF_SELECT_READ_CANCELLED,
-    SELECT_WRITE_CANCELLED as NIF_SELECT_WRITE_CANCELLED,
-    SELECT_ERROR_CANCELLED as NIF_SELECT_ERROR_CANCELLED,
-    SELECT_NOTSUP as NIF_SELECT_NOTSUP,
-};
+// `select`/`select_x` return a raw `i32` bitmask of result flags. otter does not
+// yet wrap that in a typed result, so callers decode it against the raw
+// `enif_ffi::SELECT_*` constants (`SELECT_STOP_CALLED`, `SELECT_NOTSUP`, …). A
+// proper typed surface is tracked as issue enhance-12.
 
 /// Register interest in I/O events on an OS-level event handle.
 ///
@@ -26,7 +20,7 @@ pub use enif_ffi::{
 /// callback will be invoked on cleanup). `ref_term` is included in the
 /// notification message.
 ///
-/// Returns a bitmask of `SELECT_*` result flags.
+/// Returns a raw `i32` bitmask of `enif_ffi::SELECT_*` result flags.
 ///
 /// Wraps `enif_select`.
 pub fn select<'a, T: Resource>(
