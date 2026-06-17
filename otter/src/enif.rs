@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 use crate::sys::{
     NifIOQueue, NifIOQueueOpts, NifIOVec,
-    NifMapIterator, NifMapIteratorEntry,
+    NifMapIterator,
     NifTerm,
     SysIOVec,
 };
@@ -232,7 +232,7 @@ pub(crate) struct EnifFunctions {
     pub get_map_value:      unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, NifTerm, *mut NifTerm) -> c_int,
     pub make_map_update:    unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, NifTerm, NifTerm, *mut NifTerm) -> c_int,
     pub make_map_remove:    unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, NifTerm, *mut NifTerm) -> c_int,
-    pub map_iterator_create: unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, *mut NifMapIterator, NifMapIteratorEntry) -> c_int,
+    pub map_iterator_create: unsafe extern "C" fn(*mut enif_ffi::Env, NifTerm, *mut NifMapIterator, enif_ffi::MapIteratorEntry) -> c_int,
     pub map_iterator_destroy: unsafe extern "C" fn(*mut enif_ffi::Env, *mut NifMapIterator),
     pub map_iterator_is_head: unsafe extern "C" fn(*mut enif_ffi::Env, *mut NifMapIterator) -> c_int,
     pub map_iterator_is_tail: unsafe extern "C" fn(*mut enif_ffi::Env, *mut NifMapIterator) -> c_int,
@@ -1275,7 +1275,7 @@ pub unsafe fn make_map_remove(
 /// Creates an iterator for a map, positioned at first or last entry. NIF 2.6 (OTP 17.0). Wraps `enif_map_iterator_create`.
 pub unsafe fn map_iterator_create(
     env: *mut enif_ffi::Env, map: NifTerm, iter: *mut NifMapIterator,
-    entry: NifMapIteratorEntry,
+    entry: enif_ffi::MapIteratorEntry,
 ) -> c_int {
     unsafe { (funcs().map_iterator_create)(env, map, iter, entry) }
 }

@@ -94,15 +94,6 @@ pub use enif_ffi::Event as NifEvent;
 // Map iterator
 // ---------------------------------------------------------------------------
 
-/// `ErlNifMapIteratorEntry` — starting position when creating a map iterator.
-/// NIF 2.6 (OTP R17).
-#[repr(i32)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum NifMapIteratorEntry {
-    First = 1,
-    Last  = 2,
-}
-
 // Internal union variants for NifMapIterator — not public.
 #[repr(C)]
 #[derive(Clone, Copy)]

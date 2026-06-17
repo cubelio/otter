@@ -1,6 +1,6 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::Env;
-use crate::sys::{NifMapIterator, NifMapIteratorEntry, NifTerm};
+use crate::sys::{NifMapIterator, NifTerm};
 use crate::term::{Term, AsNifTerm};
 
 /// An Erlang map. Immutable — all mutations return a new map.
@@ -49,7 +49,7 @@ impl<'a> Map<'a> {
     /// Return an iterator over `(key, value)` pairs in unspecified order.
     pub fn iter(self) -> MapIterator<'a> {
         let mut iter: Box<NifMapIterator> = Box::new(unsafe { std::mem::zeroed() });
-        self.env.map_iterator_create(self, &mut iter, NifMapIteratorEntry::First);
+        self.env.map_iterator_create(self, &mut iter, enif_ffi::MapIteratorEntry::First);
         MapIterator { iter, env: self.env, exhausted: false }
     }
 }
@@ -246,7 +246,7 @@ impl<'a> Env<'a> {
         self,
         map: impl AsNifTerm<'a>,
         iter: &mut NifMapIterator,
-        entry: NifMapIteratorEntry,
+        entry: enif_ffi::MapIteratorEntry,
     ) -> bool {
         unsafe { crate::enif::map_iterator_create(self.as_ptr(), map.as_nif_term(), iter, entry) != 0 }
     }
