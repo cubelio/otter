@@ -11,18 +11,21 @@ pub use crate::priv_data::{discard_priv_data, free_priv_data, install_priv_data,
 #[cfg(feature = "raw")]
 pub use crate::priv_data::{old_user_priv_field, user_priv_field};
 pub use crate::resource::{register, register_tagged, ResourceFlags};
-pub use crate::sys::{
-    NIF_FUNC_DIRTY_CPU,
-    NIF_FUNC_DIRTY_IO, NIF_MAJOR_VERSION, NIF_MIN_ERTS_VERSION, NIF_MINOR_VERSION,
-    NIF_VM_VARIANT,
-};
+pub use crate::sys::{NIF_FUNC_DIRTY_CPU, NIF_FUNC_DIRTY_IO};
 // Generated NIF/load/upgrade/unload entry points reference `__codegen::NifEnv`;
-// generated registration references `__codegen::NifResourceTypeInit`. Keep the
-// legacy names as re-exports of the enif_ffi types for now.
+// generated registration references `__codegen::NifResourceTypeInit`; the
+// generated nif_init entry references the version/variant constants. Keep the
+// legacy names as re-exports of the enif_ffi items for now.
 pub use enif_ffi::Env as NifEnv;
 pub use enif_ffi::Entry as NifEntry;
 pub use enif_ffi::ResourceTypeInit as NifResourceTypeInit;
 pub use enif_ffi::Term as NifTerm;
+pub use enif_ffi::{
+    MAJOR_VERSION as NIF_MAJOR_VERSION,
+    MINOR_VERSION as NIF_MINOR_VERSION,
+    MIN_ERTS_VERSION as NIF_MIN_ERTS_VERSION,
+    VM_VARIANT as NIF_VM_VARIANT,
+};
 pub use crate::term::{Term, TypedTerm};
 pub use crate::types::Atom;
 

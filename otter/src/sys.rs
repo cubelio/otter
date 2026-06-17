@@ -12,28 +12,6 @@
 use std::ffi::{c_int, c_uint};
 
 // ---------------------------------------------------------------------------
-// Version constants
-// ---------------------------------------------------------------------------
-
-/// NIF 0.1 (OTP R13B03).
-pub const NIF_MAJOR_VERSION: c_int = 2;
-/// NIF 0.1 (OTP R13B03).
-#[cfg(not(feature = "nif_2_18"))]
-pub const NIF_MINOR_VERSION: c_int = 17;
-/// NIF 0.1 (OTP R13B03).
-#[cfg(feature = "nif_2_18")]
-pub const NIF_MINOR_VERSION: c_int = 18;
-/// NIF 2.1 (OTP R14B02).
-pub const NIF_VM_VARIANT: &std::ffi::CStr = c"beam.vanilla";
-/// NIF 2.14 (OTP 21.0).
-pub const NIF_MIN_ERTS_VERSION: &std::ffi::CStr = c"erts-14.0";
-
-// ---------------------------------------------------------------------------
-// Core term type
-// ---------------------------------------------------------------------------
-
-
-// ---------------------------------------------------------------------------
 // Function descriptor
 // ---------------------------------------------------------------------------
 
