@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::env::{Env, EnvKind};
 use crate::priv_data::{PrivData, ResourceRegistry};
-use crate::sys::{NifEnv, NifResourceTypeInit};
+use crate::sys::NifResourceTypeInit;
 use crate::term::{Term, AsNifTerm};
 use crate::types::LocalPid;
 
@@ -203,7 +203,7 @@ fn absorb_callback_panic(what: &str, result: std::thread::Result<()>) {
     }
 }
 
-unsafe extern "C" fn destructor_callback<T: Resource>(env: *mut NifEnv, obj: *mut c_void) {
+unsafe extern "C" fn destructor_callback<T: Resource>(env: *mut enif_ffi::Env, obj: *mut c_void) {
     let inner = align_ptr::<T>(obj);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // SAFETY: obj was written by ResourceTypeHandle::make and is not yet dropped.
@@ -217,7 +217,7 @@ unsafe extern "C" fn destructor_callback<T: Resource>(env: *mut NifEnv, obj: *mu
 }
 
 unsafe extern "C" fn down_callback<T: Resource>(
-    env: *mut NifEnv,
+    env: *mut enif_ffi::Env,
     obj: *mut c_void,
     pid: *mut enif_ffi::Pid,
     mon: *mut enif_ffi::Monitor,
@@ -235,7 +235,7 @@ unsafe extern "C" fn down_callback<T: Resource>(
 }
 
 unsafe extern "C" fn stop_callback<T: Resource>(
-    env: *mut NifEnv,
+    env: *mut enif_ffi::Env,
     obj: *mut c_void,
     event: enif_ffi::Event,
     is_direct_call: c_int,

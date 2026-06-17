@@ -12,10 +12,13 @@ pub use crate::priv_data::{discard_priv_data, free_priv_data, install_priv_data,
 pub use crate::priv_data::{old_user_priv_field, user_priv_field};
 pub use crate::resource::{register, register_tagged, ResourceFlags};
 pub use crate::sys::{
-    NifEnv, NifEntry, NifFunc, NifResourceTypeInit, NifTerm, NIF_FUNC_DIRTY_CPU,
+    NifEntry, NifFunc, NifResourceTypeInit, NifTerm, NIF_FUNC_DIRTY_CPU,
     NIF_FUNC_DIRTY_IO, NIF_MAJOR_VERSION, NIF_MIN_ERTS_VERSION, NIF_MINOR_VERSION,
     NIF_VM_VARIANT,
 };
+// Generated NIF/load/upgrade/unload entry points reference `__codegen::NifEnv`;
+// keep the legacy name as a re-export of enif_ffi::Env for now.
+pub use enif_ffi::Env as NifEnv;
 pub use crate::term::{Term, TypedTerm};
 pub use crate::types::Atom;
 
@@ -50,7 +53,7 @@ pub const LOAD_FAILED_DECODE: c_int = 3;
 pub struct NifMeta {
     pub name: &'static [u8],
     pub arity: u32,
-    pub raw_fptr: unsafe extern "C" fn(*mut NifEnv, c_int, *const NifTerm) -> NifTerm,
+    pub raw_fptr: unsafe extern "C" fn(*mut enif_ffi::Env, c_int, *const NifTerm) -> NifTerm,
     pub flags: u32,
 }
 
@@ -74,7 +77,7 @@ impl NifMeta {
 #[inline]
 pub unsafe fn new_env<'a>(
     marker: &'a (),
-    env: *mut NifEnv,
+    env: *mut enif_ffi::Env,
     kind: EnvKind,
 ) -> Env<'a> {
     unsafe { Env::new(marker, env, kind) }

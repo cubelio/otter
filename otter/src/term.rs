@@ -575,7 +575,7 @@ impl<'a> Env<'a> {
         fun_name: &std::ffi::CStr,
         flags: i32,
         fp: unsafe extern "C" fn(
-            *mut crate::sys::NifEnv,
+            *mut enif_ffi::Env,
             std::ffi::c_int,
             *const crate::sys::NifTerm,
         ) -> crate::sys::NifTerm,

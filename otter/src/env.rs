@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
 
-use crate::sys::{NifEnv, NifTerm};
+use crate::sys::NifTerm;
 use crate::term::Term;
 
 // ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ pub enum EnvKind {
 #[derive(Clone, Copy)]
 pub struct Env<'a> {
     pub kind: EnvKind,
-    env: *mut NifEnv,
+    env: *mut enif_ffi::Env,
     // Invariant over 'a. *mut makes it invariant; &'a u8 anchors 'a.
     _id: PhantomData<*mut &'a u8>,
 }
@@ -70,7 +70,7 @@ impl<'a> Env<'a> {
     #[inline]
     pub(crate) unsafe fn new(
         _marker: &'a (),
-        env: *mut NifEnv,
+        env: *mut enif_ffi::Env,
         kind: EnvKind,
     ) -> Env<'a> {
         Env { kind, env, _id: PhantomData }
@@ -78,12 +78,12 @@ impl<'a> Env<'a> {
 
     /// Return the raw `ErlNifEnv` pointer.
     #[inline]
-    pub(crate) fn as_ptr(self) -> *mut NifEnv {
+    pub(crate) fn as_ptr(self) -> *mut enif_ffi::Env {
         self.env
     }
 }
 
-// Env is not Send or Sync: *mut NifEnv is neither, and Env must not cross
+// Env is not Send or Sync: *mut enif_ffi::Env is neither, and Env must not cross
 // thread boundaries. The compiler enforces this automatically via PhantomData.
 
 // raise() and raise_badarg() are defined in term.rs after TypedTerm<'a> is declared,
@@ -101,7 +101,7 @@ impl<'a> Env<'a> {
 /// [`set`](Self::set), then [`build`](Self::build) consumes the builder into an
 /// [`OwnedTerm`] whose heap is stolen on send — O(1), single-use.
 pub struct OwnedTermBuilder {
-    env: *mut NifEnv,
+    env: *mut enif_ffi::Env,
     // Borrowing `&self._anchor` gives `env()` its lifetime.
     _anchor: (),
     msg: Cell<NifTerm>,
@@ -110,7 +110,7 @@ pub struct OwnedTermBuilder {
 /// A message term that owns its process-independent environment, ready to send.
 /// Produced by [`OwnedTermBuilder::build`].
 pub struct OwnedTerm {
-    pub(crate) env: *mut NifEnv,
+    pub(crate) env: *mut enif_ffi::Env,
     pub(crate) msg: NifTerm,
 }
 
