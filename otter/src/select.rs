@@ -5,7 +5,6 @@
 
 use crate::env::Env;
 use crate::resource::{Resource, ResourceArc};
-use crate::sys::NifSelectFlags;
 use crate::term::AsNifTerm;
 use crate::types::LocalPid;
 
@@ -28,7 +27,7 @@ pub use crate::sys::{
 pub fn select<'a, T: Resource>(
     env: Env<'a>,
     event: enif_ffi::Event,
-    flags: NifSelectFlags,
+    flags: enif_ffi::SelectFlags,
     obj: &ResourceArc<T>,
     pid: &LocalPid,
     ref_term: impl AsNifTerm<'a>,
@@ -54,7 +53,7 @@ pub fn select<'a, T: Resource>(
 pub fn select_x<'a, T: Resource>(
     env: Env<'a>,
     event: enif_ffi::Event,
-    flags: NifSelectFlags,
+    flags: enif_ffi::SelectFlags,
     obj: &ResourceArc<T>,
     pid: &LocalPid,
     msg: impl AsNifTerm<'a>,

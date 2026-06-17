@@ -206,34 +206,10 @@ pub const NIF_TIME_ERROR: enif_ffi::Time = i64::MIN;
 // Select (I/O event multiplexing)
 // ---------------------------------------------------------------------------
 
-/// `ErlNifSelectFlags` — flags for `enif_select`.
-///
-/// Combine with bitwise OR: `NifSelectFlags::READ | NifSelectFlags::CUSTOM_MSG`.
-/// NIF 2.12 (OTP 20.0). `CANCEL` and `CUSTOM_MSG` added in NIF 2.15 (OTP 22.0).
-/// `ERROR` added in NIF 2.16 (OTP 24.0).
-#[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct NifSelectFlags(pub c_int);
-
-impl NifSelectFlags {
-    /// NIF 2.12 (OTP 20.0).
-    pub const READ:       Self = Self(1 << 0);
-    /// NIF 2.12 (OTP 20.0).
-    pub const WRITE:      Self = Self(1 << 1);
-    /// NIF 2.12 (OTP 20.0).
-    pub const STOP:       Self = Self(1 << 2);
-    /// NIF 2.15 (OTP 22.0).
-    pub const CANCEL:     Self = Self(1 << 3);
-    /// NIF 2.15 (OTP 22.0).
-    pub const CUSTOM_MSG: Self = Self(1 << 4);
-    /// NIF 2.16 (OTP 24.0).
-    pub const ERROR:      Self = Self(1 << 5);
-}
-
-impl std::ops::BitOr for NifSelectFlags {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self { Self(self.0 | rhs.0) }
-}
+/// `ErlNifSelectFlags` — re-export of [`enif_ffi::SelectFlags`] under otter's
+/// legacy name, kept while consumers still reference `otter::sys::NifSelectFlags`.
+/// NIF 2.12 (OTP 20.0).
+pub use enif_ffi::SelectFlags as NifSelectFlags;
 
 /// Return bits from `enif_select`. NIF 2.12 (OTP 20.0).
 pub const NIF_SELECT_STOP_CALLED:     c_int = 1 << 0;
