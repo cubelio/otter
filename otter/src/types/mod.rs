@@ -1,23 +1,3 @@
-pub mod atom;
-pub mod binary;
-pub mod float;
-pub mod fun;
-pub mod integer;
-pub mod list;
-pub mod map;
-pub mod pid;
-pub mod port;
-pub mod reference;
-pub mod tuple;
+pub mod terms;
 
-pub use atom::Atom;
-pub use binary::{Binary, BinaryBuf, Bitstring};
-pub use float::Float;
-pub use fun::Fun;
-pub use integer::Integer;
-pub use list::{List, ListIterator, Node};
-pub use map::{Map, MapIterator};
-pub use pid::{LocalPid, Pid};
-pub use port::{LocalPort, Port};
-pub use reference::Reference;
-pub use tuple::Tuple;
+pub use terms::*;
