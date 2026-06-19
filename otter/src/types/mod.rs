@@ -151,6 +151,19 @@ pub unsafe fn with_deinit_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(DeinitEnv<
     f(DeinitEnv { raw_env: raw, _id: PhantomData })
 }
 
+/// The env kinds that carry a live process/scheduler context — those you can
+/// send a message or issue a port command *from*, with caller attribution
+/// (`enif_send`/`enif_port_command` with a non-NULL `caller_env`). Grouping
+/// trait for verbs that accept any such env.
+///
+/// Implemented by [`CallEnv`] and [`CallbackEnv`]. Not [`InitEnv`]/[`DeinitEnv`]
+/// (module load/unload — no caller), and not [`OwnedEnv`] (sends with a NULL
+/// caller instead). Sealed transitively through [`Env`].
+pub trait CallingEnv<'id>: Env<'id> {}
+
+impl<'id> CallingEnv<'id> for CallEnv<'id> {}
+impl<'id> CallingEnv<'id> for CallbackEnv<'id> {}
+
 // --- Term ---
 
 pub(crate) type RawTerm = enif_ffi::Term;
