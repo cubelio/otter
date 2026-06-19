@@ -1,102 +1,70 @@
-use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
-use crate::term::{Term, AsNifTerm};
+use core::marker::PhantomData;
+
+use crate::types::sealed::Sealed;
+use crate::types::{Env, Invariant, RawTerm, Term};
 
 /// An Erlang integer. Arbitrary precision — small integers are tagged
-/// immediates, large integers (bignums) are heap-allocated.
+/// immediates, large integers (bignums) are heap-allocated on the env.
 ///
-/// The lifetime `'a` covers the bignum case.
+/// Carries only its env's brand `'id`, not the env itself. An integer can be
+/// read back only with an env of the same brand (the 1:1 identity guarantee),
+/// so the accessors take the env explicitly rather than the term carrying it.
 #[derive(Clone, Copy)]
-pub struct Integer<'a> {
-    pub(crate) term: enif_ffi::Term,
-    pub(crate) env: Env<'a>,
+pub struct Integer<'id> {
+    raw_term: RawTerm,
+    _id: Invariant<'id>,
 }
 
-impl<'a> Integer<'a> {
-    /// Construct an integer term from an `i64`.
-    pub fn from_i64(env: Env<'a>, val: i64) -> Integer<'a> {
-        env.make_int64(val)
-    }
-
-    /// Construct an integer term from a `u64`.
-    pub fn from_u64(env: Env<'a>, val: u64) -> Integer<'a> {
-        env.make_uint64(val)
-    }
-}
-
-impl<'a> Env<'a> {
+impl<'id> Integer<'id> {
     /// Construct an integer term from an `i64` (`enif_make_int64`).
-    pub fn make_int64(self, val: i64) -> Integer<'a> {
-        let term = unsafe { enif_ffi::make_int64(self.as_ptr(), val) };
-        Integer { term, env: self }
+    pub fn from_i64(env: impl Env<'id>, val: i64) -> Self {
+        let raw_term = unsafe { enif_ffi::make_int64(env.raw_env(), val) };
+        Integer { raw_term, _id: PhantomData }
     }
 
     /// Construct an integer term from a `u64` (`enif_make_uint64`).
-    pub fn make_uint64(self, val: u64) -> Integer<'a> {
-        let term = unsafe { enif_ffi::make_uint64(self.as_ptr(), val) };
-        Integer { term, env: self }
+    pub fn from_u64(env: impl Env<'id>, val: u64) -> Self {
+        let raw_term = unsafe { enif_ffi::make_uint64(env.raw_env(), val) };
+        Integer { raw_term, _id: PhantomData }
     }
 
-    /// Extract an `i64` from an integer term (`enif_get_int64`).
-    /// `None` if the term is not an integer or does not fit in `i64`.
-    pub fn get_int64(self, term: impl AsNifTerm<'a>) -> Option<i64> {
+    /// Read back an `i64` (`enif_get_int64`). `None` if the term does not fit in
+    /// `i64`. `env` must carry the same brand as this term.
+    pub fn to_i64(self, env: impl Env<'id>) -> Option<i64> {
         let mut val: i64 = 0;
-        if unsafe { enif_ffi::get_int64(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
-            Some(val)
-        } else {
-            None
-        }
+        (unsafe { enif_ffi::get_int64(env.raw_env(), self.raw_term, &mut val) } != 0).then_some(val)
     }
 
-    /// Extract a `u64` from an integer term (`enif_get_uint64`).
-    /// `None` if the term is not an integer or does not fit in `u64`.
-    pub fn get_uint64(self, term: impl AsNifTerm<'a>) -> Option<u64> {
+    /// Read back a `u64` (`enif_get_uint64`). `None` if the term does not fit in
+    /// `u64` (including negatives).
+    pub fn to_u64(self, env: impl Env<'id>) -> Option<u64> {
         let mut val: u64 = 0;
-        if unsafe { enif_ffi::get_uint64(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
-            Some(val)
-        } else {
-            None
+        (unsafe { enif_ffi::get_uint64(env.raw_env(), self.raw_term, &mut val) } != 0).then_some(val)
+    }
+
+    /// Read back an `i128`, covering the combined `i64`/`u64` range. The NIF API
+    /// has no 128-bit accessor, so values in `i64::MIN..=i64::MAX` take the
+    /// signed path and `i64::MAX+1..=u64::MAX` the unsigned path; anything
+    /// outside that range is `None`.
+    pub fn to_i128(self, env: impl Env<'id>) -> Option<i128> {
+        if let Some(val) = self.to_i64(env) {
+            return Some(val as i128);
         }
+        self.to_u64(env).map(|val| val as i128)
     }
 }
 
-impl TryFrom<Integer<'_>> for i64 {
-    type Error = CodecError;
-    /// Returns `IntegerOverflow` if the value does not fit in `i64`.
-    fn try_from(int: Integer<'_>) -> Result<i64, CodecError> {
-        int.env.get_int64(int).ok_or(CodecError::IntegerOverflow)
-    }
-}
+impl<'id> Sealed for Integer<'id> {}
 
-impl TryFrom<Integer<'_>> for u64 {
-    type Error = CodecError;
-    /// Returns `IntegerOverflow` if the value does not fit in `u64`
-    /// (including negative values).
-    fn try_from(int: Integer<'_>) -> Result<u64, CodecError> {
-        int.env.get_uint64(int).ok_or(CodecError::IntegerOverflow)
-    }
-}
-
-impl TryFrom<Integer<'_>> for i128 {
-    type Error = CodecError;
-    /// Covers the combined range of `i64` and `u64`. The NIF API has no
-    /// 128-bit accessor, so values in `i64::MIN..=i64::MAX` use the signed
-    /// path and values in `i64::MAX+1..=u64::MAX` use the unsigned path.
-    /// Values outside that range return `IntegerOverflow`.
-    fn try_from(int: Integer<'_>) -> Result<i128, CodecError> {
-        if let Ok(val) = i64::try_from(int) {
-            return Ok(val as i128);
-        }
-        if let Ok(val) = u64::try_from(int) {
-            return Ok(val as i128);
-        }
-        Err(CodecError::IntegerOverflow)
+impl<'id> Term<'id> for Integer<'id> {
+    fn raw_term(self) -> RawTerm {
+        self.raw_term
     }
 }
 
 impl PartialEq for Integer<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.raw_term, other.raw_term) != 0 }
     }
 }
 
@@ -110,7 +78,7 @@ impl PartialOrd for Integer<'_> {
 
 impl Ord for Integer<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { enif_ffi::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.raw_term, other.raw_term) };
         c.cmp(&0)
     }
 }
@@ -118,25 +86,5 @@ impl Ord for Integer<'_> {
 impl std::fmt::Debug for Integer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Integer")
-    }
-}
-
-impl<'b> Encoder for Integer<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        if self.env.as_ptr() == env.as_ptr() {
-            Term::new(env, self.term)
-        } else {
-            env.make_copy(*self)
-        }
-    }
-}
-
-impl<'a> Decoder<'a> for Integer<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.term_type(term) == Some(enif_ffi::TermType::Integer) {
-            Ok(Integer { term: term.term, env: term.env })
-        } else {
-            Err(CodecError::WrongType)
-        }
     }
 }
