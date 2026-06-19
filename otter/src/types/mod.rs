@@ -17,22 +17,17 @@ pub(crate) type RawEnv = *mut enif_ffi::Env;
 
 pub trait Env<'id>: Copy + sealed::Sealed {
     fn raw_env(&self) -> RawEnv;
+
+    /// The kind-erased handle terms are built against. Every env kind downcasts
+    /// to the same `AnyEnv` for a given brand.
+    fn as_any_env(self) -> AnyEnv<'id> {
+        AnyEnv { raw_env: self.raw_env(), _id: PhantomData }
+    }
 }
 
-/// Run `f` with a freshly branded handle to a process-bound environment — the
-/// env the VM hands to a NIF call or a `load`/`upgrade`/`unload` callback. The
-/// `for<'id>` bound mints a unique brand per call, so terms built inside `f` are
-/// confined to it and cannot escape or mix with another env's terms. `R` is
-/// brand-free by construction, which is exactly the raw `Term`/status word the C
-/// ABI hands back.
-///
-/// # Safety
-/// `raw` must be the live environment pointer the VM supplied for this callback,
-/// used only for the duration of `f`.
-pub unsafe fn with_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(AnyEnv<'id>) -> R) -> R {
-    f(AnyEnv { raw_env: raw, _id: PhantomData })
-}
-
+/// The kind-erased environment handle terms are built against. Every concrete
+/// env kind ([`CallEnv`], [`InitEnv`], …) downcasts to this via
+/// [`Env::as_any_env`].
 #[derive(Clone, Copy)]
 pub struct AnyEnv<'id> {
     raw_env: RawEnv,
@@ -45,6 +40,115 @@ impl<'id> Env<'id> for AnyEnv<'id> {
     fn raw_env(&self) -> RawEnv {
         self.raw_env
     }
+}
+
+// --- VM-provided env kinds ---
+//
+// The VM hands a NIF call or callback a raw environment pointer; codegen wraps
+// it in the matching concrete kind so context-specific verbs are typed — wrong
+// kind is a compile error, no runtime tag (this is the lifted `EnvKind`). Each
+// kind is structurally an `AnyEnv`; they differ only as types.
+//
+// Each `with_*` entry mints the brand through a `for<'id>` closure, so every
+// call gets a unique, non-escaping brand (the GhostCell construction); `R` is
+// brand-free by construction — exactly the raw `Term`/status word the C ABI
+// returns.
+//
+// # Safety (all `with_*` entries)
+// `raw` must be the live environment pointer the VM supplied for this callback,
+// used only for the duration of `f`.
+
+/// The process-bound environment handed to a NIF call.
+#[derive(Clone, Copy)]
+pub struct CallEnv<'id> {
+    raw_env: RawEnv,
+    _id: Invariant<'id>,
+}
+
+impl<'id> sealed::Sealed for CallEnv<'id> {}
+
+impl<'id> Env<'id> for CallEnv<'id> {
+    fn raw_env(&self) -> RawEnv {
+        self.raw_env
+    }
+}
+
+/// Enter a NIF call with a freshly branded [`CallEnv`]. See the env-kind note
+/// above for the brand guarantee.
+///
+/// # Safety
+/// `raw` must be the live env pointer the VM supplied for this call.
+pub unsafe fn with_call_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(CallEnv<'id>) -> R) -> R {
+    f(CallEnv { raw_env: raw, _id: PhantomData })
+}
+
+/// The environment handed to the `load` and `upgrade` callbacks.
+#[derive(Clone, Copy)]
+pub struct InitEnv<'id> {
+    raw_env: RawEnv,
+    _id: Invariant<'id>,
+}
+
+impl<'id> sealed::Sealed for InitEnv<'id> {}
+
+impl<'id> Env<'id> for InitEnv<'id> {
+    fn raw_env(&self) -> RawEnv {
+        self.raw_env
+    }
+}
+
+/// Enter a `load`/`upgrade` callback with a freshly branded [`InitEnv`].
+///
+/// # Safety
+/// `raw` must be the live env pointer the VM supplied for this callback.
+pub unsafe fn with_init_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(InitEnv<'id>) -> R) -> R {
+    f(InitEnv { raw_env: raw, _id: PhantomData })
+}
+
+/// The environment handed to resource callbacks (destructor, monitor-down, …).
+#[derive(Clone, Copy)]
+pub struct CallbackEnv<'id> {
+    raw_env: RawEnv,
+    _id: Invariant<'id>,
+}
+
+impl<'id> sealed::Sealed for CallbackEnv<'id> {}
+
+impl<'id> Env<'id> for CallbackEnv<'id> {
+    fn raw_env(&self) -> RawEnv {
+        self.raw_env
+    }
+}
+
+/// Enter a resource callback with a freshly branded [`CallbackEnv`].
+///
+/// # Safety
+/// `raw` must be the live env pointer the VM supplied for this callback.
+pub unsafe fn with_callback_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(CallbackEnv<'id>) -> R) -> R {
+    f(CallbackEnv { raw_env: raw, _id: PhantomData })
+}
+
+/// The environment handed to the `unload` callback.
+#[derive(Clone, Copy)]
+pub struct DeinitEnv<'id> {
+    raw_env: RawEnv,
+    _id: Invariant<'id>,
+}
+
+impl<'id> sealed::Sealed for DeinitEnv<'id> {}
+
+impl<'id> Env<'id> for DeinitEnv<'id> {
+    fn raw_env(&self) -> RawEnv {
+        self.raw_env
+    }
+}
+
+/// Enter the `unload` callback with a freshly branded [`DeinitEnv`].
+///
+/// # Safety
+/// `raw` must be the live env pointer the VM supplied for this callback.
+pub unsafe fn with_deinit_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(DeinitEnv<'id>) -> R) -> R {
+    f(DeinitEnv { raw_env: raw, _id: PhantomData })
 }
 
 // --- Term ---
@@ -207,7 +311,7 @@ mod brand_tests {
     use super::*;
 
     // Ties an env and a term to ONE brand: only a term from this env type-checks.
-    fn use_in<'id>(_env: AnyEnv<'id>, t: AnyTerm<'id>) -> RawTerm {
+    fn use_in<'id>(_env: impl Env<'id>, t: AnyTerm<'id>) -> RawTerm {
         t.raw_term()
     }
 
@@ -219,8 +323,8 @@ mod brand_tests {
     #[allow(dead_code)]
     fn brands_are_distinct() {
         unsafe {
-            with_env(std::ptr::null_mut(), |e1| {
-                with_env(std::ptr::null_mut(), |e2| {
+            with_call_env(std::ptr::null_mut(), |e1| {
+                with_call_env(std::ptr::null_mut(), |e2| {
                     let t1 = AnyTerm::wrap(0, e1);
                     let _ = use_in(e1, t1); // same brand: compiles
                     let _ = e2;
