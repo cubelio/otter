@@ -158,6 +158,10 @@ impl StaticAtom {
     /// called from a NIF load/upgrade callback.
     pub fn init<'id>(&self, env: impl Env<'id>) {
         let atom = Atom::intern(env, self.name).expect("StaticAtom::init: failed to create atom");
+        // Relaxed is sufficient: `init` runs in the load/upgrade callback, which
+        // completes before the BEAM publishes the library and dispatches any NIF
+        // call. That load barrier supplies the happens-before to every later
+        // `get`, so no acquire/release pairing is needed on the atomic itself.
         self.term.store(atom.term, Ordering::Relaxed);
     }
 

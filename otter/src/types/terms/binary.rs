@@ -220,6 +220,12 @@ impl BinaryBuf {
 
     /// Take ownership of an already-filled `enif_ffi::Binary` (e.g. from
     /// `enif_term_to_binary`), where the whole allocation is live data.
+    ///
+    /// `bin` MUST be an owned, mutable binary — one from `enif_alloc_binary` /
+    /// `enif_term_to_binary` — never a read-only inspected binary. `BinaryBuf`
+    /// reallocates via `enif_realloc_binary`, which silently allocates a mutable
+    /// *copy* when handed a read-only source (orphaning the original); the
+    /// owned-mutable precondition is what makes the in-place grow/shrink sound.
     pub(crate) fn from_filled(bin: enif_ffi::Binary) -> BinaryBuf {
         BinaryBuf { len: bin.size, bin, released: false }
     }

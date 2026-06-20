@@ -109,9 +109,11 @@ impl<'id> Term<'id> for Tuple<'id> {
 /// encodes and compares like one), and additionally behaves as a fixed-size
 /// collection of its elements: [`len`](Self::len)/[`is_empty`](Self::is_empty),
 /// `tuple[i]` indexing, and iteration, all yielding [`AnyTerm<'id>`] — the
-/// unresolved element terms. The element words live on the BEAM heap at fixed
-/// addresses for the life of the term, so the cached slice rides this view's
-/// brand `'id` and the type stays `Copy`.
+/// unresolved element terms. `enif_get_tuple` returns a pointer into the boxed
+/// tuple's own heap storage (it hands back `tuple_val(t)+1`, confirmed in the
+/// ERTS source); the process heap holds that at a fixed address for the
+/// duration of a NIF call (no GC mid-NIF), so the cached slice is valid for
+/// this view's brand `'id` and the type stays `Copy`.
 #[derive(Clone, Copy)]
 pub struct TupleView<'id> {
     raw_term: RawTerm,

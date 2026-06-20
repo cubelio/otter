@@ -238,7 +238,9 @@ fn register_named<'id, T: Resource>(env: InitEnv<'id>, flags: ResourceFlags, nam
 
     assert!(
         !type_ptr.is_null(),
-        "enif_init_resource_type failed — ensure env is from the load callback"
+        "enif_init_resource_type failed — it must run inside load/upgrade, and the \
+         flags must match the name's state (CREATE needs a new name, TAKEOVER an \
+         existing one); a name collision under CREATE alone also returns null"
     );
 
     // The load scaffolding installs PrivData before dispatching the user
