@@ -320,7 +320,7 @@ fn test_map(env: CallEnv) -> Atom {
     assert_eq!(m.size(env), 2);
     assert_eq!(m.iter(env).count(), 2);
 
-    let m = m.remove(env, k1).unwrap();
+    let m = m.remove(env, k1);
     assert_eq!(m.size(env), 1);
     assert!(m.get(env, k1).is_none());
 
