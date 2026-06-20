@@ -651,6 +651,30 @@ fn codec_usize(_env: CallEnv, x: usize) -> usize {
     x
 }
 
+// --- native codec round-trips: floats -----------------------------------
+
+#[otter::nif]
+fn codec_f64(_env: CallEnv, x: f64) -> f64 {
+    x
+}
+
+#[otter::nif]
+fn codec_f32(_env: CallEnv, x: f32) -> f32 {
+    x
+}
+
+// Returns a non-finite f64: encoding it fails (NotFinite), which the nif
+// macro turns into a `badret` exception — the encode-side mirror of badarg.
+#[otter::nif]
+fn encode_inf(_env: CallEnv) -> f64 {
+    f64::INFINITY
+}
+
+#[otter::nif]
+fn encode_nan(_env: CallEnv) -> f64 {
+    f64::NAN
+}
+
 fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
     // Atoms and resources are interned/registered by the `init!` scaffolding
     // before this runs; nothing to do here.
@@ -696,6 +720,10 @@ otter::init!("otter_demo__nif", [
     codec_i64,
     codec_u64,
     codec_usize,
+    codec_f64,
+    codec_f32,
+    encode_inf,
+    encode_nan,
     panicking_resource_new,
     select_resource_new,
     select_register,

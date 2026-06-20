@@ -213,6 +213,21 @@ smoke_test_() ->
     ?_assertEqual(42, otter_demo__nif:codec_usize(42)),
     ?_assertError(badarg, otter_demo__nif:codec_usize(-1)),
 
+    %% Native float codecs — f64 round-trips exactly; f32 round-trips for
+    %% exactly-representable values and rejects out-of-range magnitudes.
+    ?_assertEqual(3.14,  otter_demo__nif:codec_f64(3.14)),
+    ?_assertEqual(+0.0,  otter_demo__nif:codec_f64(+0.0)),
+    ?_assertEqual(-2.5,  otter_demo__nif:codec_f64(-2.5)),
+    ?_assertError(badarg, otter_demo__nif:codec_f64(42)),
+    ?_assertEqual(0.5,   otter_demo__nif:codec_f32(0.5)),
+    ?_assertEqual(-2.0,  otter_demo__nif:codec_f32(-2.0)),
+    ?_assertEqual(1.5,   otter_demo__nif:codec_f32(1.5)),
+    %% Beyond f32::MAX — narrowing would overflow to infinity, so it is rejected.
+    ?_assertError(badarg, otter_demo__nif:codec_f32(1.0e300)),
+    %% Encoding a non-finite f64 fails with badret (the encode-side mirror).
+    ?_assertError(badret, otter_demo__nif:encode_inf()),
+    ?_assertError(badret, otter_demo__nif:encode_nan()),
+
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.
     %% The destructor wrapper in otter catches the panic via catch_unwind;

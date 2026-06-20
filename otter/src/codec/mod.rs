@@ -4,6 +4,7 @@
 //! `Result<T, Raised>` impl live here. Conversions for native Rust types are
 //! split across submodules by concern.
 
+mod float;
 mod integer;
 
 use crate::types::{
@@ -21,6 +22,12 @@ pub enum CodecError {
     WrongType,
     /// An integer term did not fit the requested Rust integer type.
     IntegerOverflow,
+    /// A float value could not be represented as an Erlang float because it is
+    /// not finite (NaN or infinity) — an encode-side failure.
+    NotFinite,
+    /// A finite float term fell outside the finite range of the requested Rust
+    /// float type (only `f32`, on decode).
+    FloatRange,
     /// The term's type code is one this otter build does not recognize — a term
     /// type added by a newer OTP than otter knows about.
     UnknownTermType,
@@ -31,6 +38,8 @@ impl std::fmt::Display for CodecError {
         match self {
             CodecError::WrongType => write!(f, "wrong term type"),
             CodecError::IntegerOverflow => write!(f, "integer overflow"),
+            CodecError::NotFinite => write!(f, "float is not finite"),
+            CodecError::FloatRange => write!(f, "float out of range"),
             CodecError::UnknownTermType => write!(f, "unknown term type"),
         }
     }

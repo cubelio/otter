@@ -28,6 +28,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([test_time/0, test_consume_timeslice/0]).
 -export([port_send/2]).
 -export([codec_i8/1, codec_u8/1, codec_i64/1, codec_u64/1, codec_usize/1]).
+-export([codec_f64/1, codec_f32/1, encode_inf/0, encode_nan/0]).
 
 %%------------------------------------------------------------------------------
 
@@ -274,3 +275,21 @@ codec_u64(_X) -> exit(nif_not_loaded).
 
 -spec codec_usize(integer()) -> integer().
 codec_usize(_X) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — floats
+%%
+%% encode_inf/encode_nan return a non-finite f64 whose encoding fails, raising
+%% badret (the encode-side mirror of badarg).
+
+-spec codec_f64(float()) -> float().
+codec_f64(_X) -> exit(nif_not_loaded).
+
+-spec codec_f32(float()) -> float().
+codec_f32(_X) -> exit(nif_not_loaded).
+
+-spec encode_inf() -> no_return().
+encode_inf() -> exit(nif_not_loaded).
+
+-spec encode_nan() -> no_return().
+encode_nan() -> exit(nif_not_loaded).
