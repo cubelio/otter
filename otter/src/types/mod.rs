@@ -269,7 +269,10 @@ pub trait Term<'id>: sealed::Sealed {
 
 pub trait FreeTerm: for<'id> Term<'id> {}
 
+// repr(transparent) over RawTerm (the brand marker is a ZST): lets a
+// `&[RawTerm]` be viewed in place as `&[AnyTerm<'id>]` — see `TupleView`.
 #[derive(Clone, Copy)]
+#[repr(transparent)]
 pub struct AnyTerm<'id> {
     raw_term: RawTerm,
     _id: Invariant<'id>,

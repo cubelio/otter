@@ -20,4 +20,4 @@ pub use map::{Map, MapIterator};
 pub use pid::{LocalPid, Pid};
 pub use port::{LocalPort, Port};
 pub use reference::Reference;
-pub use tuple::Tuple;
+pub use tuple::{Tuple, TupleView};

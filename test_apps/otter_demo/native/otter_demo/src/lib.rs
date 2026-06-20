@@ -333,16 +333,19 @@ fn test_map(env: CallEnv) -> Atom {
 fn test_tuple(env: CallEnv) -> Atom {
     let a = TypedTerm::Atom(Atom::intern(env, "hello").unwrap());
     let b = TypedTerm::Integer(Integer::from_i64(env, 42));
-    let t = Tuple::from_terms(env, [a, b]);
+    let t = Tuple::from_terms(env, [a, b]).with_elements(env);
 
-    assert_eq!(t.len(env), 2);
-    assert!(!t.is_empty(env));
-    assert!(t.element(env, 0).resolve(env) == Some(a));
-    assert!(t.element(env, 1).resolve(env) == Some(b));
+    assert_eq!(t.len(), 2);
+    assert!(!t.is_empty());
+    assert!(t[0].resolve(env) == Some(a));
+    assert!(t[1].resolve(env) == Some(b));
+    // Iteration yields the elements as unresolved terms, in order.
+    let collected: Vec<_> = t.into_iter().map(|e| e.resolve(env)).collect();
+    assert!(collected == vec![Some(a), Some(b)]);
 
-    let empty = Tuple::from_terms(env, std::iter::empty::<TypedTerm>());
-    assert_eq!(empty.len(env), 0);
-    assert!(empty.is_empty(env));
+    let empty = Tuple::from_terms(env, std::iter::empty::<TypedTerm>()).with_elements(env);
+    assert_eq!(empty.len(), 0);
+    assert!(empty.is_empty());
 
     otter::atom![ok]
 }

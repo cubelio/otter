@@ -2,7 +2,7 @@
 
 use crate::types::{
     AnyTerm, Atom, Binary, Bitstring, Env, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,
-    Port, Raised, Reference, Term, Tuple, TypedTerm, THE_NON_VALUE,
+    Port, Raised, Reference, Term, Tuple, TupleView, TypedTerm, THE_NON_VALUE,
 };
 
 /// Error returned by term type conversion operations.
@@ -109,7 +109,8 @@ macro_rules! encode_by_wrap {
 
 encode_by_wrap!(
     AnyTerm<'id>, Integer<'id>, Float<'id>, Reference<'id>, Fun<'id>, Tuple<'id>, List<'id>,
-    Map<'id>, Binary<'id>, Bitstring<'id>, Pid<'id>, Port<'id>, Atom, LocalPid, LocalPort,
+    Map<'id>, Binary<'id>, Bitstring<'id>, Pid<'id>, Port<'id>, TupleView<'id>, Atom, LocalPid,
+    LocalPort,
 );
 
 impl<'id> Encoder<'id> for TypedTerm<'id> {
