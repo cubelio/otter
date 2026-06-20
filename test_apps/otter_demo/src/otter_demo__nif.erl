@@ -21,7 +21,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([test_map/0, test_tuple/0, double_float/1, nan_float/0, test_pid/0, new_ref/0]).
 -export([divide/2, dirty_cpu_thread_type/0, send_from_thread/0]).
 -export([send_to/2, cpu_time/0]).
--export([panicking_resource_new/0]).
+-export([panicking_resource_new/0, panic_in_encoder/0]).
 -export([select_resource_new/0, select_register/1, select_stop/1, select_stop_count/1]).
 -export([select_x_register/2]).
 -export([monitor_resource_new/0, monitor_pid/2, monitor_down_count/1]).
@@ -187,6 +187,18 @@ test in `otter_demo__nif_test`.
 """.
 -spec panicking_resource_new() -> reference().
 panicking_resource_new() -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% audit-16 regression — panicking return-value encoder
+
+-doc """
+Calls a NIF whose return type's `Encoder::encode` panics. The generated NIF
+wrapper must run return-value encoding inside `catch_unwind` so the panic
+surfaces as a `nif_panicked` error rather than unwinding across the FFI
+boundary — see the audit-16 regression test in `otter_demo__nif_test`.
+""".
+-spec panic_in_encoder() -> no_return().
+panic_in_encoder() -> exit(nif_not_loaded).
 
 %%------------------------------------------------------------------------------
 %% audit-01 regression — select stop callback

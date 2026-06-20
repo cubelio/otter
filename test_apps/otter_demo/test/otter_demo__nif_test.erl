@@ -328,6 +328,15 @@ smoke_test_() ->
     end)
   ].
 
+%% audit-16 regression — a panic inside the return value's `Encoder::encode`
+%% must be caught by the generated NIF wrapper (return encoding now runs inside
+%% `catch_unwind`) and surface as `nif_panicked`, not unwind across the extern
+%% "C" boundary and abort the BEAM. The follow-up call proves the VM survived.
+-spec panic_in_encoder_test() -> _.
+panic_in_encoder_test() ->
+  ?assertError(nif_panicked, otter_demo__nif:panic_in_encoder()),
+  ?assertEqual(3, otter_demo__nif:add(1, 2)).
+
 %% audit-01 regression — the select-stop path must invoke the resource's
 %% stop callback, not call a NULL function pointer and segfault the VM.
 %% Register READ interest on a socket-pair fd, then drive ERL_NIF_SELECT_STOP.

@@ -155,9 +155,17 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
     let panic_arm = panic_handler();
     let result_handling = quote! {
         match __otter_result {
-            Ok(Ok(__val)) => ::otter::__codegen::encode_result(&__val, __otter_env),
-            Ok(Err(_))    => ::otter::__codegen::badarg_word(__otter_env),
-            Err(_)        => { #panic_arm }
+            // Decode + call + encode all completed without unwinding. `__word`
+            // is the already-encoded result word; `encode_result` maps an
+            // encoder `Err` to `badret_word` internally, so a *domain* error
+            // already surfaces as `error:badret` here — only an encoder *panic*
+            // reaches the `Err(_)` arm below.
+            Ok(Ok(__word)) => __word,
+            // A decode `?` bailed before the call.
+            Ok(Err(_))     => ::otter::__codegen::badarg_word(__otter_env),
+            // A panic anywhere in decode/call/encode was caught. The handler
+            // itself must stay panic-free: it only interns short static atoms.
+            Err(_)         => { #panic_arm }
         }
     };
 
@@ -202,11 +210,18 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
                         return ::otter::__codegen::badarg_word(__otter_env);
                     }
 
+                    // Decode, call, AND encode all run inside the catch: an
+                    // `Encoder::encode` panic must not unwind across this
+                    // `extern "C"` boundary (that would be UB under the
+                    // mandated `panic = "unwind"`). The closure returns the
+                    // encoded result word, so a panic in any of the three
+                    // stages lands in the `Err(_)` arm of `result_handling`.
                     let __otter_result = ::std::panic::catch_unwind(
                         ::std::panic::AssertUnwindSafe(|| {
                             #(#unpack)*
+                            let __val = #fn_name(#(#call_args),*);
                             Ok::<_, ::otter::__codegen::CodecError>(
-                                #fn_name(#(#call_args),*)
+                                ::otter::__codegen::encode_result(&__val, __otter_env)
                             )
                         })
                     );
