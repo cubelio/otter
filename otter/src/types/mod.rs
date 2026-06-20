@@ -282,6 +282,7 @@ pub struct AnyTerm<'id> {
 }
 
 impl<'id> AnyTerm<'id> {
+    #[crate::raw]
     pub(crate) fn wrap(raw_term: RawTerm, _env: impl Env<'id>) -> Self {
         Self { raw_term, _id: PhantomData }
     }

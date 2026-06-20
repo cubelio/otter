@@ -21,8 +21,19 @@ pub(crate) fn doubled(x: u32) -> u32 {
     x * 2
 }
 
+struct Wrapper(u32);
+
+impl Wrapper {
+    // A method with no visibility -> private (non-raw) / pub (raw).
+    #[otter_codegen::raw]
+    fn peek(&self) -> u32 {
+        self.0
+    }
+}
+
 #[test]
 fn raw_items_compile_and_run() {
     assert_eq!(answer(), 42);
     assert_eq!(doubled(answer()), 84);
+    assert_eq!(Wrapper(7).peek(), 7);
 }
