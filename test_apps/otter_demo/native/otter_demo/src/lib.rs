@@ -25,9 +25,13 @@ fn hello(_env: CallEnv) -> Atom {
 // --- add/2 --------------------------------------------------------------
 
 #[otter::nif]
-fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    let sum = a.to_i64(env).unwrap() + b.to_i64(env).unwrap();
-    Integer::from_i64(env, sum)
+fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
+    // A bignum argument does not fit i64 — reject it as badarg rather than
+    // panicking (which the wrapper would surface as `nif_panicked`).
+    let (Some(a), Some(b)) = (a.to_i64(env), b.to_i64(env)) else {
+        return env.badarg();
+    };
+    Ok(Integer::from_i64(env, a + b))
 }
 
 // --- echo/1 -------------------------------------------------------------
@@ -211,9 +215,12 @@ fn test_binary_traits(env: CallEnv) -> Atom {
 // --- test_from_str/1 ----------------------------------------------------
 
 #[otter::nif]
-fn test_from_str<'a>(env: CallEnv<'a>, bin: Binary<'a>) -> List<'a> {
-    let s = bin.try_str(env).unwrap();
-    List::from_str(env, s)
+fn test_from_str<'a>(env: CallEnv<'a>, bin: Binary<'a>) -> Result<List<'a>, Raised<'a>> {
+    // Non-UTF-8 argument bytes are badarg, not a panic.
+    let Ok(s) = bin.try_str(env) else {
+        return env.badarg();
+    };
+    Ok(List::from_str(env, s))
 }
 
 // --- reverse_list/1 -----------------------------------------------------
@@ -386,11 +393,13 @@ fn new_ref<'a>(env: CallEnv<'a>) -> Reference<'a> {
 
 #[otter::nif]
 fn divide<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
-    let b_val = b.to_i64(env).unwrap();
-    if b_val == 0 {
+    let (Some(a), Some(b)) = (a.to_i64(env), b.to_i64(env)) else {
+        return env.badarg();
+    };
+    if b == 0 {
         return env.raise(otter::atom![division_by_zero]);
     }
-    Ok(Integer::from_i64(env, a.to_i64(env).unwrap() / b_val))
+    Ok(Integer::from_i64(env, a / b))
 }
 
 // --- dirty_cpu_thread_type/0 --------------------------------------------
