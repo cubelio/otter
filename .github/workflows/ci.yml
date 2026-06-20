@@ -108,15 +108,19 @@ jobs:
   # Real behavioral coverage: build the demo NIF *through the rebar3 plugin* and
   # run its EUnit suite under a live BEAM, plus the plugin's own EUnit (the
   # `otter new` scaffold integration test and the cdylib-path unit tests).
-  # otter's NIF floor is OTP 26 (NIF 2.17); 29 proves forward-compat on a newer
-  # (NIF 2.18) BEAM.
+  #
+  # Floor is OTP 27: the plugin and demo use triple-quoted doc strings, an
+  # OTP 27 feature (`minimum_otp_vsn` in rebar3_otter/rebar.config). Widening
+  # the matrix upward is blocked for now — the plugin's vendored `rebar` build
+  # dependency pulls an erlware_commons that fails to compile on OTP 29 (see
+  # the beam-matrix follow-up issue).
   beam:
     name: beam (OTP ${{ matrix.otp }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        otp: ["26", "29"]
+        otp: ["27"]
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable

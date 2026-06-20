@@ -9,9 +9,8 @@ The build pins cargo's `--target-dir` to `<crate>/target` and computes the
 output cdylib path by convention rather than parsing cargo's JSON output.
 cdylib final artifacts are not content-hashed, so the name is deterministic
 (`lib<name>.so` / `.dylib`, `<name>.dll`), and pinning the target dir makes
-its location a guarantee instead of a guess. This keeps the plugin free of
-the OTP-27-only stdlib `json` module, so it builds on OTP 26 (otter's own
-NIF floor) and up.
+its location a guarantee instead of a guess. This also keeps artifact
+resolution free of the stdlib `json` module (no JSON to parse).
 """.
 
 -export([build/5, clean/1, nif_filename/1]).
