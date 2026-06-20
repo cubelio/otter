@@ -177,7 +177,7 @@ The lifecycle above is the raw enif contract. **otter does not hand the bare
 pub struct PrivData {
     magic: u64,                  // PRIV_MAGIC — frozen header word, read cross-build
     user_priv_data: *mut c_void, // the user's void* (tier 2 `raw`); null in tier 1
-    registry: ResourceRegistry,  // build-private: TypeId -> *mut NifResourceType (§6)
+    registry: ResourceRegistry,  // build-private: TypeId -> *mut enif_ffi::ResourceType (§6)
 }
 ```
 
@@ -265,16 +265,17 @@ When library A creates a `ResourceArc<T>`:
 ### Creation requires an env
 
 Because the type registry lives in `priv_data` (§4) rather than a `static`, obtaining
-the `*mut NifResourceType` to allocate or decode a resource goes through
+the `*mut enif_ffi::ResourceType` to allocate or decode a resource goes through
 `enif_priv_data(env)` — so it needs a module-bound env:
 
-- **In a NIF or callback**: always have one. Construction becomes `env.make_resource(val)`
-  (replacing the env-less `ResourceArc::from(val)`); decoding already holds an env.
-- **Off-thread / `OwnedTermBuilder`**: a spawned thread has no module-bound env, and
-  `enif_priv_data` does not work on a process-independent env. So a worker captures the handle
-  *before* spawning — `let h = env.resource_handle::<T>();` — and creates with `h` on
-  the thread. The capability is preserved; it is just made explicit, consistent with
-  otter's "capture what you need, no ambient magic" stance.
+- **In a NIF or callback**: always have one. Construction becomes `make_resource(env, val)`
+  (the free function, replacing the env-less `ResourceArc::from(val)`); decoding already
+  holds an env.
+- **Off-thread**: a spawned thread has no module-bound env, and `enif_priv_data` does not
+  work on a process-independent env. So a worker captures the `Send` handle *before*
+  spawning — `let h = resource_handle::<T>(env);` — and creates with `h.make(val)` on the
+  thread. The capability is preserved; it is just made explicit, consistent with otter's
+  "capture what you need, no ambient magic" stance.
 
 ### Two upgrade paths: takeover vs. clean separation
 
@@ -366,14 +367,16 @@ Two consequences settle otter's design:
   call `register::<T>(env, flags)` by hand for dynamic cases (the `PrivData` is published
   before the callback runs, so it lands in the live registry).
 - **Flag by callback:** `CREATE` in `load`, `CREATE | TAKEOVER` in `upgrade`, passed
-  explicitly by the generated wrapper (not inferred from `EnvKind`). `load` runs only
-  when no old code of this module exists, so `CREATE`-only there is the *strict* choice
+  explicitly by the generated wrapper (not inferred from a runtime env tag). `load` runs
+  only when no old code of this module exists, so `CREATE`-only there is the *strict* choice
   (a collision is a real error, not silently absorbed). `upgrade` is where takeover is
   both possible and needed.
-- **`EnvKind`** gains `Upgrade` and `Unload` variants (`Init` → `Load`); `register`
-  asserts the env is `Load` or `Upgrade`. It gates *call legality* only.
+- **Env legality is enforced by type, not a runtime tag.** `load` and `upgrade` both run
+  with an `InitEnv`, `unload` with a `DeinitEnv`, and resource callbacks with a
+  `CallbackEnv` — the lifted form of the old `EnvKind` enum. `register` takes `InitEnv`, so
+  calling it outside load/upgrade is a compile error, not a runtime assert.
 - **The handle is stored in the per-instance registry inside `priv_data` (§4), not a
-  `static`.** Each `register` call writes the returned `*mut NifResourceType` into *this
+  `static`.** Each `register` call writes the returned `*mut enif_ffi::ResourceType` into *this
   instance's* `PrivData` registry, keyed by `T`'s `TypeId`; `ResourceArc` reads it back
   via `env → enif_priv_data → registry`. Because `priv_data` is per-instance, and the
   registry is built entirely within `load`/`upgrade` (before any NIF call on that
@@ -464,10 +467,10 @@ upgrade.
 The mechanism is the BEAM's own `(module, name)` resource lookup (§6, verified against
 erts source). otter registers each type under a **per-build-unique name** — in effect
 a *maximally conservative fingerprint that compares equal only for the byte-identical
-library image*. Concretely (`abi.rs`), the default name is
+library image*. Concretely, the default name (formatted in `resource.rs::register`) is
 `"{type_name}#abi={hash}"`, where `{hash}` is a `DefaultHasher` digest of this
-library's own binary, located at load time via `dladdr` over an otter function address
-and read from disk (cached; a per-load fallback on failure, which degrades to "never
+library's own binary (computed in `abi.rs::tag`), located at load time via `dladdr` over
+an otter function address and read from disk (cached; a per-load fallback on failure, which degrades to "never
 take over"). A type may instead be registered `"{type_name}#tag={tag}"` via
 `register_tagged` / `resources = [T: "tag"]`, a stable name with no hash that opts the
 type *into* cross-build takeover (the per-type analog of `raw` — a promise its layout is
