@@ -1,7 +1,8 @@
 [package]
 name = "otter_codegen"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+rust-version = "1.56"
 authors = ["Lynn Gabbay"]
 license = "MIT OR Apache-2.0"
 description = "Procedural macros for the otter Erlang NIF library."
