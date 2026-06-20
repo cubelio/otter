@@ -11,6 +11,10 @@ pub struct Map<'id> {
 }
 
 impl<'id> Map<'id> {
+    pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
+        Self { raw_term, _id: PhantomData }
+    }
+
     /// Create an empty map (`enif_make_new_map`).
     pub fn new(env: impl Env<'id>) -> Map<'id> {
         let raw_term = unsafe { enif_ffi::make_new_map(env.raw_env()) };

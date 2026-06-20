@@ -11,6 +11,10 @@ pub struct Reference<'id> {
 }
 
 impl<'id> Reference<'id> {
+    pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
+        Self { raw_term, _id: PhantomData }
+    }
+
     /// Create a new unique reference (`enif_make_ref`).
     pub fn new(env: impl Env<'id>) -> Self {
         let raw_term = unsafe { enif_ffi::make_ref(env.raw_env()) };

@@ -34,6 +34,10 @@ fn list_cell<'id>(env: impl Env<'id>, term: RawTerm) -> Option<(RawTerm, RawTerm
 }
 
 impl<'id> List<'id> {
+    pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
+        Self { raw_term, _id: PhantomData }
+    }
+
     /// Decompose this list into nil or a cons cell (one `enif_get_list_cell`).
     pub fn node(self, env: impl Env<'id>) -> Node<'id> {
         match list_cell(env, self.raw_term) {

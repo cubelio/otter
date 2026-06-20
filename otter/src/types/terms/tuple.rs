@@ -12,6 +12,10 @@ pub struct Tuple<'id> {
 }
 
 impl<'id> Tuple<'id> {
+    pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
+        Self { raw_term, _id: PhantomData }
+    }
+
     /// Number of elements (arity) of the tuple.
     pub fn len(self, env: impl Env<'id>) -> usize {
         self.get(env).map_or(0, |elems| elems.len())

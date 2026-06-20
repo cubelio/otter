@@ -1,7 +1,9 @@
 mod ops;
 pub mod terms;
+mod typed;
 
 pub use terms::*;
+pub use typed::TypedTerm;
 
 
 use core::marker::PhantomData;

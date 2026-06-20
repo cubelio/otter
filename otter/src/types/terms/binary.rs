@@ -27,6 +27,10 @@ pub struct Bitstring<'id> {
 }
 
 impl<'id> Bitstring<'id> {
+    pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
+        Self { raw_term, _id: PhantomData }
+    }
+
     /// Returns `true` if this bitstring is byte-aligned (`enif_is_binary`).
     pub fn is_binary(self, env: impl Env<'id>) -> bool {
         unsafe { enif_ffi::is_binary(env.raw_env(), self.raw_term) != 0 }
@@ -40,6 +44,10 @@ impl<'id> Bitstring<'id> {
 }
 
 impl<'id> Binary<'id> {
+    pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
+        Self { raw_term, _id: PhantomData }
+    }
+
     /// View the binary data as a byte slice (`enif_inspect_binary`).
     ///
     /// Zero-copy — the slice points into the BEAM heap and rides this binary's

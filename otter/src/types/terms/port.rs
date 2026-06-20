@@ -1,3 +1,5 @@
+use core::marker::PhantomData;
+
 use crate::types::sealed::Sealed;
 use crate::types::{Env, FreeTerm, Invariant, RawTerm, Term};
 
@@ -14,6 +16,10 @@ pub struct Port<'id> {
 }
 
 impl<'id> Port<'id> {
+    pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
+        Self { raw_term, _id: PhantomData }
+    }
+
     /// Refine to a [`LocalPort`] if this port is node-local
     /// (`enif_get_local_port`). `None` for an external (remote-node) port.
     pub fn to_local(self, env: impl Env<'id>) -> Option<LocalPort> {

@@ -1,3 +1,5 @@
+use core::marker::PhantomData;
+
 use crate::types::sealed::Sealed;
 use crate::types::{Env, Invariant, RawTerm, Term};
 
@@ -12,6 +14,10 @@ pub struct Fun<'id> {
 }
 
 impl<'id> Fun<'id> {
+    pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
+        Self { raw_term, _id: PhantomData }
+    }
+
     /// Returns `true` if `term` is a fun (`enif_is_fun`).
     pub fn is_fun(env: impl Env<'id>, term: impl Term<'id>) -> bool {
         unsafe { enif_ffi::is_fun(env.raw_env(), term.raw_term()) != 0 }

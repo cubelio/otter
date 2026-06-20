@@ -1,3 +1,5 @@
+use core::marker::PhantomData;
+
 use crate::types::sealed::Sealed;
 use crate::types::{CallEnv, Env, FreeTerm, Invariant, RawTerm, Term};
 
@@ -15,6 +17,10 @@ pub struct Pid<'id> {
 }
 
 impl<'id> Pid<'id> {
+    pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
+        Self { raw_term, _id: PhantomData }
+    }
+
     /// Refine to a [`LocalPid`] if this pid is node-local (`enif_get_local_pid`).
     /// `None` for an external (remote-node) pid.
     pub fn to_local(self, env: impl Env<'id>) -> Option<LocalPid> {

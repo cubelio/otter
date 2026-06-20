@@ -16,6 +16,10 @@ pub struct Integer<'id> {
 }
 
 impl<'id> Integer<'id> {
+    pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
+        Self { raw_term, _id: PhantomData }
+    }
+
     /// Construct an integer term from an `i64` (`enif_make_int64`).
     pub fn from_i64(env: impl Env<'id>, val: i64) -> Self {
         let raw_term = unsafe { enif_ffi::make_int64(env.raw_env(), val) };
