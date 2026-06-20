@@ -12,12 +12,13 @@ pub mod select;
 #[path = "__codegen.rs"]
 pub mod __codegen;
 
-// Re-export the raw enif-ffi crate so codegen-generated code — which is spliced
-// into the *user's* crate and can therefore only name `::otter::…` paths — can
-// reference the raw C ABI types (`Env`, `Term`, `Entry`, …) that appear in the
-// `extern "C"` entry points it emits. Unconditional and only `#[doc(hidden)]`
-// for now; gating it behind `raw` is tracked as issue enhance-11.
-#[doc(hidden)]
+// The raw, 1:1, all-unsafe `enif_ffi` crate — the escape hatch, available only
+// under the `raw` feature. Generated code no longer names this path (it uses
+// `__codegen::ffi::*`), and the enif types that appear in otter's own public API
+// are re-exported through their modules (`select::{Event, SelectFlags, …}`,
+// `types::{TermType, Hash, UniqueInteger}`, `time::*`, `system::SysInfo`,
+// `resource::ResourceFlags`), so nothing in the safe surface needs this. (enhance-11)
+#[cfg(feature = "raw")]
 pub use enif_ffi;
 
 // enif-ffi's `nif_init!` builds the platform entry point and resolves the

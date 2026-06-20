@@ -171,8 +171,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
     // Emit the otter-exported constants rather than bare literals so the
     // generated flags stay in lockstep with the crate's own definitions.
     let flags = match attrs.schedule.as_deref() {
-        Some("DirtyCpu") => quote! { ::otter::enif_ffi::DIRTY_JOB_CPU_BOUND as u32 },
-        Some("DirtyIo") => quote! { ::otter::enif_ffi::DIRTY_JOB_IO_BOUND as u32 },
+        Some("DirtyCpu") => quote! { ::otter::__codegen::ffi::DIRTY_JOB_CPU_BOUND as u32 },
+        Some("DirtyIo") => quote! { ::otter::__codegen::ffi::DIRTY_JOB_IO_BOUND as u32 },
         _ => quote! { 0u32 },
     };
 
@@ -184,10 +184,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
         #[doc(hidden)]
         #[allow(non_snake_case, unused_variables)]
         pub unsafe extern "C" fn #wrapper_name(
-            __otter_nif_env: *mut ::otter::enif_ffi::Env,
+            __otter_nif_env: *mut ::otter::__codegen::ffi::Env,
             __otter_argc: ::std::ffi::c_int,
-            __otter_argv: *const ::otter::enif_ffi::Term,
-        ) -> ::otter::enif_ffi::Term {
+            __otter_argv: *const ::otter::__codegen::ffi::Term,
+        ) -> ::otter::__codegen::ffi::Term {
             // `with_call_env` mints a fresh generative brand `'id` for this call
             // via its `for<'id>` closure, and the closure's return is the raw
             // word the C ABI hands back. The user fn, decoded args, and result

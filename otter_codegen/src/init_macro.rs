@@ -395,9 +395,9 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let load_wrapper = quote! {
         #[doc(hidden)]
         unsafe extern "C" fn __otter_load(
-            __otter_load_env:  *mut ::otter::enif_ffi::Env,
+            __otter_load_env:  *mut ::otter::__codegen::ffi::Env,
             __otter_priv_data: *mut *mut ::std::ffi::c_void,
-            __otter_load_info: ::otter::enif_ffi::Term,
+            __otter_load_info: ::otter::__codegen::ffi::Term,
         ) -> ::std::ffi::c_int {
             let __pd = unsafe { ::otter::__codegen::install_priv_data(__otter_priv_data) };
             let __outcome = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
@@ -432,10 +432,10 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let upgrade_wrapper = quote! {
         #[doc(hidden)]
         unsafe extern "C" fn __otter_upgrade(
-            __otter_upgrade_env: *mut ::otter::enif_ffi::Env,
+            __otter_upgrade_env: *mut ::otter::__codegen::ffi::Env,
             __otter_priv_data:   *mut *mut ::std::ffi::c_void,
             __otter_old_priv:    *mut *mut ::std::ffi::c_void,
-            __otter_upgrade_info: ::otter::enif_ffi::Term,
+            __otter_upgrade_info: ::otter::__codegen::ffi::Term,
         ) -> ::std::ffi::c_int {
             #upgrade_old_consume
             let __pd = unsafe { ::otter::__codegen::install_priv_data(__otter_priv_data) };
@@ -494,7 +494,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let unload_wrapper = quote! {
         #[doc(hidden)]
         unsafe extern "C" fn __otter_unload(
-            __otter_unload_env: *mut ::otter::enif_ffi::Env,
+            __otter_unload_env: *mut ::otter::__codegen::ffi::Env,
             __otter_priv_data:  *mut ::std::ffi::c_void,
         ) {
             #unload_dispatch
@@ -555,16 +555,16 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
         // resolves the enif_* table (dlsym on Unix / the BEAM callback table on
         // Windows), and on success calls this builder. So the builder runs only
         // after the table is live and can use the enif_ffi wrappers freely.
-        fn __otter_build_entry() -> *const ::otter::enif_ffi::Entry {
+        fn __otter_build_entry() -> *const ::otter::__codegen::ffi::Entry {
             let mut __otter_funcs = ::std::vec![
                 #( #meta_paths .to_nif_func() ),*
             ];
             let __otter_funcs_ptr = __otter_funcs.as_mut_ptr();
             ::std::mem::forget(__otter_funcs);
 
-            let __otter_entry = ::std::boxed::Box::new(::otter::enif_ffi::Entry {
-                major: ::otter::enif_ffi::MAJOR_VERSION,
-                minor: ::otter::enif_ffi::MINOR_VERSION,
+            let __otter_entry = ::std::boxed::Box::new(::otter::__codegen::ffi::Entry {
+                major: ::otter::__codegen::ffi::MAJOR_VERSION,
+                minor: ::otter::__codegen::ffi::MINOR_VERSION,
                 name: #module_name_bytes .as_ptr() as *const ::std::ffi::c_char,
                 num_of_funcs: #nif_count as ::std::ffi::c_int,
                 funcs: __otter_funcs_ptr,
@@ -572,12 +572,12 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
                 reload: None,
                 upgrade: Some(__otter_upgrade),
                 unload: Some(__otter_unload),
-                vm_variant: ::otter::enif_ffi::VM_VARIANT.as_ptr(),
+                vm_variant: ::otter::__codegen::ffi::VM_VARIANT.as_ptr(),
                 options: ::otter::__codegen::NIF_ENTRY_OPTIONS as ::std::ffi::c_uint,
                 sizeof_resource_type_init: ::std::mem::size_of::<
-                    ::otter::enif_ffi::ResourceTypeInit
+                    ::otter::__codegen::ffi::ResourceTypeInit
                 >(),
-                min_erts: ::otter::enif_ffi::MIN_ERTS_VERSION.as_ptr(),
+                min_erts: ::otter::__codegen::ffi::MIN_ERTS_VERSION.as_ptr(),
             });
             ::std::boxed::Box::leak(__otter_entry) as *const _
         }

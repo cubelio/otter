@@ -8,6 +8,11 @@ pub use ops::{deserialize, port_command, send_from, serialize};
 pub use terms::*;
 pub use typed::TypedTerm;
 
+// enif types surfaced by the `Env` methods below — `term_type` returns
+// `TermType`, `hash` takes `Hash`, `make_unique_integer` takes `UniqueInteger`.
+// Re-exported here so callers can name them without the `raw` feature.
+pub use enif_ffi::{Hash, TermType, UniqueInteger};
+
 
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicU64, Ordering};

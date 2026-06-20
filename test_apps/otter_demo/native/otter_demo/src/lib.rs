@@ -4,8 +4,8 @@ use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use otter::enif_ffi::SelectFlags;
 use otter::num_bigint::BigInt;
+use otter::select::SelectFlags;
 use otter::resource::{Resource, ResourceArc};
 use otter::types::{
     AnyTerm, Atom, AtomError, Binary, BinaryBuf, CallEnv, CallbackEnv, Env, Float, InitEnv, Integer,
@@ -486,7 +486,7 @@ struct FdResource {
 }
 
 impl Resource for FdResource {
-    fn stop(&self, _env: CallbackEnv<'_>, _event: otter::enif_ffi::Event, _is_direct_call: bool) {
+    fn stop(&self, _env: CallbackEnv<'_>, _event: otter::select::Event, _is_direct_call: bool) {
         self.stop_count.fetch_add(1, Ordering::Relaxed);
     }
 }
