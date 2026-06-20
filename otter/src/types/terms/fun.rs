@@ -1,23 +1,34 @@
-use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
-use crate::term::{Term, AsNifTerm};
+use crate::types::sealed::Sealed;
+use crate::types::{Env, Invariant, RawTerm, Term};
 
 /// An Erlang fun (closure or function reference).
 ///
 /// The NIF API provides no inspection of fun contents. A `Fun` can only be
 /// held and passed back to Erlang, or used as an argument to `apply`.
 #[derive(Clone, Copy)]
-pub struct Fun<'a> {
-    pub(crate) term: enif_ffi::Term,
-    // Env is stored for lifetime tracking only — the NIF API provides no
-    // inspection functions for funs, so `env` is never read directly.
-    #[allow(dead_code)]
-    pub(crate) env: Env<'a>,
+pub struct Fun<'id> {
+    raw_term: RawTerm,
+    _id: Invariant<'id>,
+}
+
+impl<'id> Fun<'id> {
+    /// Returns `true` if `term` is a fun (`enif_is_fun`).
+    pub fn is_fun(env: impl Env<'id>, term: impl Term<'id>) -> bool {
+        unsafe { enif_ffi::is_fun(env.raw_env(), term.raw_term()) != 0 }
+    }
+}
+
+impl<'id> Sealed for Fun<'id> {}
+
+impl<'id> Term<'id> for Fun<'id> {
+    fn raw_term(self) -> RawTerm {
+        self.raw_term
+    }
 }
 
 impl PartialEq for Fun<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.raw_term, other.raw_term) != 0 }
     }
 }
 
@@ -31,7 +42,7 @@ impl PartialOrd for Fun<'_> {
 
 impl Ord for Fun<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { enif_ffi::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.raw_term, other.raw_term) };
         c.cmp(&0)
     }
 }
@@ -39,32 +50,5 @@ impl Ord for Fun<'_> {
 impl std::fmt::Debug for Fun<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Fun")
-    }
-}
-
-impl<'b> Encoder for Fun<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        if self.env.as_ptr() == env.as_ptr() {
-            Term::new(env, self.term)
-        } else {
-            env.make_copy(*self)
-        }
-    }
-}
-
-impl<'a> Env<'a> {
-    /// Returns `true` if `term` is a fun (`enif_is_fun`).
-    pub fn is_fun(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { enif_ffi::is_fun(self.as_ptr(), term.as_nif_term()) != 0 }
-    }
-}
-
-impl<'a> Decoder<'a> for Fun<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.is_fun(term) {
-            Ok(Fun { term: term.term, env: term.env })
-        } else {
-            Err(CodecError::WrongType)
-        }
     }
 }

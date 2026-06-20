@@ -1,55 +1,81 @@
+use core::marker::PhantomData;
 use std::ffi::{c_int, c_uint};
 
-use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
-use crate::term::{Term, AsNifTerm};
+use crate::types::sealed::Sealed;
+use crate::types::{AnyTerm, Env, Invariant, RawTerm, Term};
 
 /// An Erlang tuple.
 #[derive(Clone, Copy)]
-pub struct Tuple<'a> {
-    pub(crate) term: enif_ffi::Term,
-    pub(crate) env: Env<'a>,
+pub struct Tuple<'id> {
+    raw_term: RawTerm,
+    _id: Invariant<'id>,
 }
 
-impl<'a> Tuple<'a> {
+impl<'id> Tuple<'id> {
     /// Number of elements (arity) of the tuple.
-    pub fn len(self) -> usize {
-        self.env.get_tuple(self).map_or(0, |elems| elems.len())
+    pub fn len(self, env: impl Env<'id>) -> usize {
+        self.get(env).map_or(0, |elems| elems.len())
     }
 
     /// Returns `true` if the tuple has zero elements.
-    pub fn is_empty(self) -> bool {
-        self.len() == 0
+    pub fn is_empty(self, env: impl Env<'id>) -> bool {
+        self.len(env) == 0
     }
 
-    /// Return the element at zero-based index `i` as an unresolved [`Term`].
+    /// Return the element at zero-based index `i` as an unresolved [`AnyTerm`].
     ///
-    /// Panics if `i >= self.len()`. The element points into the BEAM heap and
-    /// is valid for lifetime `'a`. Call [`Term::resolve`] or a decoder to type
-    /// it.
-    pub fn element(self, i: usize) -> Term<'a> {
-        let elems = self.env.get_tuple(self).unwrap();
+    /// Panics if `i >= self.len()`. The element shares this tuple's brand.
+    pub fn element(self, env: impl Env<'id>, i: usize) -> AnyTerm<'id> {
+        let elems = self.get(env).expect("Tuple::element on a non-tuple term");
         assert!(
             i < elems.len(),
             "Tuple::element index {i} out of bounds (arity {})",
             elems.len()
         );
-        Term::new(self.env, elems[i])
+        AnyTerm::wrap(elems[i], env)
     }
 
-    /// Construct a tuple from any iterable of term-like values.
-    pub fn from_terms<I, T>(env: Env<'a>, terms: I) -> Tuple<'a>
+    /// Construct a tuple from any iterable of terms of this brand
+    /// (`enif_make_tuple_from_array`).
+    pub fn from_terms<I, T>(env: impl Env<'id>, terms: I) -> Tuple<'id>
     where
         I: IntoIterator<Item = T>,
-        T: AsNifTerm<'a>,
+        T: Term<'id>,
     {
-        env.make_tuple(terms)
+        let raw: Vec<RawTerm> = terms.into_iter().map(|t| t.raw_term()).collect();
+        let raw_term = unsafe {
+            enif_ffi::make_tuple_from_array(env.raw_env(), raw.as_ptr(), raw.len() as c_uint)
+        };
+        Tuple { raw_term, _id: PhantomData }
+    }
+
+    /// Returns `true` if `term` is a tuple (`enif_is_tuple`).
+    pub fn is_tuple(env: impl Env<'id>, term: impl Term<'id>) -> bool {
+        unsafe { enif_ffi::is_tuple(env.raw_env(), term.raw_term()) != 0 }
+    }
+
+    /// The tuple's elements as a slice into the BEAM heap (`enif_get_tuple`).
+    /// `None` if this term is not a tuple. The slice rides this tuple's brand
+    /// `'id`, which cannot escape its env's scope, so the borrow is sound.
+    fn get(self, env: impl Env<'id>) -> Option<&'id [RawTerm]> {
+        let mut arity: c_int = 0;
+        let mut array: *const RawTerm = std::ptr::null();
+        if unsafe { enif_ffi::get_tuple(env.raw_env(), self.raw_term, &mut arity, &mut array) } == 0 {
+            return None;
+        }
+        // enif_get_tuple may leave `array` null for the empty tuple; never hand
+        // a null pointer to from_raw_parts.
+        Some(if arity == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(array, arity as usize) }
+        })
     }
 }
 
 impl PartialEq for Tuple<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.raw_term, other.raw_term) != 0 }
     }
 }
 
@@ -63,7 +89,7 @@ impl PartialOrd for Tuple<'_> {
 
 impl Ord for Tuple<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { enif_ffi::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.raw_term, other.raw_term) };
         c.cmp(&0)
     }
 }
@@ -74,66 +100,10 @@ impl std::fmt::Debug for Tuple<'_> {
     }
 }
 
-impl<'b> Encoder for Tuple<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        if self.env.as_ptr() == env.as_ptr() {
-            Term::new(env, self.term)
-        } else {
-            env.make_copy(*self)
-        }
-    }
-}
+impl<'id> Sealed for Tuple<'id> {}
 
-impl<'a> Env<'a> {
-    /// Returns `true` if `term` is a tuple (`enif_is_tuple`).
-    pub fn is_tuple(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { enif_ffi::is_tuple(self.as_ptr(), term.as_nif_term()) != 0 }
-    }
-
-    /// Decompose a tuple into its elements (`enif_get_tuple`).
-    ///
-    /// Returns `None` if `term` is not a tuple. The returned slice points into
-    /// the BEAM heap and is valid for the environment lifetime `'a`.
-    pub fn get_tuple(self, term: impl AsNifTerm<'a>) -> Option<&'a [enif_ffi::Term]> {
-        let mut arity: c_int = 0;
-        let mut array: *const enif_ffi::Term = std::ptr::null();
-        if unsafe {
-            enif_ffi::get_tuple(self.as_ptr(), term.as_nif_term(), &mut arity, &mut array) != 0
-        } {
-            // enif_get_tuple may leave `array` null for the empty tuple; never
-            // hand a null pointer to from_raw_parts.
-            let elems = if arity == 0 {
-                &[][..]
-            } else {
-                unsafe { std::slice::from_raw_parts(array, arity as usize) }
-            };
-            Some(elems)
-        } else {
-            None
-        }
-    }
-
-    /// Construct a tuple from any iterable of term-like values
-    /// (`enif_make_tuple_from_array`).
-    pub fn make_tuple<I, T>(self, terms: I) -> Tuple<'a>
-    where
-        I: IntoIterator<Item = T>,
-        T: AsNifTerm<'a>,
-    {
-        let raw: Vec<enif_ffi::Term> = terms.into_iter().map(|t| t.as_nif_term()).collect();
-        let term = unsafe {
-            enif_ffi::make_tuple_from_array(self.as_ptr(), raw.as_ptr(), raw.len() as c_uint)
-        };
-        Tuple { term, env: self }
-    }
-}
-
-impl<'a> Decoder<'a> for Tuple<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.is_tuple(term) {
-            Ok(Tuple { term: term.term, env: term.env })
-        } else {
-            Err(CodecError::WrongType)
-        }
+impl<'id> Term<'id> for Tuple<'id> {
+    fn raw_term(self) -> RawTerm {
+        self.raw_term
     }
 }
