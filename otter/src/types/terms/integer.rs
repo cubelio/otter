@@ -45,17 +45,6 @@ impl<'id> Integer<'id> {
         let mut val: u64 = 0;
         (unsafe { enif_ffi::get_uint64(env.raw_env(), self.raw_term, &mut val) } != 0).then_some(val)
     }
-
-    /// Read back an `i128`, covering the combined `i64`/`u64` range. The NIF API
-    /// has no 128-bit accessor, so values in `i64::MIN..=i64::MAX` take the
-    /// signed path and `i64::MAX+1..=u64::MAX` the unsigned path; anything
-    /// outside that range is `None`.
-    pub fn to_i128(self, env: impl Env<'id>) -> Option<i128> {
-        if let Some(val) = self.to_i64(env) {
-            return Some(val as i128);
-        }
-        self.to_u64(env).map(|val| val as i128)
-    }
 }
 
 impl<'id> Sealed for Integer<'id> {}
