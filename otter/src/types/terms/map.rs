@@ -1,103 +1,139 @@
-use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
-use crate::term::{Term, AsNifTerm};
+use core::marker::PhantomData;
+
+use crate::types::sealed::Sealed;
+use crate::types::{AnyEnv, AnyTerm, Env, Invariant, RawTerm, Term};
 
 /// An Erlang map. Immutable — all mutations return a new map.
 #[derive(Clone, Copy)]
-pub struct Map<'a> {
-    pub(crate) term: enif_ffi::Term,
-    pub(crate) env: Env<'a>,
+pub struct Map<'id> {
+    raw_term: RawTerm,
+    _id: Invariant<'id>,
 }
 
-impl<'a> Map<'a> {
-    /// Create an empty map.
-    pub fn new(env: Env<'a>) -> Map<'a> {
-        env.make_new_map()
+impl<'id> Map<'id> {
+    /// Create an empty map (`enif_make_new_map`).
+    pub fn new(env: impl Env<'id>) -> Map<'id> {
+        let raw_term = unsafe { enif_ffi::make_new_map(env.raw_env()) };
+        Map { raw_term, _id: PhantomData }
     }
 
-    /// Number of key-value pairs in the map.
-    pub fn size(self) -> usize {
-        self.env.get_map_size(self).unwrap_or(0)
+    /// Number of key-value pairs (`enif_get_map_size`).
+    pub fn size(self, env: impl Env<'id>) -> usize {
+        let mut size: usize = 0;
+        if unsafe { enif_ffi::get_map_size(env.raw_env(), self.raw_term, &mut size) } != 0 {
+            size
+        } else {
+            0
+        }
     }
 
-    /// Look up `key`. Returns `None` if the key is absent. The value is an
-    /// unresolved [`Term`]; call [`Term::resolve`] or a decoder to type it.
-    pub fn get(self, key: impl AsNifTerm<'a>) -> Option<Term<'a>> {
-        self.env.get_map_value(self, key)
+    /// Look up `key` (`enif_get_map_value`). `None` if absent.
+    pub fn get(self, env: impl Env<'id>, key: impl Term<'id>) -> Option<AnyTerm<'id>> {
+        let mut value: RawTerm = 0;
+        (unsafe {
+            enif_ffi::get_map_value(env.raw_env(), self.raw_term, key.raw_term(), &mut value)
+        } != 0)
+            .then(|| AnyTerm::wrap(value, env))
     }
 
-    /// Return a new map with `key` set to `value` (insert or replace).
-    pub fn put(self, key: impl AsNifTerm<'a>, value: impl AsNifTerm<'a>) -> Map<'a> {
-        self.env.make_map_put(self, key, value).unwrap()
+    /// Return a new map with `key` set to `value` (`enif_make_map_put`, insert
+    /// or replace).
+    pub fn put(self, env: impl Env<'id>, key: impl Term<'id>, value: impl Term<'id>) -> Map<'id> {
+        let mut out: RawTerm = 0;
+        let ok = unsafe {
+            enif_ffi::make_map_put(env.raw_env(), self.raw_term, key.raw_term(), value.raw_term(), &mut out)
+        };
+        assert!(ok != 0, "make_map_put on a valid map failed");
+        Map { raw_term: out, _id: PhantomData }
     }
 
-    /// Return a new map with `key` updated to `value`.
-    ///
-    /// Returns `None` if the key is not present (unlike `put`, which inserts).
-    pub fn update(self, key: impl AsNifTerm<'a>, value: impl AsNifTerm<'a>) -> Option<Map<'a>> {
-        self.env.make_map_update(self, key, value)
+    /// Return a new map with `key` updated to `value` (`enif_make_map_update`).
+    /// `None` if the key is absent.
+    pub fn update(
+        self,
+        env: impl Env<'id>,
+        key: impl Term<'id>,
+        value: impl Term<'id>,
+    ) -> Option<Map<'id>> {
+        let mut out: RawTerm = 0;
+        (unsafe {
+            enif_ffi::make_map_update(env.raw_env(), self.raw_term, key.raw_term(), value.raw_term(), &mut out)
+        } != 0)
+            .then_some(Map { raw_term: out, _id: PhantomData })
     }
 
-    /// Return a new map with `key` removed.
-    ///
-    /// Returns `None` if the key was not present.
-    pub fn remove(self, key: impl AsNifTerm<'a>) -> Option<Map<'a>> {
-        self.env.make_map_remove(self, key)
+    /// Return a new map with `key` removed (`enif_make_map_remove`).
+    /// `None` if the key was absent.
+    pub fn remove(self, env: impl Env<'id>, key: impl Term<'id>) -> Option<Map<'id>> {
+        let mut out: RawTerm = 0;
+        (unsafe {
+            enif_ffi::make_map_remove(env.raw_env(), self.raw_term, key.raw_term(), &mut out)
+        } != 0)
+            .then_some(Map { raw_term: out, _id: PhantomData })
     }
 
-    /// Return an iterator over `(key, value)` pairs in unspecified order.
-    pub fn iter(self) -> MapIterator<'a> {
+    /// Returns `true` if `term` is a map (`enif_is_map`).
+    pub fn is_map(env: impl Env<'id>, term: impl Term<'id>) -> bool {
+        unsafe { enif_ffi::is_map(env.raw_env(), term.raw_term()) != 0 }
+    }
+
+    /// Iterate `(key, value)` pairs in unspecified order.
+    pub fn iter(self, env: impl Env<'id>) -> MapIterator<'id> {
         let mut iter: Box<enif_ffi::MapIterator> = Box::new(unsafe { std::mem::zeroed() });
-        self.env.map_iterator_create(self, &mut iter, enif_ffi::MapIteratorEntry::First);
-        MapIterator { iter, env: self.env, exhausted: false }
+        unsafe {
+            enif_ffi::map_iterator_create(
+                env.raw_env(),
+                self.raw_term,
+                &mut *iter,
+                enif_ffi::MapIteratorEntry::First,
+            )
+        };
+        MapIterator { iter, env: env.as_any_env(), exhausted: false }
     }
 }
 
-// ---------------------------------------------------------------------------
-// MapIterator
-// ---------------------------------------------------------------------------
-
-/// Iterator over the key-value pairs of a `Map`.
+/// Iterator over the key-value pairs of a [`Map`].
 ///
-/// `enif_ffi::MapIterator` must not move after `map_iterator_create`. The `Box`
-/// pins it on the heap for the lifetime of the iterator.
-pub struct MapIterator<'a> {
+/// `enif_ffi::MapIterator` must not move after creation; the `Box` pins it for
+/// the iterator's lifetime.
+pub struct MapIterator<'id> {
     iter: Box<enif_ffi::MapIterator>,
-    env: Env<'a>,
+    env: AnyEnv<'id>,
     exhausted: bool,
 }
 
-impl<'a> Iterator for MapIterator<'a> {
-    type Item = (Term<'a>, Term<'a>);
+impl<'id> Iterator for MapIterator<'id> {
+    type Item = (AnyTerm<'id>, AnyTerm<'id>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.exhausted {
             return None;
         }
-        match self.env.map_iterator_get_pair(&mut self.iter) {
-            None => {
-                self.exhausted = true;
-                None
-            }
-            Some((k, v)) => {
-                // Advance for the next call. Return value is informational only
-                // — we rely on get_pair returning None to detect exhaustion.
-                self.env.map_iterator_next(&mut self.iter);
-                Some((k, v))
-            }
+        let mut key: RawTerm = 0;
+        let mut value: RawTerm = 0;
+        if unsafe {
+            enif_ffi::map_iterator_get_pair(self.env.raw_env(), &mut *self.iter, &mut key, &mut value)
+        } != 0
+        {
+            // Advance for the next call; exhaustion is detected by get_pair.
+            unsafe { enif_ffi::map_iterator_next(self.env.raw_env(), &mut *self.iter) };
+            Some((AnyTerm::wrap(key, self.env), AnyTerm::wrap(value, self.env)))
+        } else {
+            self.exhausted = true;
+            None
         }
     }
 }
 
-impl<'a> Drop for MapIterator<'a> {
+impl Drop for MapIterator<'_> {
     fn drop(&mut self) {
-        self.env.map_iterator_destroy(&mut self.iter);
+        unsafe { enif_ffi::map_iterator_destroy(self.env.raw_env(), &mut *self.iter) };
     }
 }
 
 impl PartialEq for Map<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.raw_term, other.raw_term) != 0 }
     }
 }
 
@@ -111,7 +147,7 @@ impl PartialOrd for Map<'_> {
 
 impl Ord for Map<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { enif_ffi::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.raw_term, other.raw_term) };
         c.cmp(&0)
     }
 }
@@ -122,169 +158,10 @@ impl std::fmt::Debug for Map<'_> {
     }
 }
 
-impl<'b> Encoder for Map<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        if self.env.as_ptr() == env.as_ptr() {
-            Term::new(env, self.term)
-        } else {
-            env.make_copy(*self)
-        }
-    }
-}
+impl<'id> Sealed for Map<'id> {}
 
-impl<'a> Env<'a> {
-    /// Returns `true` if `term` is a map (`enif_is_map`).
-    pub fn is_map(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { enif_ffi::is_map(self.as_ptr(), term.as_nif_term()) != 0 }
-    }
-
-    /// Create an empty map (`enif_make_new_map`).
-    pub fn make_new_map(self) -> Map<'a> {
-        let term = unsafe { enif_ffi::make_new_map(self.as_ptr()) };
-        Map { term, env: self }
-    }
-
-    /// Number of key-value pairs in a map (`enif_get_map_size`).
-    /// `None` if `map` is not a map.
-    pub fn get_map_size(self, map: impl AsNifTerm<'a>) -> Option<usize> {
-        let mut size: usize = 0;
-        if unsafe { enif_ffi::get_map_size(self.as_ptr(), map.as_nif_term(), &mut size) != 0 } {
-            Some(size)
-        } else {
-            None
-        }
-    }
-
-    /// Look up `key` in `map` (`enif_get_map_value`). `None` if absent.
-    pub fn get_map_value(
-        self,
-        map: impl AsNifTerm<'a>,
-        key: impl AsNifTerm<'a>,
-    ) -> Option<Term<'a>> {
-        let mut value: enif_ffi::Term = 0;
-        if unsafe {
-            enif_ffi::get_map_value(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut value)
-                != 0
-        } {
-            Some(Term::new(self, value))
-        } else {
-            None
-        }
-    }
-
-    /// Return a new map with `key` set to `value` (`enif_make_map_put`,
-    /// insert or replace). `None` if `map` is not a map.
-    pub fn make_map_put(
-        self,
-        map: impl AsNifTerm<'a>,
-        key: impl AsNifTerm<'a>,
-        value: impl AsNifTerm<'a>,
-    ) -> Option<Map<'a>> {
-        let mut out: enif_ffi::Term = 0;
-        if unsafe {
-            enif_ffi::make_map_put(
-                self.as_ptr(),
-                map.as_nif_term(),
-                key.as_nif_term(),
-                value.as_nif_term(),
-                &mut out,
-            ) != 0
-        } {
-            Some(Map { term: out, env: self })
-        } else {
-            None
-        }
-    }
-
-    /// Return a new map with `key` updated to `value` (`enif_make_map_update`).
-    /// `None` if the key is absent or `map` is not a map.
-    pub fn make_map_update(
-        self,
-        map: impl AsNifTerm<'a>,
-        key: impl AsNifTerm<'a>,
-        value: impl AsNifTerm<'a>,
-    ) -> Option<Map<'a>> {
-        let mut out: enif_ffi::Term = 0;
-        if unsafe {
-            enif_ffi::make_map_update(
-                self.as_ptr(),
-                map.as_nif_term(),
-                key.as_nif_term(),
-                value.as_nif_term(),
-                &mut out,
-            ) != 0
-        } {
-            Some(Map { term: out, env: self })
-        } else {
-            None
-        }
-    }
-
-    /// Return a new map with `key` removed (`enif_make_map_remove`).
-    /// `None` if the key was absent or `map` is not a map.
-    pub fn make_map_remove(
-        self,
-        map: impl AsNifTerm<'a>,
-        key: impl AsNifTerm<'a>,
-    ) -> Option<Map<'a>> {
-        let mut out: enif_ffi::Term = 0;
-        if unsafe {
-            enif_ffi::make_map_remove(self.as_ptr(), map.as_nif_term(), key.as_nif_term(), &mut out)
-                != 0
-        } {
-            Some(Map { term: out, env: self })
-        } else {
-            None
-        }
-    }
-
-    /// Initialise `iter` for iterating over `map` (`enif_map_iterator_create`).
-    /// Returns `false` if `map` is not a map. The caller must pair this with
-    /// `map_iterator_destroy`.
-    pub fn map_iterator_create(
-        self,
-        map: impl AsNifTerm<'a>,
-        iter: &mut enif_ffi::MapIterator,
-        entry: enif_ffi::MapIteratorEntry,
-    ) -> bool {
-        unsafe { enif_ffi::map_iterator_create(self.as_ptr(), map.as_nif_term(), iter, entry) != 0 }
-    }
-
-    /// Destroy a map iterator (`enif_map_iterator_destroy`).
-    pub fn map_iterator_destroy(self, iter: &mut enif_ffi::MapIterator) {
-        unsafe { enif_ffi::map_iterator_destroy(self.as_ptr(), iter) }
-    }
-
-    /// Advance a map iterator (`enif_map_iterator_next`). `false` when
-    /// exhausted.
-    pub fn map_iterator_next(self, iter: &mut enif_ffi::MapIterator) -> bool {
-        unsafe { enif_ffi::map_iterator_next(self.as_ptr(), iter) != 0 }
-    }
-
-    /// The current key/value pair of a map iterator
-    /// (`enif_map_iterator_get_pair`). `None` if exhausted.
-    pub fn map_iterator_get_pair(
-        self,
-        iter: &mut enif_ffi::MapIterator,
-    ) -> Option<(Term<'a>, Term<'a>)> {
-        let mut key: enif_ffi::Term = 0;
-        let mut value: enif_ffi::Term = 0;
-        if unsafe {
-            enif_ffi::map_iterator_get_pair(self.as_ptr(), iter, &mut key, &mut value) != 0
-        } {
-            Some((Term::new(self, key), Term::new(self, value)))
-        } else {
-            None
-        }
-    }
-}
-
-impl<'a> Decoder<'a> for Map<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.is_map(term) {
-            Ok(Map { term: term.term, env: term.env })
-        } else {
-            Err(CodecError::WrongType)
-        }
+impl<'id> Term<'id> for Map<'id> {
+    fn raw_term(self) -> RawTerm {
+        self.raw_term
     }
 }

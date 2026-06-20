@@ -1,131 +1,98 @@
 use std::ffi::{c_char, c_uint};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
-use crate::term::{Term, AsNifTerm};
+use crate::types::sealed::Sealed;
+use crate::types::{Env, FreeTerm, RawTerm, Term};
 
 /// An Erlang atom.
 ///
 /// Atoms are tagged immediates encoding an index into the BEAM's global atom
 /// table. The table never shrinks and lives for the life of the VM, so `Atom`
-/// has no lifetime and is `Copy`.
+/// has no brand, is `Copy`, and is valid in any env ([`FreeTerm`]).
 #[derive(Clone, Copy)]
 pub struct Atom {
-    pub(crate) term: enif_ffi::Term,
+    pub(crate) term: RawTerm,
 }
 
 impl Atom {
-    /// Intern an atom in the BEAM's global atom table.
+    /// Intern an atom in the BEAM's global atom table (`enif_make_new_atom_len`).
     ///
     /// Returns `None` if `name` is not valid UTF-8 or the atom table is full.
     ///
-    /// # Safety against atom-table exhaustion
+    /// # Atom-table exhaustion
     ///
-    /// The atom table is global, has a fixed maximum size (default
-    /// 1,048,576), and **never shrinks** — every interned name persists for
-    /// the life of the VM. A NIF that calls `intern` with attacker-influenced
-    /// input (a network protocol field, a binary parsed from a file, etc.)
-    /// turns each unique string into a permanent atom-table entry, which is
-    /// a well-known BEAM denial-of-service vector that crashes the entire
-    /// VM, not just the NIF.
-    ///
-    /// **Never call `intern` on untrusted input.** For input handling, use
-    /// [`Atom::try_existing`] and treat `None` as "atom not recognized,
-    /// reject input." Reserve `intern` for compile-time-known names — and
-    /// even there, prefer declaring them in the `atoms = [...]` list of
-    /// [`init!`](crate::init), which interns each name exactly once at NIF
-    /// load and retrieves it thereafter (via [`atom!`](crate::atom)) as a
-    /// single atomic load.
-    ///
-    /// Wraps `enif_make_atom_len`.
-    pub fn intern(env: Env<'_>, name: &str) -> Option<Atom> {
-        env.make_atom(name)
+    /// The atom table is global, fixed-size, and **never shrinks**. Interning
+    /// attacker-influenced input is a well-known BEAM denial-of-service vector
+    /// that crashes the whole VM. **Never call `intern` on untrusted input** —
+    /// use [`Atom::try_existing`] and treat `None` as "not recognized, reject."
+    /// Reserve `intern` for compile-time-known names, preferably declared in the
+    /// `atoms = [...]` list of [`init!`](crate::init).
+    pub fn intern<'id>(env: impl Env<'id>, name: &str) -> Option<Atom> {
+        let mut term: RawTerm = 0;
+        let ok = unsafe {
+            enif_ffi::make_new_atom_len(
+                env.raw_env(),
+                name.as_ptr() as *const c_char,
+                name.len(),
+                &mut term,
+                enif_ffi::CharEncoding::Utf8,
+            )
+        };
+        (ok != 0).then_some(Atom { term })
     }
 
-    /// Look up an existing atom by name without creating it.
-    ///
-    /// Returns `None` if no atom with this name exists in the atom table.
-    /// Use this instead of [`Atom::intern`] when looking up atoms from
-    /// untrusted input — `None` means "not a known name, reject."
-    /// Wraps `enif_make_existing_atom_len`.
-    pub fn try_existing(env: Env<'_>, name: &str) -> Option<Atom> {
-        env.make_existing_atom(name)
+    /// Look up an existing atom by name without creating it
+    /// (`enif_make_existing_atom_len`). `None` if no such atom exists. Use this
+    /// instead of [`intern`](Atom::intern) on untrusted input.
+    pub fn try_existing<'id>(env: impl Env<'id>, name: &str) -> Option<Atom> {
+        let mut term: RawTerm = 0;
+        let ok = unsafe {
+            enif_ffi::make_existing_atom_len(
+                env.raw_env(),
+                name.as_ptr() as *const c_char,
+                name.len(),
+                &mut term,
+                enif_ffi::CharEncoding::Utf8,
+            )
+        };
+        (ok != 0).then_some(Atom { term })
     }
 
-    pub(crate) fn from_raw(term: enif_ffi::Term) -> Atom {
+    pub(crate) fn from_raw(term: RawTerm) -> Atom {
         Atom { term }
     }
 
-    /// Return the atom's name as a `String`.
+    /// Returns `true` if `term` is an atom (`enif_is_atom`).
+    pub fn is_atom<'id>(env: impl Env<'id>, term: impl Term<'id>) -> bool {
+        unsafe { enif_ffi::is_atom(env.raw_env(), term.raw_term()) != 0 }
+    }
+
+    /// The atom's name as a `String` (`enif_get_atom_length` + `enif_get_atom`).
     ///
-    /// Infallible: we request `ERL_NIF_UTF8` from `enif_get_atom`, so the BEAM
+    /// Infallible for a validated `Atom`: we request `ERL_NIF_UTF8`, so the BEAM
     /// encodes the name as UTF-8 for us.
-    pub fn name(self, env: Env<'_>) -> String {
-        env.atom_name(self)
-            .expect("enif_get_atom failed for a validated Atom")
+    pub fn name<'id>(self, env: impl Env<'id>) -> String {
+        let mut len: c_uint = 0;
+        let ok = unsafe {
+            enif_ffi::get_atom_length(env.raw_env(), self.term, &mut len, enif_ffi::CharEncoding::Utf8)
+        };
+        assert!(ok != 0, "enif_get_atom_length failed for a validated Atom");
+        let mut buf = vec![0u8; len as usize + 1];
+        let written = unsafe {
+            enif_ffi::get_atom(
+                env.raw_env(),
+                self.term,
+                buf.as_mut_ptr() as *mut c_char,
+                buf.len() as c_uint,
+                enif_ffi::CharEncoding::Utf8,
+            )
+        };
+        assert!(written > 0, "enif_get_atom failed for a validated Atom");
+        buf.truncate((written - 1) as usize); // strip null terminator
+        // SAFETY: BEAM guarantees UTF-8 when requested with Utf8 encoding.
+        unsafe { String::from_utf8_unchecked(buf) }
     }
 }
-
-// ---------------------------------------------------------------------------
-// StaticAtom — pre-declared atom with eager initialization
-// ---------------------------------------------------------------------------
-
-/// A pre-declared atom that is initialized once at NIF load time and
-/// retrieved thereafter as a single atomic load.
-///
-/// Declare atoms in the `atoms = [...]` list of [`init!`](crate::init) and
-/// retrieve them with [`atom!`](crate::atom); the `init!`-generated scaffolding
-/// interns them in the load callback (and re-interns on hot upgrade):
-///
-/// ```ignore
-/// otter::init!("my_nif", [/* nifs */], atoms = [ok, error, not_found]);
-///
-/// // in a NIF:
-/// let ok = otter::atom![ok];
-/// ```
-///
-/// For manual control over declaration site or interning timing, construct
-/// `StaticAtom`s directly and call [`init`](Self::init) yourself.
-pub struct StaticAtom {
-    name: &'static str,
-    term: AtomicUsize,
-}
-
-impl StaticAtom {
-    /// Create a new uninitialized `StaticAtom`. Must call [`init`](Self::init)
-    /// before [`get`](Self::get).
-    pub const fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            term: AtomicUsize::new(0),
-        }
-    }
-
-    /// Initialize this atom by interning it in the BEAM atom table.
-    /// Must be called from the NIF load callback.
-    pub fn init(&self, env: Env<'_>) {
-        let atom = Atom::intern(env, self.name)
-            .expect("StaticAtom::init: failed to create atom");
-        self.term.store(atom.term, Ordering::Relaxed);
-    }
-
-    /// Retrieve the cached atom. Returns an `Atom` with no lookup cost —
-    /// just a single atomic load.
-    ///
-    /// # Panics
-    ///
-    /// Panics if called before [`init`](Self::init).
-    #[inline]
-    pub fn get(&self) -> Atom {
-        let term = self.term.load(Ordering::Relaxed);
-        assert!(term != 0, "StaticAtom::get called before init");
-        Atom { term }
-    }
-}
-
-// SAFETY: StaticAtom is just an atomic integer + a static string.
-unsafe impl Sync for StaticAtom {}
 
 impl PartialEq for Atom {
     fn eq(&self, other: &Self) -> bool {
@@ -154,94 +121,57 @@ impl std::fmt::Debug for Atom {
     }
 }
 
-impl Encoder for Atom {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        // Atoms are global tagged immediates — valid in any environment.
-        Term::new(env, self.term)
+impl Sealed for Atom {}
+
+impl<'id> Term<'id> for Atom {
+    fn raw_term(self) -> RawTerm {
+        self.term
     }
 }
 
-impl<'a> Env<'a> {
-    /// Returns `true` if `term` is an atom (`enif_is_atom`).
-    pub fn is_atom(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { enif_ffi::is_atom(self.as_ptr(), term.as_nif_term()) != 0 }
+impl FreeTerm for Atom {}
+
+// ---------------------------------------------------------------------------
+// StaticAtom — pre-declared atom with eager initialization
+// ---------------------------------------------------------------------------
+
+/// A pre-declared atom, interned once at NIF load and retrieved thereafter as a
+/// single atomic load.
+///
+/// Declare atoms in the `atoms = [...]` list of [`init!`](crate::init) and
+/// retrieve them with [`atom!`](crate::atom); the generated load scaffolding
+/// interns them (and re-interns on hot upgrade). For manual control, construct
+/// `StaticAtom`s directly and call [`init`](Self::init) yourself.
+pub struct StaticAtom {
+    name: &'static str,
+    term: AtomicUsize,
+}
+
+impl StaticAtom {
+    /// Create a new uninitialized `StaticAtom`. Must call [`init`](Self::init)
+    /// before [`get`](Self::get).
+    pub const fn new(name: &'static str) -> Self {
+        Self { name, term: AtomicUsize::new(0) }
     }
 
-    /// Create (or intern) an atom from a string (`enif_make_new_atom_len`).
+    /// Initialize this atom by interning it in the BEAM atom table. Must be
+    /// called from a NIF load/upgrade callback.
+    pub fn init<'id>(&self, env: impl Env<'id>) {
+        let atom = Atom::intern(env, self.name).expect("StaticAtom::init: failed to create atom");
+        self.term.store(atom.term, Ordering::Relaxed);
+    }
+
+    /// Retrieve the cached atom — a single atomic load, no lookup cost.
     ///
-    /// Returns `None` if the atom table is full. See [`Atom::intern`] for the
-    /// atom-table-exhaustion warning — never call this on untrusted input.
-    pub fn make_atom(self, name: &str) -> Option<Atom> {
-        let mut term: enif_ffi::Term = 0;
-        let ok = unsafe {
-            enif_ffi::make_new_atom_len(
-                self.as_ptr(),
-                name.as_ptr() as *const c_char,
-                name.len(),
-                &mut term,
-                enif_ffi::CharEncoding::Utf8,
-            )
-        };
-        if ok != 0 { Some(Atom { term }) } else { None }
-    }
-
-    /// Look up an existing atom by name without creating it
-    /// (`enif_make_existing_atom_len`). `None` if no such atom exists.
-    pub fn make_existing_atom(self, name: &str) -> Option<Atom> {
-        let mut term: enif_ffi::Term = 0;
-        let ok = unsafe {
-            enif_ffi::make_existing_atom_len(
-                self.as_ptr(),
-                name.as_ptr() as *const c_char,
-                name.len(),
-                &mut term,
-                enif_ffi::CharEncoding::Utf8,
-            )
-        };
-        if ok != 0 { Some(Atom { term }) } else { None }
-    }
-
-    /// The atom's UTF-8 name as a `String` (`enif_get_atom_length` +
-    /// `enif_get_atom`). `None` if `atom` is not an atom.
-    pub fn atom_name(self, atom: Atom) -> Option<String> {
-        let mut len: c_uint = 0;
-        let ok = unsafe {
-            enif_ffi::get_atom_length(
-                self.as_ptr(),
-                atom.term,
-                &mut len,
-                enif_ffi::CharEncoding::Utf8,
-            )
-        };
-        if ok == 0 {
-            return None;
-        }
-        let mut buf = vec![0u8; len as usize + 1];
-        let written = unsafe {
-            enif_ffi::get_atom(
-                self.as_ptr(),
-                atom.term,
-                buf.as_mut_ptr() as *mut c_char,
-                buf.len() as c_uint,
-                enif_ffi::CharEncoding::Utf8,
-            )
-        };
-        if written > 0 {
-            buf.truncate((written - 1) as usize); // strip null terminator
-            // SAFETY: BEAM guarantees UTF-8 when requested with Utf8 encoding.
-            Some(unsafe { String::from_utf8_unchecked(buf) })
-        } else {
-            None
-        }
+    /// # Panics
+    /// Panics if called before [`init`](Self::init).
+    #[inline]
+    pub fn get(&self) -> Atom {
+        let term = self.term.load(Ordering::Relaxed);
+        assert!(term != 0, "StaticAtom::get called before init");
+        Atom { term }
     }
 }
 
-impl<'a> Decoder<'a> for Atom {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.is_atom(term) {
-            Ok(Atom::from_raw(term.term))
-        } else {
-            Err(CodecError::WrongType)
-        }
-    }
-}
+// SAFETY: StaticAtom is just an atomic integer + a static string.
+unsafe impl Sync for StaticAtom {}
