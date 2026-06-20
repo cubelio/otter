@@ -174,6 +174,20 @@ Under the `raw` feature, the `load_raw`/`upgrade_raw`/`unload_raw` variants
 mirroring the enif contract. This is the tier-2 escape hatch for state you need
 to carry across a hot upgrade by hand; see `docs/UPGRADE.md`.
 
+**Panic strategy.** otter keeps a panic in a NIF or callback from crossing the
+C-ABI boundary and crashing the BEAM by catching it with `catch_unwind`, which
+only works while panics unwind. A crate built with `panic = "abort"` aborts the
+whole emulator at the panic site, silently removing this protection, so `init!`
+fails to compile under that profile. If you accept the trade-off (e.g. NIFs you
+have proven panic-free), pass the bare flag `allow_panic_abort` to `init!` to opt
+out of the check:
+
+```rust
+otter::init!("my_module", [add, subtract],
+    load = on_load,
+    allow_panic_abort);     // build with panic = "abort"; panics will abort the VM
+```
+
 The load callback receives `Env` (with `EnvKind::Load`) and the load info term. The second parameter can be any type that implements `Decoder` — `Term<'a>` is the zero-cost choice when you don't inspect the value, `TypedTerm<'a>` adds an `enif_term_type` call, and a concrete type (e.g. `Integer<'a>`) lets you reject mismatched `LoadInfo` at the type level. Return `true` for success, `false` to abort loading. Panics are caught and treated as failure.
 
 **Load failure return codes.** When the load callback returns non-zero, BEAM aborts the library load and `erlang:load_nif(Path, LoadInfo)` returns `{error, {load_failed, "Library load-call unsuccessful (N)."}}`. The integer `N` carries the cause:

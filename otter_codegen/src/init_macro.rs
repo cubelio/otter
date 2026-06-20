@@ -65,6 +65,9 @@ struct InitInput {
     load:        Callback,
     upgrade:     Callback,
     unload:      Callback,
+    /// `allow_panic_abort`: opt out of the `panic = "abort"` build guard (see
+    /// the guard in `expand`). A bare flag, not a `key = value` entry.
+    allow_panic_abort: bool,
 }
 
 impl Parse for InitInput {
@@ -86,15 +89,25 @@ impl Parse for InitInput {
         let mut load = Callback::None;
         let mut upgrade = Callback::None;
         let mut unload = Callback::None;
+        let mut allow_panic_abort = false;
 
         // Remaining arguments are order-independent keyword entries:
-        //   atoms = [..], resources = [..], load[_raw] = f, upgrade[_raw] = f, unload[_raw] = f
+        //   atoms = [..], resources = [..], load[_raw] = f, upgrade[_raw] = f,
+        //   unload[_raw] = f, allow_panic_abort (a bare flag)
         while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
             if input.is_empty() {
                 break; // tolerate a trailing comma
             }
             let key: Ident = input.parse()?;
+            // Bare flags carry no `= value`; handle them before consuming `=`.
+            if key == "allow_panic_abort" {
+                if allow_panic_abort {
+                    return Err(Error::new_spanned(&key, "duplicate `allow_panic_abort`"));
+                }
+                allow_panic_abort = true;
+                continue;
+            }
             input.parse::<Token![=]>()?;
             match key.to_string().as_str() {
                 "atoms" => {
@@ -132,14 +145,17 @@ impl Parse for InitInput {
                         &key,
                         format!(
                             "unknown init! key `{other}` — expected `atoms`, `resources`, \
-                             `load`, `upgrade`, `unload` (or their `_raw` variants)"
+                             `load`, `upgrade`, `unload` (or their `_raw` variants), \
+                             or the bare flag `allow_panic_abort`"
                         ),
                     ));
                 }
             }
         }
 
-        Ok(InitInput { module_name, nifs, atoms, resources, load, upgrade, unload })
+        Ok(InitInput {
+            module_name, nifs, atoms, resources, load, upgrade, unload, allow_panic_abort,
+        })
     }
 }
 
@@ -487,17 +503,26 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     // NIF crate's own compilation sees it. `init!` expands into that crate and
     // is invoked exactly once per NIF library, so `cfg(panic = ...)` here
     // resolves against the cdylib's actual strategy and fires exactly once.
-    let panic_guard = quote! {
-        #[cfg(panic = "abort")]
-        const _: () = ::std::compile_error!(
-            "otter requires `panic = \"unwind\"`, but this NIF crate is built with \
-             `panic = \"abort\"`. otter keeps a panic in a NIF, resource callback, or \
-             load/upgrade hook from crossing the C-ABI boundary and crashing the BEAM by \
-             catching it with std::panic::catch_unwind, which only works while panics \
-             unwind; `panic = \"abort\"` aborts the whole emulator at the panic site and \
-             silently removes this protection. Remove the `panic = \"abort\"` setting (the \
-             default is \"unwind\") from the [profile.*] section that builds this cdylib."
-        );
+    //
+    // The `allow_panic_abort` flag on `init!` opts out: an author who accepts
+    // that a panic aborts the VM (e.g. NIFs proven panic-free) suppresses the
+    // guard at the registration site, where the acknowledgment is visible.
+    let panic_guard = if input.allow_panic_abort {
+        quote! {}
+    } else {
+        quote! {
+            #[cfg(panic = "abort")]
+            const _: () = ::std::compile_error!(
+                "otter requires `panic = \"unwind\"`, but this NIF crate is built with \
+                 `panic = \"abort\"`. otter keeps a panic in a NIF, resource callback, or \
+                 load/upgrade hook from crossing the C-ABI boundary and crashing the BEAM by \
+                 catching it with std::panic::catch_unwind, which only works while panics \
+                 unwind; `panic = \"abort\"` aborts the whole emulator at the panic site and \
+                 silently removes this protection. Remove the `panic = \"abort\"` setting (the \
+                 default is \"unwind\") from the [profile.*] section that builds this cdylib, \
+                 or pass the `allow_panic_abort` flag to init! to opt out of this check."
+            );
+        }
     };
 
     // --- nif_init entry point ---
