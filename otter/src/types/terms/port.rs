@@ -1,33 +1,37 @@
-use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
-use crate::term::{Term, AsNifTerm};
+use crate::types::sealed::Sealed;
+use crate::types::{Env, FreeTerm, Invariant, RawTerm, Term};
 
 /// An Erlang port identifier whose locality is not yet established.
 ///
 /// Like [`Pid`](crate::types::Pid), an external (remote-node) port is a
-/// heap-boxed term, so `Port<'a>` is tied to the environment it was read from.
-/// It supports identity, encoding, and forwarding. To send a command or check
-/// liveness, refine it to a [`LocalPort`] with [`to_local`](Port::to_local).
+/// heap-boxed term, so `Port<'id>` is tied to the environment it was read from.
+/// To send a command or check liveness, refine it to a [`LocalPort`] with
+/// [`to_local`](Port::to_local).
 #[derive(Clone, Copy)]
-pub struct Port<'a> {
-    pub(crate) term: enif_ffi::Term,
-    pub(crate) env: Env<'a>,
+pub struct Port<'id> {
+    raw_term: RawTerm,
+    _id: Invariant<'id>,
 }
 
-impl<'a> Port<'a> {
-    /// Refine to a [`LocalPort`] if this port is node-local. `None` for an
-    /// external (remote-node) port. Wraps `enif_get_local_port`.
-    pub fn to_local(self) -> Option<LocalPort> {
-        self.env.get_local_port(self).map(|port| LocalPort { port })
+impl<'id> Port<'id> {
+    /// Refine to a [`LocalPort`] if this port is node-local
+    /// (`enif_get_local_port`). `None` for an external (remote-node) port.
+    pub fn to_local(self, env: impl Env<'id>) -> Option<LocalPort> {
+        let mut out = enif_ffi::Port { port_id: 0 };
+        (unsafe { enif_ffi::get_local_port(env.raw_env(), self.raw_term, &mut out) } != 0)
+            .then_some(LocalPort { port: out })
+    }
+
+    /// Returns `true` if `term` is a port (`enif_is_port`).
+    pub fn is_port(env: impl Env<'id>, term: impl Term<'id>) -> bool {
+        unsafe { enif_ffi::is_port(env.raw_env(), term.raw_term()) != 0 }
     }
 }
 
 /// A node-local Erlang port identifier.
 ///
-/// Validated via `enif_get_local_port` / `enif_whereis_port`, so it holds an
-/// internal port id with no heap pointer. `Copy`, no lifetime, safe to store.
-/// `enif_port_command` and `enif_is_port_alive` require a local port, so those
-/// APIs take `&LocalPort`.
+/// Holds an internal port id with no heap pointer. `Copy`, carries no brand
+/// ([`FreeTerm`] — valid in any env), safe to store anywhere.
 #[derive(Clone, Copy)]
 pub struct LocalPort {
     pub(crate) port: enif_ffi::Port,
@@ -35,20 +39,22 @@ pub struct LocalPort {
 
 impl LocalPort {
     /// Look up a port by its registered name (`enif_whereis_port`).
-    /// Returns `None` if no port is registered under `name`.
-    pub fn whereis(env: Env<'_>, name: crate::types::Atom) -> Option<LocalPort> {
-        env.whereis_port(name)
+    /// `None` if no port is registered under `name`.
+    pub fn whereis<'id>(env: impl Env<'id>, name: impl Term<'id>) -> Option<LocalPort> {
+        let mut out = enif_ffi::Port { port_id: 0 };
+        (unsafe { enif_ffi::whereis_port(env.raw_env(), name.raw_term(), &mut out) } != 0)
+            .then_some(LocalPort { port: out })
     }
 
     /// Check if the port is alive (`enif_is_port_alive`).
-    pub fn is_alive(self, env: Env<'_>) -> bool {
-        env.is_port_alive(self.port)
+    pub fn is_alive<'id>(self, env: impl Env<'id>) -> bool {
+        unsafe { enif_ffi::is_port_alive(env.raw_env(), &self.port) != 0 }
     }
 }
 
 impl PartialEq for Port<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.raw_term, other.raw_term) != 0 }
     }
 }
 impl Eq for Port<'_> {}
@@ -59,7 +65,7 @@ impl PartialOrd for Port<'_> {
 }
 impl Ord for Port<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        unsafe { enif_ffi::compare(self.term, other.term) }.cmp(&0)
+        unsafe { enif_ffi::compare(self.raw_term, other.raw_term) }.cmp(&0)
     }
 }
 impl std::fmt::Debug for Port<'_> {
@@ -90,89 +96,18 @@ impl std::fmt::Debug for LocalPort {
     }
 }
 
-impl Encoder for Port<'_> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        Term::new(env, self.term)
+impl<'id> Sealed for Port<'id> {}
+impl<'id> Term<'id> for Port<'id> {
+    fn raw_term(self) -> RawTerm {
+        self.raw_term
     }
 }
 
-impl Encoder for LocalPort {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        Term::new(env, self.port.port_id)
+// LocalPort holds an immediate id — valid in any env, hence a FreeTerm.
+impl Sealed for LocalPort {}
+impl<'id> Term<'id> for LocalPort {
+    fn raw_term(self) -> RawTerm {
+        self.port.port_id
     }
 }
-
-impl<'a> Env<'a> {
-    /// Returns `true` if `term` is a port (`enif_is_port`).
-    pub fn is_port(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { enif_ffi::is_port(self.as_ptr(), term.as_nif_term()) != 0 }
-    }
-
-    /// Decode a term into a local `enif_ffi::Port` (`enif_get_local_port`).
-    /// `None` if `term` is not a local port.
-    pub fn get_local_port(self, term: impl AsNifTerm<'a>) -> Option<enif_ffi::Port> {
-        let mut out = enif_ffi::Port { port_id: 0 };
-        if unsafe { enif_ffi::get_local_port(self.as_ptr(), term.as_nif_term(), &mut out) != 0 } {
-            Some(out)
-        } else {
-            None
-        }
-    }
-
-    /// Whether the port identified by `port` is alive (`enif_is_port_alive`).
-    pub fn is_port_alive(self, port: enif_ffi::Port) -> bool {
-        unsafe { enif_ffi::is_port_alive(self.as_ptr(), &port) != 0 }
-    }
-
-    /// Look up a port by its registered name (`enif_whereis_port`).
-    /// `None` if no port is registered under `name`.
-    pub fn whereis_port(self, name: impl AsNifTerm<'a>) -> Option<LocalPort> {
-        let mut out = enif_ffi::Port { port_id: 0 };
-        if unsafe { enif_ffi::whereis_port(self.as_ptr(), name.as_nif_term(), &mut out) != 0 } {
-            Some(LocalPort { port: out })
-        } else {
-            None
-        }
-    }
-
-    /// Send a command to local port `port` (`enif_port_command`).
-    ///
-    /// `msg` is a term in this (caller) env and is copied into the port. This
-    /// is the in-NIF form, mirroring [`LocalPid::send_from`](crate::types::LocalPid::send_from): `enif_port_command`
-    /// requires its `msg_env` to be process-independent or NULL, and the call
-    /// env is neither, so NULL (copy-from-caller) is the only correct choice.
-    /// There is no off-thread form: `enif_port_command` aborts the VM when its
-    /// caller env is NULL, and a non-scheduler thread has no process env to
-    /// supply.
-    ///
-    /// Returns `true` if the command was accepted.
-    pub fn port_command(self, port: &LocalPort, msg: impl AsNifTerm<'a>) -> bool {
-        unsafe {
-            enif_ffi::port_command(
-                self.as_ptr(),
-                &port.port,
-                std::ptr::null_mut(),
-                msg.as_nif_term(),
-            ) != 0
-        }
-    }
-}
-
-impl<'a> Decoder<'a> for Port<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.is_port(term) {
-            Ok(Port { term: term.term, env: term.env })
-        } else {
-            Err(CodecError::WrongType)
-        }
-    }
-}
-
-impl<'a> Decoder<'a> for LocalPort {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        term.env
-            .get_local_port(term)
-            .map(|port| LocalPort { port })
-            .ok_or(CodecError::WrongType)
-    }
-}
+impl FreeTerm for LocalPort {}

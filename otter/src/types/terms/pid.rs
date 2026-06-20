@@ -1,100 +1,75 @@
-use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::{Env, OwnedTerm};
-use crate::term::{Term, AsNifTerm};
+use crate::types::sealed::Sealed;
+use crate::types::{CallEnv, Env, FreeTerm, Invariant, RawTerm, Term};
 
 /// An Erlang process identifier whose locality is not yet established.
 ///
-/// `Pid<'a>` is tied to the environment it was read from: an external
-/// (remote-node) pid is a heap-boxed term whose validity ends with that env,
-/// so it must not outlive `'a`. `Pid<'a>` supports identity (`PartialEq` /
-/// `Ord`), encoding, and forwarding back to Erlang. To *act* on the process —
-/// send, monitor, check liveness — refine it to a [`LocalPid`] with
-/// [`to_local`](Pid::to_local); the NIF API can only act on local processes.
+/// `Pid<'id>` is tied to the environment it was read from: an external
+/// (remote-node) pid is a heap-boxed term whose validity ends with that env.
+/// To *act* on the process — send, monitor, check liveness — refine it to a
+/// [`LocalPid`] with [`to_local`](Pid::to_local); the NIF API can only act on
+/// local processes.
 #[derive(Clone, Copy)]
-pub struct Pid<'a> {
-    pub(crate) term: enif_ffi::Term,
-    pub(crate) env: Env<'a>,
+pub struct Pid<'id> {
+    raw_term: RawTerm,
+    _id: Invariant<'id>,
 }
 
-impl<'a> Pid<'a> {
-    /// Refine to a [`LocalPid`] if this pid is node-local. `None` for an
-    /// external (remote-node) pid. Wraps `enif_get_local_pid`.
-    pub fn to_local(self) -> Option<LocalPid> {
-        self.env.get_local_pid(self).map(|pid| LocalPid { pid })
+impl<'id> Pid<'id> {
+    /// Refine to a [`LocalPid`] if this pid is node-local (`enif_get_local_pid`).
+    /// `None` for an external (remote-node) pid.
+    pub fn to_local(self, env: impl Env<'id>) -> Option<LocalPid> {
+        let mut out = enif_ffi::Pid { pid: 0 };
+        (unsafe { enif_ffi::get_local_pid(env.raw_env(), self.raw_term, &mut out) } != 0)
+            .then_some(LocalPid { pid: out })
+    }
+
+    /// Returns `true` if `term` is a pid (`enif_is_pid`).
+    pub fn is_pid(env: impl Env<'id>, term: impl Term<'id>) -> bool {
+        unsafe { enif_ffi::is_pid(env.raw_env(), term.raw_term()) != 0 }
     }
 }
 
 /// A node-local Erlang process identifier.
 ///
-/// Obtained via `enif_self` / `enif_whereis_pid` / `enif_get_local_pid`
-/// (see [`Pid::to_local`]), so it holds an *internal* pid: a tagged immediate
-/// with no heap pointer. It is `Copy`, carries no lifetime, and is safe to
-/// store anywhere. Every NIF operation that acts on a process — `enif_send`,
-/// `enif_monitor_process`, `enif_is_process_alive`, `enif_select` — requires a
-/// local pid, so those APIs take `&LocalPid`.
+/// Holds an *internal* pid: a tagged immediate with no heap pointer. It is
+/// `Copy`, carries no brand ([`FreeTerm`] — valid in any env), and is safe to
+/// store anywhere. Every NIF operation that acts on a process requires a local
+/// pid.
 #[derive(Clone, Copy)]
 pub struct LocalPid {
     pub(crate) pid: enif_ffi::Pid,
 }
 
 impl LocalPid {
-    /// The pid of the calling process (`enif_self`) — always local.
-    pub fn self_(env: Env<'_>) -> LocalPid {
-        env.self_pid()
+    /// The pid of the calling process (`enif_self`) — always local. Available
+    /// only on a [`CallEnv`]; no other env kind has a calling process.
+    pub fn self_(env: CallEnv<'_>) -> LocalPid {
+        let mut out = enif_ffi::Pid { pid: 0 };
+        // enif_self returns NULL outside a process-bound env; a Pid{0} there
+        // would be an invalid term word. CallEnv rules that out by type, so the
+        // assert only guards against an internal contract slip.
+        let ok = unsafe { !enif_ffi::self_(env.raw_env(), &mut out).is_null() };
+        assert!(ok, "enif_self returned NULL on a CallEnv");
+        LocalPid { pid: out }
     }
 
     /// Look up a process by its registered name (`enif_whereis_pid`).
-    /// Returns `None` if no process is registered under `name`.
-    pub fn whereis(env: Env<'_>, name: crate::types::Atom) -> Option<LocalPid> {
-        env.whereis_pid(name)
+    /// `None` if no process is registered under `name`.
+    pub fn whereis<'id>(env: impl Env<'id>, name: impl Term<'id>) -> Option<LocalPid> {
+        let mut out = enif_ffi::Pid { pid: 0 };
+        (unsafe { enif_ffi::whereis_pid(env.raw_env(), name.raw_term(), &mut out) } != 0)
+            .then_some(LocalPid { pid: out })
     }
 
     /// Check if the process is alive (`enif_is_process_alive`).
-    pub fn is_alive(self, env: Env<'_>) -> bool {
-        env.is_process_alive(self.pid)
-    }
-
-    /// Copy `msg` into this process's mailbox from **outside** a NIF call —
-    /// e.g. a spawned OS thread (`enif_send` with a NULL caller env and NULL
-    /// `msg_env`). Returns `true` if the process was alive.
-    pub fn send<'a>(self, msg: impl AsNifTerm<'a>) -> bool {
-        unsafe {
-            enif_ffi::send(std::ptr::null_mut(), &self.pid, std::ptr::null_mut(), msg.as_nif_term()) != 0
-        }
-    }
-
-    /// Copy `msg` into this process's mailbox from **inside** a NIF, attributing
-    /// the message to `env`'s process (`enif_send`, NULL `msg_env`). Returns
-    /// `true` if the process was alive.
-    pub fn send_from<'a>(self, env: Env<'a>, msg: impl AsNifTerm<'a>) -> bool {
-        unsafe {
-            enif_ffi::send(env.as_ptr(), &self.pid, std::ptr::null_mut(), msg.as_nif_term()) != 0
-        }
-    }
-
-    /// Steal `owned`'s environment heap into this process's mailbox from
-    /// **outside** a NIF call (`enif_send` with a NULL caller env and a non-NULL
-    /// `msg_env`). The environment is freed afterwards. Returns `true` if the
-    /// process was alive.
-    pub fn send_owned(self, owned: OwnedTerm) -> bool {
-        unsafe { enif_ffi::send(std::ptr::null_mut(), &self.pid, owned.env, owned.msg) != 0 }
-        // owned drops -> free_env: empty after a successful steal, term-holding after a failure.
-    }
-
-    /// Steal `owned`'s environment heap into this process's mailbox from
-    /// **inside** a NIF, passing `env` as the caller. A process-bound call env
-    /// attributes the message to its process (sender pid, seq-trace, reduction
-    /// accounting); any other env (process-independent, callback, load/...) the
-    /// BEAM treats as no caller, since its proc is `INVALID_PID`. The
-    /// environment is freed afterwards. Returns `true` if the process was alive.
-    pub fn send_owned_from(self, env: Env<'_>, owned: OwnedTerm) -> bool {
-        unsafe { enif_ffi::send(env.as_ptr(), &self.pid, owned.env, owned.msg) != 0 }
+    pub fn is_alive<'id>(self, env: impl Env<'id>) -> bool {
+        unsafe { enif_ffi::is_process_alive(env.raw_env(), &self.pid) != 0 }
     }
 }
 
 impl PartialEq for Pid<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.raw_term, other.raw_term) != 0 }
     }
 }
 impl Eq for Pid<'_> {}
@@ -105,7 +80,7 @@ impl PartialOrd for Pid<'_> {
 }
 impl Ord for Pid<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        unsafe { enif_ffi::compare(self.term, other.term) }.cmp(&0)
+        unsafe { enif_ffi::compare(self.raw_term, other.raw_term) }.cmp(&0)
     }
 }
 impl std::fmt::Debug for Pid<'_> {
@@ -136,88 +111,18 @@ impl std::fmt::Debug for LocalPid {
     }
 }
 
-impl Encoder for Pid<'_> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        Term::new(env, self.term)
+impl<'id> Sealed for Pid<'id> {}
+impl<'id> Term<'id> for Pid<'id> {
+    fn raw_term(self) -> RawTerm {
+        self.raw_term
     }
 }
 
-impl Encoder for LocalPid {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        // The internal pid term is a tagged immediate — valid in any env.
-        Term::new(env, self.pid.pid)
+// LocalPid holds an immediate id — valid in any env, hence a FreeTerm.
+impl Sealed for LocalPid {}
+impl<'id> Term<'id> for LocalPid {
+    fn raw_term(self) -> RawTerm {
+        self.pid.pid
     }
 }
-
-impl<'a> Env<'a> {
-    /// Returns `true` if `term` is a pid (`enif_is_pid`).
-    pub fn is_pid(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { enif_ffi::is_pid(self.as_ptr(), term.as_nif_term()) != 0 }
-    }
-
-    /// The pid of the calling process (`enif_self`).
-    ///
-    /// Panics if called on an env that is not process-bound (a resource
-    /// callback, a process-independent env, the load env) — `enif_self` returns
-    /// NULL there and there is no calling process, so there is no self pid to
-    /// return.
-    pub fn self_pid(self) -> LocalPid {
-        let mut out = enif_ffi::Pid { pid: 0 };
-        // enif_self returns NULL outside a process-bound env; producing a
-        // Pid{0} there would be an invalid term word (UB on later use).
-        let ok = unsafe { !enif_ffi::self_(self.as_ptr(), &mut out).is_null() };
-        assert!(ok, "self_pid requires the calling process's env (a process-bound NIF env)");
-        LocalPid { pid: out }
-    }
-
-    /// Decode a term into a local `enif_ffi::Pid` (`enif_get_local_pid`).
-    /// `None` if `term` is not a local pid.
-    pub fn get_local_pid(self, term: impl AsNifTerm<'a>) -> Option<enif_ffi::Pid> {
-        let mut out = enif_ffi::Pid { pid: 0 };
-        if unsafe { enif_ffi::get_local_pid(self.as_ptr(), term.as_nif_term(), &mut out) != 0 } {
-            Some(out)
-        } else {
-            None
-        }
-    }
-
-    /// Whether the process identified by `pid` is alive
-    /// (`enif_is_process_alive`).
-    pub fn is_process_alive(self, pid: enif_ffi::Pid) -> bool {
-        unsafe { enif_ffi::is_process_alive(self.as_ptr(), &pid) != 0 }
-    }
-
-    /// Look up a process by its registered name (`enif_whereis_pid`).
-    /// `None` if no process is registered under `name`.
-    pub fn whereis_pid(self, name: impl AsNifTerm<'a>) -> Option<LocalPid> {
-        let mut out = enif_ffi::Pid { pid: 0 };
-        if unsafe { enif_ffi::whereis_pid(self.as_ptr(), name.as_nif_term(), &mut out) != 0 } {
-            Some(LocalPid { pid: out })
-        } else {
-            None
-        }
-    }
-
-}
-
-impl<'a> Decoder<'a> for Pid<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.is_pid(term) {
-            Ok(Pid { term: term.term, env: term.env })
-        } else {
-            Err(CodecError::WrongType)
-        }
-    }
-}
-
-impl<'a> Decoder<'a> for LocalPid {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        // An external (remote-node) pid passes enif_is_pid but is not local;
-        // get_local_pid rejects it. Treated as a wrong-type for LocalPid.
-        term.env
-            .get_local_pid(term)
-            .map(|pid| LocalPid { pid })
-            .ok_or(CodecError::WrongType)
-    }
-}
-
+impl FreeTerm for LocalPid {}
