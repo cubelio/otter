@@ -79,11 +79,11 @@ fn arg_ident(arg: &FnArg) -> Result<syn::Ident> {
 fn panic_handler() -> TokenStream {
     quote! {
         match ::otter::__codegen::Atom::intern(__otter_env, "nif_panicked") {
-            Some(__atom) => ::otter::__codegen::raise_word(
+            ::core::result::Result::Ok(__atom) => ::otter::__codegen::raise_word(
                 __otter_env,
                 ::otter::__codegen::encode_result(&__atom, __otter_env),
             ),
-            None => ::otter::__codegen::badarg_word(__otter_env),
+            ::core::result::Result::Err(_) => ::otter::__codegen::badarg_word(__otter_env),
         }
     }
 }

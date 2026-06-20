@@ -99,14 +99,15 @@ pub fn badarg_word(env: CallEnv<'_>) -> enif_ffi::Term {
 /// converted to a term surfaces as `error:badret`, the encode-side mirror of the
 /// `error:badarg` a rejected argument raises. The pending exception is set via
 /// `enif_raise_exception`; the returned `THE_NON_VALUE` is the ignored sentinel.
-/// Falls back to `badarg` only if the atom table is too full to intern `badret`.
+/// The `Err` arm is a defensive fallback that cannot be reached — `"badret"` is
+/// 6 characters, so it never trips `AtomError::NameTooLong`.
 pub fn badret_word(env: CallEnv<'_>) -> enif_ffi::Term {
     match Atom::intern(env, "badret") {
-        Some(atom) => {
+        Ok(atom) => {
             let _ = env.raise::<()>(atom);
             THE_NON_VALUE
         }
-        None => badarg_word(env),
+        Err(_) => badarg_word(env),
     }
 }
 

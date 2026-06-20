@@ -241,7 +241,7 @@ This is a well-known BEAM DoS vector. The rule:
 
 - **Never call `Atom::intern` on untrusted strings.** For input handling, use `Atom::try_existing` and treat `None` as "atom not recognized, reject input."
 - **For compile-time-known names, declare them in `init!`'s `atoms = [...]`** rather than calling `Atom::intern`. Same atom, but with no chance of leaking growth from a mistaken hot-path call.
-- `Atom::intern` returns `None` if the atom table is full or `name` is not valid UTF-8. The full case is a soft signal that something has been mishandled upstream — by the time you observe it, the VM is close to crashing.
+- `Atom::intern` returns `Result<Atom, AtomError>`, and `AtomError::NameTooLong` (name over 255 characters) is its **only** failure: a Rust `&str` is always valid UTF-8 so encoding never fails, and atom-table exhaustion does not return an error at all — it aborts the whole VM (`erts_exit`) before `intern` can return. In other words, the table-full case is never something you get to observe and recover from; the only defense is not interning untrusted input in the first place.
 
 ### Integer
 

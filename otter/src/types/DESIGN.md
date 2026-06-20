@@ -93,16 +93,21 @@ struct Atom { term: NifTerm }  // no lifetime — atoms are global
 
 | Method | Does | Calls |
 |---|---|---|
-| `intern(env, name) → Option<Atom>` | Create/intern atom from UTF-8 `&str` | `enif_make_new_atom_len` |
+| `intern(env, name) → Result<Atom, AtomError>` | Create/intern atom from UTF-8 `&str` | `enif_make_new_atom_len` |
 | `try_existing(env, name) → Option<Atom>` | Look up without creating | `enif_make_existing_atom_len` |
 | `name(self, env) → String` | Read atom's name | `enif_get_atom_length` + `enif_get_atom` |
 
 ### Internals
 
-`intern` calls `enif_make_new_atom_len` (NIF 2.17) which returns a success/fail
-int rather than creating atoms unconditionally. Returns `None` if the atom
-table is full. `name` does two calls: first to get the byte length, then to
-read into a buffer.
+`intern` calls `enif_make_new_atom_len` (NIF 2.17), which returns a success/fail
+int rather than creating atoms unconditionally. For a Rust `&str` the only
+reachable failure is an over-length name (> 255 chars), reported as
+`Err(AtomError::NameTooLong)` — a plain Rust error, never a pending exception.
+Bad encoding cannot occur (a `&str` is always valid UTF-8), and atom-table
+exhaustion is not surfaced here: it aborts the VM (`erts_exit` in `index_put`)
+before `intern` could return. `try_existing` stays `Option` because `None` =
+"not interned yet" is an expected, non-error outcome. `name` does two calls:
+first to get the byte length, then to read into a buffer.
 
 ### Not Exposed
 
