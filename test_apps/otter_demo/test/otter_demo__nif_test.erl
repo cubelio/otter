@@ -306,6 +306,15 @@ smoke_test_() ->
     ?_assertEqual(1 bsl 200, otter_demo__nif:bigint_pow2(200)),
     ?_assertEqual(1 bsl 64, otter_demo__nif:bigint_pow2(64)),
 
+    %% Atom::intern named error — {ok, Atom} for an in-range name, and the
+    %% recoverable {error, name_too_long} (AtomError::NameTooLong) past 255 chars.
+    ?_assertEqual({ok, my_intern_atom}, otter_demo__nif:intern_atom(<<"my_intern_atom">>)),
+    ?_assertEqual({ok, ''}, otter_demo__nif:intern_atom(<<>>)),
+    %% Exactly 255 characters is the limit — still interns.
+    ?_assertMatch({ok, _}, otter_demo__nif:intern_atom(binary:copy(<<"a">>, 255))),
+    %% 256 characters is over the limit — rejected with the named error.
+    ?_assertEqual({error, name_too_long}, otter_demo__nif:intern_atom(binary:copy(<<"a">>, 256))),
+
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.
     %% The destructor wrapper in otter catches the panic via catch_unwind;

@@ -1,5 +1,5 @@
 use std::ffi::{c_char, c_uint};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::OnceLock;
 
 use crate::types::sealed::Sealed;
 use crate::types::{Env, FreeTerm, RawTerm, Term};
@@ -17,17 +17,23 @@ pub struct Atom {
 impl Atom {
     /// Intern an atom in the BEAM's global atom table (`enif_make_new_atom_len`).
     ///
-    /// Returns `None` if `name` is not valid UTF-8 or the atom table is full.
+    /// Fails only with [`AtomError::NameTooLong`] when `name` exceeds 255
+    /// characters (`MAX_ATOM_CHARACTERS`) — the single reachable failure for a
+    /// Rust `&str`. The encoding can never be rejected (a `&str` is always valid
+    /// UTF-8), and atom-table exhaustion is *not* reported here: it aborts the VM
+    /// (`erts_exit`) before this could return. The error is a plain Rust
+    /// condition, never a pending BEAM exception — the env stays clean.
     ///
     /// # Atom-table exhaustion
     ///
-    /// The atom table is global, fixed-size, and **never shrinks**. Interning
-    /// attacker-influenced input is a well-known BEAM denial-of-service vector
-    /// that crashes the whole VM. **Never call `intern` on untrusted input** —
-    /// use [`Atom::try_existing`] and treat `None` as "not recognized, reject."
-    /// Reserve `intern` for compile-time-known names, preferably declared in the
-    /// `atoms = [...]` list of [`init!`](crate::init).
-    pub fn intern<'id>(env: impl Env<'id>, name: &str) -> Option<Atom> {
+    /// The atom table is global, fixed-size, and **never shrinks**; exhausting
+    /// it terminates the whole VM. Interning attacker-influenced input is thus a
+    /// well-known BEAM denial-of-service vector. **Never call `intern` on
+    /// untrusted input** — use [`Atom::try_existing`] and treat `None` as "not
+    /// recognized, reject." Reserve `intern` for trusted or compile-time-known
+    /// names, preferably declared in the `atoms = [...]` list of
+    /// [`init!`](crate::init).
+    pub fn intern<'id>(env: impl Env<'id>, name: &str) -> Result<Atom, AtomError> {
         let mut term: RawTerm = 0;
         let ok = unsafe {
             enif_ffi::make_new_atom_len(
@@ -38,7 +44,10 @@ impl Atom {
                 enif_ffi::CharEncoding::Utf8,
             )
         };
-        (ok != 0).then_some(Atom { term })
+        // The only way `false` can come back for a valid-UTF-8 `&str`: the name
+        // is longer than MAX_ATOM_CHARACTERS. (Bad encoding is impossible; table
+        // exhaustion aborts the VM rather than returning.)
+        if ok != 0 { Ok(Atom { term }) } else { Err(AtomError::NameTooLong) }
     }
 
     /// Look up an existing atom by name without creating it
@@ -132,6 +141,34 @@ impl<'id> Term<'id> for Atom {
 impl FreeTerm for Atom {}
 
 // ---------------------------------------------------------------------------
+// AtomError
+// ---------------------------------------------------------------------------
+
+/// Why [`Atom::intern`] could not create an atom.
+///
+/// A plain Rust error, never a pending BEAM exception (unlike `Raised`): the
+/// env is untouched, so the caller is free to recover. The enum has a single
+/// variant because, for a Rust `&str`, exactly one failure is reachable —
+/// over-length. Invalid encoding cannot occur (a `&str` is always valid UTF-8),
+/// and atom-table exhaustion aborts the VM instead of returning. A future
+/// bytes-based intern would add a `BadEncoding` variant; `&str` never needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AtomError {
+    /// The name exceeded `MAX_ATOM_CHARACTERS` (255 characters).
+    NameTooLong,
+}
+
+impl std::fmt::Display for AtomError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AtomError::NameTooLong => write!(f, "atom name exceeds 255 characters"),
+        }
+    }
+}
+
+impl std::error::Error for AtomError {}
+
+// ---------------------------------------------------------------------------
 // StaticAtom — pre-declared atom with eager initialization
 // ---------------------------------------------------------------------------
 
@@ -144,38 +181,40 @@ impl FreeTerm for Atom {}
 /// `StaticAtom`s directly and call [`init`](Self::init) yourself.
 pub struct StaticAtom {
     name: &'static str,
-    term: AtomicUsize,
+    atom: OnceLock<Atom>,
 }
 
 impl StaticAtom {
     /// Create a new uninitialized `StaticAtom`. Must call [`init`](Self::init)
     /// before [`get`](Self::get).
     pub const fn new(name: &'static str) -> Self {
-        Self { name, term: AtomicUsize::new(0) }
+        Self { name, atom: OnceLock::new() }
     }
 
     /// Initialize this atom by interning it in the BEAM atom table. Must be
     /// called from a NIF load/upgrade callback.
-    pub fn init<'id>(&self, env: impl Env<'id>) {
-        let atom = Atom::intern(env, self.name).expect("StaticAtom::init: failed to create atom");
-        // Relaxed is sufficient: `init` runs in the load/upgrade callback, which
-        // completes before the BEAM publishes the library and dispatches any NIF
-        // call. That load barrier supplies the happens-before to every later
-        // `get`, so no acquire/release pairing is needed on the atomic itself.
-        self.term.store(atom.term, Ordering::Relaxed);
+    ///
+    /// Returns [`AtomError::NameTooLong`] if the name exceeds 255 characters.
+    /// Atoms declared in the `atoms = [...]` list of [`init!`](crate::init) are
+    /// length-checked at compile time, so this never fails for them — the error
+    /// is reachable only through a hand-constructed `StaticAtom`. Calling `init`
+    /// more than once is harmless: the name maps to the same VM-global atom, so
+    /// the second `set` is a no-op.
+    pub fn init<'id>(&self, env: impl Env<'id>) -> Result<(), AtomError> {
+        let atom = Atom::intern(env, self.name)?;
+        let _ = self.atom.set(atom);
+        Ok(())
     }
 
-    /// Retrieve the cached atom — a single atomic load, no lookup cost.
+    /// Retrieve the cached atom — an acquire load plus a field read, no lookup.
+    ///
+    /// Stores the [`Atom`] itself, so it assumes nothing about the underlying
+    /// term representation.
     ///
     /// # Panics
     /// Panics if called before [`init`](Self::init).
     #[inline]
     pub fn get(&self) -> Atom {
-        let term = self.term.load(Ordering::Relaxed);
-        assert!(term != 0, "StaticAtom::get called before init");
-        Atom { term }
+        *self.atom.get().expect("StaticAtom::get called before init")
     }
 }
-
-// SAFETY: StaticAtom is just an atomic integer + a static string.
-unsafe impl Sync for StaticAtom {}

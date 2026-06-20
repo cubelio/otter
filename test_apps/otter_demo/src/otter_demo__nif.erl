@@ -35,6 +35,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([codec_int_list/1, sum_i64/1, codec_str_list/1]).
 -export([codec_map/1, map_sum_values/1]).
 -export([codec_bigint/1, bigint_add/2, bigint_pow2/1]).
+-export([intern_atom/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -377,3 +378,13 @@ bigint_add(_A, _B) -> exit(nif_not_loaded).
 
 -spec bigint_pow2(non_neg_integer()) -> integer().
 bigint_pow2(_N) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Atom interning with a named, recoverable error
+%%
+%% Interns `Name` and returns `{ok, Atom}`, or `{error, name_too_long}` when the
+%% name exceeds 255 characters (AtomError::NameTooLong). The error is a plain
+%% Rust value mapped to an error atom, not a raised exception.
+
+-spec intern_atom(binary() | string()) -> {ok, atom()} | {error, name_too_long}.
+intern_atom(_Name) -> exit(nif_not_loaded).

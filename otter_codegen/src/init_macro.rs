@@ -45,6 +45,15 @@ impl Parse for AtomEntry {
         } else {
             LitStr::new(&ident.to_string(), ident.span())
         };
+        // The BEAM atom-table limit is 255 characters (MAX_ATOM_CHARACTERS),
+        // counted in codepoints — matching `chars()` here. Catching it at
+        // expansion makes `StaticAtom::init` infallible for declared atoms.
+        if name.value().chars().count() > 255 {
+            return Err(Error::new_spanned(
+                &name,
+                "atom name exceeds 255 characters (MAX_ATOM_CHARACTERS)",
+            ));
+        }
         Ok(AtomEntry { ident, name })
     }
 }
@@ -339,7 +348,14 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
         });
         let inits = input.atoms.iter().map(|a| {
             let ident = &a.ident;
-            quote! { #ident.init(__otter_env); }
+            // `init` is infallible here: the name was length-checked at
+            // expansion (see AtomEntry::parse), so `NameTooLong` is unreachable.
+            quote! {
+                #ident.init(__otter_env).expect(concat!(
+                    "atom `", stringify!(#ident),
+                    "` failed to intern (unreachable: validated at compile time)"
+                ));
+            }
         });
         quote! {
             #[doc(hidden)]

@@ -8,8 +8,8 @@ use otter::enif_ffi::SelectFlags;
 use otter::num_bigint::BigInt;
 use otter::resource::{Resource, ResourceArc};
 use otter::types::{
-    AnyTerm, Atom, Binary, BinaryBuf, CallEnv, CallbackEnv, Env, Float, InitEnv, Integer, List,
-    LocalPid, LocalPort, Map, OwnedEnvArena, Raised, Reference, Tuple, TypedTerm,
+    AnyTerm, Atom, AtomError, Binary, BinaryBuf, CallEnv, CallbackEnv, Env, Float, InitEnv, Integer,
+    List, LocalPid, LocalPort, Map, OwnedEnvArena, Raised, Reference, Tuple, TypedTerm,
 };
 
 fn atomize_bool(value: bool) -> Atom {
@@ -771,6 +771,19 @@ fn bigint_pow2(_env: CallEnv, n: u32) -> BigInt {
     BigInt::from(1u8) << (n as usize)
 }
 
+// --- Atom::intern — named recoverable error -----------------------------
+// Interns `name` and returns {ok, Atom}, or {error, name_too_long} when the
+// name exceeds 255 characters (AtomError::NameTooLong). The error is a plain
+// Rust value, not a raised exception — the NIF maps it to an error atom itself.
+
+#[otter::nif]
+fn intern_atom(env: CallEnv, name: String) -> (Atom, Atom) {
+    match Atom::intern(env, &name) {
+        Ok(a) => (otter::atom![ok], a),
+        Err(AtomError::NameTooLong) => (otter::atom![error], otter::atom![name_too_long]),
+    }
+}
+
 fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
     // Atoms and resources are interned/registered by the `init!` scaffolding
     // before this runs; nothing to do here.
@@ -835,6 +848,7 @@ otter::init!("otter_demo__nif", [
     codec_bigint,
     bigint_add,
     bigint_pow2,
+    intern_atom,
     panicking_resource_new,
     select_resource_new,
     select_register,
@@ -856,6 +870,7 @@ atoms = [
     atom, integer, float, binary, bitstring, list,
     tuple, map, pid, port, fun, reference,
     division_by_zero, dirty_cpu, from_thread,
+    name_too_long,
 ],
 resources = [HashMapResource: "v1", PanickingResource, FdResource, MonitorResource],
 load = on_load);

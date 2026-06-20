@@ -10,7 +10,7 @@ pub mod port;
 pub mod reference;
 pub mod tuple;
 
-pub use atom::Atom;
+pub use atom::{Atom, AtomError};
 pub use binary::{Binary, Bitstring};
 pub use float::Float;
 pub use fun::Fun;
