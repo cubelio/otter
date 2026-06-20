@@ -465,6 +465,6 @@ mod owned_env_tests {
     // to re-verify.
     //
     // fn escape(b: &mut OwnedEnvArena) {
-    //     let _leaked = b.run(|ctx, env| ctx.import(OwnedEnvTerm { version: b.version, term: 0 }));
+    //     let _leaked = b.run(|env| env.import(OwnedEnvTerm { version: b.version, term: 0 }));
     // }
 }
