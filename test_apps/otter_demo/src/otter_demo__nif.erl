@@ -29,6 +29,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([port_send/2]).
 -export([codec_i8/1, codec_u8/1, codec_i64/1, codec_u64/1, codec_usize/1]).
 -export([codec_f64/1, codec_f32/1, encode_inf/0, encode_nan/0]).
+-export([codec_bool/1, negate/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -293,3 +294,12 @@ encode_inf() -> exit(nif_not_loaded).
 
 -spec encode_nan() -> no_return().
 encode_nan() -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — bool <-> true/false
+
+-spec codec_bool(boolean()) -> boolean().
+codec_bool(_X) -> exit(nif_not_loaded).
+
+-spec negate(boolean()) -> boolean().
+negate(_X) -> exit(nif_not_loaded).

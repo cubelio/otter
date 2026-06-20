@@ -228,6 +228,14 @@ smoke_test_() ->
     ?_assertError(badret, otter_demo__nif:encode_inf()),
     ?_assertError(badret, otter_demo__nif:encode_nan()),
 
+    %% Native bool codec — only the true/false atoms decode; others reject.
+    ?_assertEqual(true,  otter_demo__nif:codec_bool(true)),
+    ?_assertEqual(false, otter_demo__nif:codec_bool(false)),
+    ?_assertError(badarg, otter_demo__nif:codec_bool(yes)),
+    ?_assertError(badarg, otter_demo__nif:codec_bool(1)),
+    ?_assertEqual(false, otter_demo__nif:negate(true)),
+    ?_assertEqual(true,  otter_demo__nif:negate(false)),
+
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.
     %% The destructor wrapper in otter catches the panic via catch_unwind;

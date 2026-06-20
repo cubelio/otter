@@ -675,6 +675,18 @@ fn encode_nan(_env: CallEnv) -> f64 {
     f64::NAN
 }
 
+// --- native codec round-trips: bool -------------------------------------
+
+#[otter::nif]
+fn codec_bool(_env: CallEnv, x: bool) -> bool {
+    x
+}
+
+#[otter::nif]
+fn negate(_env: CallEnv, x: bool) -> bool {
+    !x
+}
+
 fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
     // Atoms and resources are interned/registered by the `init!` scaffolding
     // before this runs; nothing to do here.
@@ -724,6 +736,8 @@ otter::init!("otter_demo__nif", [
     codec_f32,
     encode_inf,
     encode_nan,
+    codec_bool,
+    negate,
     panicking_resource_new,
     select_resource_new,
     select_register,
