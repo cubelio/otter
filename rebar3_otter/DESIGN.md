@@ -78,12 +78,12 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
    cargo build \
      --manifest-path <path>/Cargo.toml \
      --target-dir <path>/target \
+     -p <name> \
      [--release] \
      [--features feat1,feat2] \
-     [--target <triple>] \
-     -p <name>
+     [--target <triple>]
    ```
-   Plain `cargo build` (the default *human* message format) renders compiler diagnostics to stderr; `run/2` lets the child's stderr through to the terminal, so errors and warnings appear in the rebar3 output directly. `--target-dir` is pinned to `<crate>/target` so the output location is dictated rather than discovered (see step 3). Cargo is invoked unconditionally — its own incremental check decides whether real work needs to happen, and no-ops cost ~50–200ms.
+   Cargo runs with `ERTS_INCLUDE_DIR` set to the running ERTS's include dir (`<root>/erts-<vsn>/include`), so the native build (e.g. a `bindgen`/`cc` step, or `enif-ffi`) can locate `erl_nif.h` without the user configuring a path. Plain `cargo build` (the default *human* message format) renders compiler diagnostics to stderr; `run/2` lets the child's stderr through to the terminal, so errors and warnings appear in the rebar3 output directly. `--target-dir` is pinned to `<crate>/target` so the output location is dictated rather than discovered (see step 3). Cargo is invoked unconditionally — its own incremental check decides whether real work needs to happen, and no-ops cost ~50–200ms.
 
 3. **Compute artifact path (by convention)** — because the target dir is pinned and cdylib final artifacts are *not* content-hashed, the output path is fully determined by the inputs: `<target_dir>/[<triple>/]<release|debug>/<file>`, where `<file>` is `lib<name>.so` (Linux), `lib<name>.dylib` (macOS), or `<name>.dll` (Windows), with `<name>` normalized `-`→`_` as cargo does for lib targets. The `lib` prefix / extension follow the *target* platform — derived from the `--target` triple when set (so cross-compiles resolve), otherwise the build host (`os:type/0`). This deliberately avoids parsing cargo's JSON output, which would pull in the OTP-27-only stdlib `json` module; pinning `--target-dir` is what makes the path a guarantee instead of a guess (it removes the workspace / custom-`target-dir` ambiguity the JSON scrape previously absorbed). The computed path is confirmed to exist (`filelib:is_file/1`); a miss yields the `{no_cdylib, _}` error below.
 
@@ -100,7 +100,8 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
 
 - `cargo` not on PATH → clear error message, build fails
 - Cargo compilation failure → surface the compiler errors, build fails
-- No `cdylib` artifact found in cargo output → error indicating the crate may not have `crate-type = ["cdylib"]` in its `Cargo.toml`
+- No `cdylib` artifact found at the computed path → error indicating the crate may not have `crate-type = ["cdylib"]` in its `Cargo.toml`
+- Artifact copy into `priv/native/` failed → error with the underlying file reason (`copy_failed`)
 
 ---
 
@@ -124,7 +125,7 @@ Scaffolds a minimal NIF crate:
 [package]
 name = "my_nif"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
