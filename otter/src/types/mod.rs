@@ -246,6 +246,11 @@ impl<'id> CallEnv<'id> {
 
 pub(crate) type RawTerm = enif_ffi::Term;
 
+/// The BEAM's non-value marker (`THE_NON_VALUE`). Returned from a NIF whose
+/// `Result` raised: the word is ignored once an exception is pending, and the
+/// BEAM raises the pending exception on return.
+pub(crate) const THE_NON_VALUE: RawTerm = 0;
+
 pub trait Term<'id>: sealed::Sealed {
     fn raw_term(self) -> RawTerm;
 

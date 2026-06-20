@@ -15,10 +15,7 @@ pub use crate::types::{
     DeinitEnv, InitEnv, TypedTerm,
 };
 
-use crate::types::{AnyTerm, Env, Term};
-
-/// The BEAM's non-value marker — returned from a NIF whose `Result` raised.
-const THE_NON_VALUE: enif_ffi::Term = 0;
+use crate::types::{AnyTerm, Env, Term, THE_NON_VALUE};
 
 /// Value for `enif_ffi::Entry.options` indicating `sizeof_resource_type_init` is set.
 pub const NIF_ENTRY_OPTIONS: u32 = 1;

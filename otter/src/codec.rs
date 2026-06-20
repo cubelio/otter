@@ -2,12 +2,8 @@
 
 use crate::types::{
     AnyTerm, Atom, Binary, Bitstring, Env, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,
-    Port, Raised, Reference, Term, Tuple, TypedTerm,
+    Port, Raised, Reference, Term, Tuple, TypedTerm, THE_NON_VALUE,
 };
-
-/// The BEAM's non-value marker. Returned from a NIF whose `Result` is `Err`, so
-/// the BEAM raises the already-pending exception.
-const THE_NON_VALUE: enif_ffi::Term = 0;
 
 /// Error returned by term type conversion operations.
 ///
