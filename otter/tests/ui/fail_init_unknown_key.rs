@@ -1,11 +1,11 @@
 // `init!` rejects an unknown keyword argument.
 
 #[otter::nif]
-fn f(_env: otter::env::Env) -> otter::types::Atom {
+fn f(_env: otter::types::CallEnv) -> otter::types::Atom {
     unreachable!()
 }
 
-fn on_load(_env: otter::env::Env, _info: otter::term::Term) -> bool {
+fn on_load(_env: otter::types::InitEnv, _info: otter::types::AnyTerm) -> bool {
     true
 }
 

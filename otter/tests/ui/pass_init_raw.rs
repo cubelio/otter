@@ -6,24 +6,24 @@
 use std::ffi::c_void;
 
 #[otter::nif]
-fn f(_env: otter::env::Env) -> otter::types::Atom {
+fn f(_env: otter::types::CallEnv) -> otter::types::Atom {
     unreachable!()
 }
 
-fn on_load(_env: otter::env::Env, _priv: &mut *mut c_void, _info: otter::term::Term) -> bool {
+fn on_load(_env: otter::types::InitEnv, _priv: &mut *mut c_void, _info: otter::types::AnyTerm) -> bool {
     true
 }
 
 fn on_upgrade(
-    _env: otter::env::Env,
+    _env: otter::types::InitEnv,
     _priv: &mut *mut c_void,
     _old: &mut *mut c_void,
-    _info: otter::term::Term,
+    _info: otter::types::AnyTerm,
 ) -> bool {
     true
 }
 
-fn on_unload(_env: otter::env::Env, _priv: *mut c_void) {}
+fn on_unload(_env: otter::types::DeinitEnv, _priv: *mut c_void) {}
 
 otter::init!("m", [f],
     load_raw = on_load,
