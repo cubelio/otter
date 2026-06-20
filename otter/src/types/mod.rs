@@ -27,6 +27,38 @@ pub trait Env<'id>: Copy + sealed::Sealed {
     fn as_any_env(self) -> AnyEnv<'id> {
         AnyEnv { raw_env: self.raw_env(), _id: PhantomData }
     }
+
+    /// The dynamic type of `term` (`enif_term_type`). `None` for a type code
+    /// this otter build does not recognize (a newer-OTP type).
+    fn term_type(self, term: impl Term<'id>) -> Option<enif_ffi::TermType> {
+        let code = unsafe { enif_ffi::term_type(self.raw_env(), term.raw_term()) };
+        enif_ffi::TermType::from_raw(code)
+    }
+
+    /// Hash a term (`enif_hash`). `algorithm` is `Phash2` (portable) or
+    /// `InternalHash` (node-local, faster).
+    fn hash(self, algorithm: enif_ffi::Hash, term: impl Term<'id>, salt: u64) -> u64 {
+        unsafe { enif_ffi::hash(algorithm, term.raw_term(), salt) }
+    }
+
+    /// Tell the scheduler how much of the timeslice this NIF used
+    /// (`enif_consume_timeslice`). `true` if the timeslice is exhausted.
+    fn consume_timeslice(self, percent: i32) -> bool {
+        unsafe { enif_ffi::consume_timeslice(self.raw_env(), percent) != 0 }
+    }
+
+    /// Whether the calling process is still alive
+    /// (`enif_is_current_process_alive`).
+    fn is_current_process_alive(self) -> bool {
+        unsafe { enif_ffi::is_current_process_alive(self.raw_env()) != 0 }
+    }
+
+    /// Create a unique integer (`enif_make_unique_integer`). `properties` is a
+    /// bitmask of `UniqueInteger::POSITIVE` / `MONOTONIC`.
+    fn make_unique_integer(self, properties: enif_ffi::UniqueInteger) -> Integer<'id> {
+        let raw = unsafe { enif_ffi::make_unique_integer(self.raw_env(), properties) };
+        Integer::from_raw(raw)
+    }
 }
 
 /// The kind-erased environment handle terms are built against. Every concrete

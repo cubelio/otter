@@ -120,7 +120,7 @@ impl<'id> Encoder<'id> for TypedTerm<'id> {
 
 impl<'id> Decoder<'id> for Integer<'id> {
     fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
-        if env.as_any_env().term_type(term) == Some(enif_ffi::TermType::Integer) {
+        if env.term_type(term) == Some(enif_ffi::TermType::Integer) {
             Ok(Integer::from_raw(term.raw_term()))
         } else {
             Err(CodecError::WrongType)
@@ -130,7 +130,7 @@ impl<'id> Decoder<'id> for Integer<'id> {
 
 impl<'id> Decoder<'id> for Float<'id> {
     fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
-        if env.as_any_env().term_type(term) == Some(enif_ffi::TermType::Float) {
+        if env.term_type(term) == Some(enif_ffi::TermType::Float) {
             Ok(Float::from_raw(term.raw_term()))
         } else {
             Err(CodecError::WrongType)
@@ -142,7 +142,7 @@ impl<'id> Decoder<'id> for Bitstring<'id> {
     fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
         // Every binary is a bitstring, so this accepts both byte-aligned and
         // sub-byte; use `Binary` for the byte-aligned refinement.
-        if env.as_any_env().term_type(term) == Some(enif_ffi::TermType::Bitstring) {
+        if env.term_type(term) == Some(enif_ffi::TermType::Bitstring) {
             Ok(Bitstring::from_raw(term.raw_term()))
         } else {
             Err(CodecError::WrongType)

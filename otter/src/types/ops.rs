@@ -3,8 +3,8 @@
 use std::ffi::{c_int, c_void, CStr};
 
 use crate::types::{
-    AnyEnv, AnyTerm, BinaryBuf, CallEnv, CallingEnv, Env, InitEnv, Integer, LocalPid, LocalPort,
-    RawTerm, Raised, Term, Tuple,
+    AnyTerm, BinaryBuf, CallEnv, CallingEnv, Env, InitEnv, LocalPid, LocalPort, RawTerm, Raised,
+    Term, Tuple,
 };
 
 /// Serialize a term to the external term format (`enif_term_to_binary`),
@@ -41,40 +41,6 @@ pub fn send_from<'id>(env: impl CallingEnv<'id>, pid: &LocalPid, msg: impl Term<
 pub fn port_command<'id>(env: impl CallingEnv<'id>, port: &LocalPort, msg: impl Term<'id>) -> bool {
     unsafe {
         enif_ffi::port_command(env.raw_env(), &port.port, std::ptr::null_mut(), msg.raw_term()) != 0
-    }
-}
-
-impl<'id> AnyEnv<'id> {
-    /// The dynamic type of `term` (`enif_term_type`). `None` for a type code
-    /// this otter build does not recognize (a newer-OTP type).
-    pub fn term_type(self, term: impl Term<'id>) -> Option<enif_ffi::TermType> {
-        let code = unsafe { enif_ffi::term_type(self.raw_env(), term.raw_term()) };
-        enif_ffi::TermType::from_raw(code)
-    }
-
-    /// Hash a term (`enif_hash`). `algorithm` is `Phash2` (portable) or
-    /// `InternalHash` (node-local, faster).
-    pub fn hash(self, algorithm: enif_ffi::Hash, term: impl Term<'id>, salt: u64) -> u64 {
-        unsafe { enif_ffi::hash(algorithm, term.raw_term(), salt) }
-    }
-
-    /// Tell the scheduler how much of the timeslice this NIF used
-    /// (`enif_consume_timeslice`). `true` if the timeslice is exhausted.
-    pub fn consume_timeslice(self, percent: i32) -> bool {
-        unsafe { enif_ffi::consume_timeslice(self.raw_env(), percent) != 0 }
-    }
-
-    /// Whether the calling process is still alive
-    /// (`enif_is_current_process_alive`).
-    pub fn is_current_process_alive(self) -> bool {
-        unsafe { enif_ffi::is_current_process_alive(self.raw_env()) != 0 }
-    }
-
-    /// Create a unique integer (`enif_make_unique_integer`). `properties` is a
-    /// bitmask of `UniqueInteger::POSITIVE` / `MONOTONIC`.
-    pub fn make_unique_integer(self, properties: enif_ffi::UniqueInteger) -> Integer<'id> {
-        let raw = unsafe { enif_ffi::make_unique_integer(self.raw_env(), properties) };
-        Integer::from_raw(raw)
     }
 }
 

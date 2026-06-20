@@ -573,7 +573,7 @@ fn test_time(_env: CallEnv) -> Atom {
 #[otter::nif]
 fn test_consume_timeslice(env: CallEnv) -> Atom {
     for _ in 0..100 {
-        if env.as_any_env().consume_timeslice(100) {
+        if env.consume_timeslice(100) {
             return otter::atom![ok];
         }
     }

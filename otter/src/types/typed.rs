@@ -33,7 +33,7 @@ impl<'id> AnyTerm<'id> {
     /// type); the original `AnyTerm` is still usable.
     pub fn resolve(self, env: impl Env<'id>) -> Option<TypedTerm<'id>> {
         let raw = self.raw_term();
-        Some(match env.as_any_env().term_type(self)? {
+        Some(match env.term_type(self)? {
             enif_ffi::TermType::Atom => TypedTerm::Atom(Atom::from_raw(raw)),
             enif_ffi::TermType::Bitstring => TypedTerm::Bitstring(Bitstring::from_raw(raw)),
             enif_ffi::TermType::Float => TypedTerm::Float(Float::from_raw(raw)),
