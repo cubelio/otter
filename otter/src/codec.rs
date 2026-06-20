@@ -89,6 +89,12 @@ impl<'id> Decoder<'id> for AnyTerm<'id> {
 // Centralized here because each impl uses only the noun's public surface
 // (`Term::raw_term`, the `is_*`/`term_type` predicates, `from_raw`): `encode`
 // wraps the same-brand word for free, `decode` checks the type then rewraps.
+//
+// Two decode idioms appear below, chosen by what the NIF API offers, not by
+// taste: types with a dedicated `enif_is_*` predicate (atom, binary, fun, pid,
+// port, ref, list, map, tuple) check via `Type::is_*(env, term)`; the three
+// with no such predicate (integer, float, bitstring) fall back to comparing
+// `env.term_type(term)` against the expected `TermType`.
 // ---------------------------------------------------------------------------
 
 macro_rules! encode_by_wrap {
