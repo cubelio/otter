@@ -474,9 +474,36 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
         }
     };
 
+    // --- panic-strategy guard (issue audit-13) ---
+    //
+    // otter stops a Rust panic in a NIF, resource callback, or load/upgrade hook
+    // from crossing the C-ABI boundary into the BEAM by catching it with
+    // `catch_unwind` (the wrappers above and in `nif_macro` / `resource`). That
+    // only intercepts *unwinding* panics: under `panic = "abort"` a panic calls
+    // `abort()` at the panic site and takes down the whole emulator instead.
+    //
+    // The check lives here, in the macro output, rather than in an otter build
+    // script: `panic` is a graph-wide, root-only profile setting, so only the
+    // NIF crate's own compilation sees it. `init!` expands into that crate and
+    // is invoked exactly once per NIF library, so `cfg(panic = ...)` here
+    // resolves against the cdylib's actual strategy and fires exactly once.
+    let panic_guard = quote! {
+        #[cfg(panic = "abort")]
+        const _: () = ::std::compile_error!(
+            "otter requires `panic = \"unwind\"`, but this NIF crate is built with \
+             `panic = \"abort\"`. otter keeps a panic in a NIF, resource callback, or \
+             load/upgrade hook from crossing the C-ABI boundary and crashing the BEAM by \
+             catching it with std::panic::catch_unwind, which only works while panics \
+             unwind; `panic = \"abort\"` aborts the whole emulator at the panic site and \
+             silently removes this protection. Remove the `panic = \"abort\"` setting (the \
+             default is \"unwind\") from the [profile.*] section that builds this cdylib."
+        );
+    };
+
     // --- nif_init entry point ---
 
     Ok(quote! {
+        #panic_guard
         #atoms_module
         #register_fn
         #load_wrapper
