@@ -16,11 +16,11 @@ Repository: https://github.com/rusterlium/rustler
 
 ### The lifetime safety mechanism
 
-Rustler's core insight — using `PhantomData<*mut &'a u8>` to make `Env<'a>` invariant over `'a`, synthesizing a unique per-call lifetime from a stack borrow — is correct and elegant. Otter preserves this mechanism unchanged. It is the right way to prevent `TypedTerm` values from escaping a NIF call at compile time with zero runtime cost.
+Rustler's core insight — making `Env` invariant over a synthetic lifetime so `TypedTerm` values can't escape a NIF call at compile time with zero runtime cost — is correct and elegant. Otter keeps the invariance (`PhantomData<*mut &'id ()>`) but mints the brand differently. In otter, `Env` and `Term` are sealed *traits*, not structs; each entry point (`with_call_env`, `with_init_env`, …) introduces a fresh, invariant brand `'id` through a `for<'id>` closure — the GhostCell construction — rather than synthesizing a per-call lifetime from a stack borrow. The result is the same escape prevention via a generative brand instead of a per-call lifetime: two independently entered envs carry distinct brands, so a term from one cannot be used with the other.
 
-### The `OwnedEnv` / `SavedTerm` pattern — *not* adopted
+### The `OwnedEnv` generation token
 
-Rustler uses `Arc<NIF_ENV>`/`Weak<NIF_ENV>` as a generation token to detect use-after-clear of a `SavedTerm` at runtime. It's a clean solution to a problem otter chose not to have. Otter replaces the reusable, stateful `OwnedEnv` (with `run`/`save`/`SavedTerm`) with a single-use `OwnedTermBuilder`: build terms on `builder.env()`, `set` the message, `build` into an `OwnedTerm`, `send_owned`. Because the builder is consumed on send and never reused, there is nothing to "save across a clear," so the generation token, `Arc`/`Weak`, and `SavedTerm` are all unnecessary. Cross-builder provenance is a single pointer compare in `set`, not a runtime generation check.
+Rustler uses `Arc<NIF_ENV>`/`Weak<NIF_ENV>` as a generation token to detect use-after-clear of a `SavedTerm` at runtime. Otter keeps the reusable arena shape — `OwnedEnvArena` with `run`/`clear`, `export`/`import`, and a heap-stealing `send` — but replaces the `Arc`/`Weak` token with a process-global monotonic `AtomicU64` stamp: each `OwnedEnvTerm` records the arena-generation that produced it, and `clear` takes a fresh stamp, so a term used after its arena was cleared (or against a different arena) fails a single `u64` compare. No reference counting, no `Weak` upgrade — one atomic increment per generation and one equality check per use.
 
 ### The layered architecture
 
@@ -48,21 +48,21 @@ Rustler's examples, getting-started flow, and derives default to Elixir conventi
 
 Rustler exposes a single `TypedTerm<'a>` type — a thin wrapper around `NIF_TERM` that defers all type information. Otter exposes three levels:
 
-- `Term<'a>` — zero work, bare machine word
-- `TypedTerm<'a>` — typed enum, one `enif_term_type` call
-- Concrete types (`Integer<'a>`, `Bitstring<'a>`, etc.) — type known, data still lazy
+- `AnyTerm<'id>` — zero work, bare machine word (`Term` is the trait it implements)
+- `TypedTerm<'id>` — typed enum, one `enif_term_type` call
+- Concrete types (`Integer<'id>`, `Bitstring<'id>`, etc.) — type known, data still lazy
 
 This gives users explicit control over how much work is done at argument receipt.
 
 ### List as a cons cell
 
-Rustler exposes lists with an iterator interface. Otter exposes `List<'a>` as a cons cell with `head()` and `tail()` — matching Erlang's actual data model. Improper lists are handled naturally. No iterator abstraction is imposed.
+Rustler exposes lists with an iterator interface. Otter exposes `List<'id>` as a cons cell: `node(env)` decomposes it into `Node::Nil` or `Node::Cell(head, tail)` with one `enif_get_list_cell` — matching Erlang's actual data model. Improper lists are handled naturally (the tail is just another term). An iterator is also offered (`iter`) for the common walk, but the cons cell is the primitive.
 
 ### No `Error` enum at the NIF boundary
 
 Rustler has an `Error` enum with five variants: `BadArg`, `Atom(&str)` and `TypedTerm(Box<dyn Encoder>)` (which *return* — the latter as `{error, term}`), and `RaiseAtom(&str)` and `RaiseTerm(Box<dyn Encoder>)` (which *raise*). The same return type encodes two different control-flow behaviors; which one happens depends on which variant you picked.
 
-The NIF C API exposes exactly two exception mechanisms: `enif_make_badarg` and `enif_raise_exception`. Both *raise* — they set a pending exception on the env, which the BEAM raises on return. Otter exposes them as `Env::make_badarg()` and `Env::raise_exception(reason)`, each returning `Result<T, Raised>` (always `Err`, generic over the success type). A NIF's idiomatic shape is `Result<T, Raised>`: `Ok(value)` returns; `Err(Raised)` carries the already-pending exception straight out. Because a `Raised` can only exist *after* a real raise, exit never re-raises — so there is no double-raise and no enum dispatch.
+The NIF C API exposes exactly two exception mechanisms: `enif_make_badarg` and `enif_raise_exception`. Both *raise* — they set a pending exception on the env, which the BEAM raises on return. Otter exposes them as `CallEnv::badarg()` and `CallEnv::raise(reason)`, each returning `Result<T, Raised<'id>>` (always `Err`, generic over the success type). A NIF's idiomatic shape is `Result<T, Raised<'id>>`: `Ok(value)` returns; `Err(Raised)` carries the already-pending exception straight out. `Raised<'id>` is a term-less typestate token — it can only exist *after* a real raise — so exit never re-raises, and there is no double-raise and no enum dispatch. (The encode side mirrors this: a failed `Encoder` raises `badret`, symmetric to the `badarg` a failed decode raises.)
 
 ### Explicit NIF registration
 
@@ -84,7 +84,7 @@ Rustler defaults to NIF 2.15 (OTP 22) and exposes Cargo features to opt up to 2.
 
 Default-configured rustler can only create Latin-1 atoms. Passing UTF-8 bytes silently produces the wrong atom — `"é"` becomes `Ã©` (two Latin-1 chars), with no error returned. Enabling the `nif_version_2_17` feature switches to the same `enif_make_new_atom_len` call otter uses unconditionally.
 
-This is one specimen of a broader pattern: rustler papers over the NIF C API with assumed defaults that have hidden edge cases. Otter takes the opposite approach — `Atom::intern` always calls `enif_make_new_atom_len(... ERL_NIF_UTF8)`, no Latin-1 path. The BEAM team designed the NIF surface deliberately; otter's job is to reflect it faithfully, not abridge it.
+This is one specimen of a broader pattern: rustler papers over the NIF C API with assumed defaults that have hidden edge cases. Otter takes the opposite approach — `Atom::intern` always calls `enif_make_new_atom_len(... ERL_NIF_UTF8)`, no Latin-1 path, and returns `Result<Atom, AtomError>` so the one reachable failure (`NameTooLong`, >255 characters) is a typed error rather than a silent mis-encoding. The BEAM team designed the NIF surface deliberately; otter's job is to reflect it faithfully, not abridge it.
 
 ---
 
@@ -94,11 +94,11 @@ Capabilities in otter that have no equivalent in rustler's current public surfac
 
 ### `Bitstring` as a distinct type
 
-Erlang distinguishes byte-aligned binaries from arbitrary-length bitstrings. Otter exposes `Bitstring<'a>` as a separate decodable type from `Binary<'a>`. Rustler's surface only goes through `enif_inspect_binary`; non-byte-aligned bitstrings are not first-class.
+Erlang distinguishes byte-aligned binaries from arbitrary-length bitstrings. Otter exposes `Bitstring<'id>` as a separate decodable type from `Binary<'id>`. Rustler's surface only goes through `enif_inspect_binary`; non-byte-aligned bitstrings are not first-class.
 
 ### `Port` and `Fun` decode
 
-Otter exposes `Port<'a>` and `Fun<'a>` as decodable term types. Rustler's public surface includes neither — a NIF receiving a port or fun argument keeps it as a generic `TypedTerm<'a>` and operates on it opaquely.
+Otter exposes `Port<'id>` and `Fun<'id>` as decodable term types. Rustler's public surface includes neither — a NIF receiving a port or fun argument keeps it as a generic `AnyTerm<'id>` and operates on it opaquely.
 
 ### `enif_select` and `enif_select_x`
 
@@ -110,7 +110,7 @@ Otter wraps `enif_set_option` for tuning per-NIF options such as `delay_halt`. R
 
 ### Atoms initialized at NIF load
 
-Otter declares atoms statically via the `atoms = [...]` list in `init!`; the generated load (and upgrade) scaffolding interns them all once and writes the terms to atomics. Rustler's `atoms!` macro caches lazily via `OnceLock::get_or_init` — first call creates them, subsequent calls return the cached value. Both avoid NIF calls in steady state and the retrieval cost is comparable. The difference is structural: otter pushes initialization to load time, rustler defers it to first call.
+Otter declares atoms statically via the `atoms = [...]` list in `init!`; the generated load (and upgrade) scaffolding interns them all once and stores each `Atom` in a `OnceLock<Atom>` (set once at load, no term-representation assumption). Rustler's `atoms!` macro caches lazily via `OnceLock::get_or_init` — first call creates them, subsequent calls return the cached value. Both avoid NIF calls in steady state and the retrieval cost is comparable. The difference is structural: otter pushes initialization to load time, rustler defers it to first call.
 
 ### `rebar3_otter` build plugin
 
