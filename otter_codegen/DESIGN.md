@@ -216,7 +216,7 @@ All macros use `syn` to parse input token streams and `quote` to generate output
 
 ## Deferred to v2
 
-- **Derive macros** (`NifRecord`, `NifTuple`, `NifMap`, `NifUnitEnum`, `NifTaggedEnum`) — generate `Encoder`/`Decoder` for user-defined Rust structs and enums. Deferred because: NIF argument and return types are otter term types; native Rust types do not implement `Encoder`/`Decoder`; user-defined struct mapping is a convenience, not a core need.
+- **Derive macros** (`NifRecord`, `NifTuple`, `NifMap`, `NifUnitEnum`, `NifTaggedEnum`) — generate `Encoder`/`Decoder` for user-defined Rust structs and enums. Deferred because user-defined struct/enum mapping is a convenience, not a core need: otter term types and the common native Rust types (integers, floats, `bool`, `String`, tuples, `Vec`, `HashMap`) already implement `Encoder`/`Decoder`, so the derives would only add field-by-field generation for *user-defined* types.
 
 ---
 

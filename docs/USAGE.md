@@ -583,7 +583,7 @@ A few rules follow from what the macro expands to:
 
 ## Encoder and Decoder
 
-All otter types implement `Encoder` and `Decoder`. These traits are what the `#[otter::nif]` macro uses for automatic argument decoding and return encoding.
+All otter term types implement `Encoder` and `Decoder`, and so do the common native Rust types — integers, floats, `bool`, `str`/`String`, tuples (arity 1–12), `Vec<T>`, and `HashMap<K, V>` — so a NIF can take and return them directly. These traits are what the `#[otter::nif]` macro uses for automatic argument decoding and return encoding. Both directions are fallible: a failed decode on an argument raises `badarg`, a failed encode on a return raises `badret` (e.g. returning a non-finite `f64`). otter term types never fail to encode; only the native conversions can.
 
 ```rust
 pub trait Encoder {
@@ -605,9 +605,13 @@ pub trait Decoder<'a>: Sized {
 
 | Variant | Meaning |
 |---|---|
-| `WrongType` | TypedTerm is not the expected type |
-| `IntegerOverflow` | Integer doesn't fit in the target Rust type |
-| `InvalidCodepoint` | Integer is not a valid Unicode codepoint |
+| `WrongType` | The term is not the expected type |
+| `IntegerOverflow` | Integer doesn't fit in the target Rust integer type |
+| `NotFinite` | A non-finite `f64`/`f32` cannot be encoded as an Erlang float (encode side) |
+| `FloatRange` | A finite float is outside the target Rust float's range (`f32` decode) |
+| `NotUtf8` | A binary's bytes are not valid UTF-8, or a list is not a valid string |
+| `WrongArity` | An Erlang tuple's arity does not match the Rust tuple type |
+| `UnknownTermType` | The term's type code is from a newer OTP than this otter build knows |
 
 ---
 
