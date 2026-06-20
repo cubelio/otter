@@ -622,6 +622,35 @@ fn monitor_down_count<'a>(env: CallEnv<'a>, arc: ResourceArc<MonitorResource>) -
     Integer::from_i64(env, arc.down_count.load(Ordering::Relaxed) as i64)
 }
 
+// --- native codec round-trips: integers ---------------------------------
+// Each takes the native Rust integer as an argument (decode) and returns it
+// (encode). Out-of-range arguments fail to decode and surface as badarg.
+
+#[otter::nif]
+fn codec_i8(_env: CallEnv, x: i8) -> i8 {
+    x
+}
+
+#[otter::nif]
+fn codec_u8(_env: CallEnv, x: u8) -> u8 {
+    x
+}
+
+#[otter::nif]
+fn codec_i64(_env: CallEnv, x: i64) -> i64 {
+    x
+}
+
+#[otter::nif]
+fn codec_u64(_env: CallEnv, x: u64) -> u64 {
+    x
+}
+
+#[otter::nif]
+fn codec_usize(_env: CallEnv, x: usize) -> usize {
+    x
+}
+
 fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
     // Atoms and resources are interned/registered by the `init!` scaffolding
     // before this runs; nothing to do here.
@@ -662,6 +691,11 @@ otter::init!("otter_demo__nif", [
     send_from_thread,
     send_to,
     cpu_time,
+    codec_i8,
+    codec_u8,
+    codec_i64,
+    codec_u64,
+    codec_usize,
     panicking_resource_new,
     select_resource_new,
     select_register,

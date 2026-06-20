@@ -1,4 +1,10 @@
 //! `Encoder`, `Decoder`, and `CodecError`.
+//!
+//! The trait definitions, the otter term-type impls, and the return-position
+//! `Result<T, Raised>` impl live here. Conversions for native Rust types are
+//! split across submodules by concern.
+
+mod integer;
 
 use crate::types::{
     AnyTerm, Atom, Binary, Bitstring, Env, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,

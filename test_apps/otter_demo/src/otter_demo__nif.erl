@@ -27,6 +27,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([monitor_resource_new/0, monitor_pid/2, monitor_down_count/1]).
 -export([test_time/0, test_consume_timeslice/0]).
 -export([port_send/2]).
+-export([codec_i8/1, codec_u8/1, codec_i64/1, codec_u64/1, codec_usize/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -252,3 +253,24 @@ own the port. Returns `ok` if the command was accepted, `error` otherwise.
 """.
 -spec port_send(port(), binary()) -> ok | error.
 port_send(_Port, _Data) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — integers
+%%
+%% Each decodes its argument into a Rust integer type and re-encodes it. An
+%% out-of-range argument fails to decode and raises badarg.
+
+-spec codec_i8(integer()) -> integer().
+codec_i8(_X) -> exit(nif_not_loaded).
+
+-spec codec_u8(integer()) -> integer().
+codec_u8(_X) -> exit(nif_not_loaded).
+
+-spec codec_i64(integer()) -> integer().
+codec_i64(_X) -> exit(nif_not_loaded).
+
+-spec codec_u64(integer()) -> integer().
+codec_u64(_X) -> exit(nif_not_loaded).
+
+-spec codec_usize(integer()) -> integer().
+codec_usize(_X) -> exit(nif_not_loaded).

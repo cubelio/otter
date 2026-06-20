@@ -194,6 +194,25 @@ smoke_test_() ->
     %% cpu_time returns an erlang:timestamp()-format 3-tuple.
     ?_assertMatch({_, _, _}, otter_demo__nif:cpu_time()),
 
+    %% Native integer codecs — round-trip in range, badarg out of range.
+    ?_assertEqual(127,  otter_demo__nif:codec_i8(127)),
+    ?_assertEqual(-128, otter_demo__nif:codec_i8(-128)),
+    ?_assertError(badarg, otter_demo__nif:codec_i8(128)),
+    ?_assertError(badarg, otter_demo__nif:codec_i8(-129)),
+    ?_assertEqual(255, otter_demo__nif:codec_u8(255)),
+    ?_assertEqual(0,   otter_demo__nif:codec_u8(0)),
+    ?_assertError(badarg, otter_demo__nif:codec_u8(256)),
+    ?_assertError(badarg, otter_demo__nif:codec_u8(-1)),
+    ?_assertEqual(9223372036854775807, otter_demo__nif:codec_i64(9223372036854775807)),
+    ?_assertEqual(-9223372036854775808, otter_demo__nif:codec_i64(-9223372036854775808)),
+    %% i64::MAX + 1 is a bignum that does not fit the 64-bit read.
+    ?_assertError(badarg, otter_demo__nif:codec_i64(9223372036854775808)),
+    ?_assertEqual(18446744073709551615, otter_demo__nif:codec_u64(18446744073709551615)),
+    ?_assertError(badarg, otter_demo__nif:codec_u64(-1)),
+    ?_assertError(badarg, otter_demo__nif:codec_u64(18446744073709551616)),
+    ?_assertEqual(42, otter_demo__nif:codec_usize(42)),
+    ?_assertError(badarg, otter_demo__nif:codec_usize(-1)),
+
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.
     %% The destructor wrapper in otter catches the panic via catch_unwind;
