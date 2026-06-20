@@ -105,8 +105,28 @@ impl<'id> Map<'id> {
 
 /// Iterator over the key-value pairs of a [`Map`].
 ///
-/// `enif_ffi::MapIterator` must not move after creation; the `Box` pins it for
-/// the iterator's lifetime.
+/// Ownership/mutation model (verified against ERTS, `erl_nif.c`
+/// `enif_map_iterator_*`, OTP 26 and 27):
+///
+/// - A flatmap iterator owns nothing — `ks`/`vs` are interior pointers into the
+///   map term's heap arrays; `create` is pure setup and `destroy` is a no-op.
+/// - A hashmap iterator owns one heap block: `create` does
+///   `erts_alloc(ErtsDynamicWStack)` and `destroy` frees it (plus a second,
+///   grown buffer if the traversal stack outgrew its inline default).
+/// - `next`/`prev` mutate the cursor and the shared work-stack **in place**.
+///
+/// The load-bearing invariant is therefore **exactly one owner ever calls
+/// `destroy`**: a bitwise copy would share the `wstack` pointer and double-free
+/// on the second drop (and corrupt the shared stack via independent `next`).
+/// That is why `MapIterator` is non-`Copy` and owns the single `Drop`.
+///
+/// The struct holds **no** self-references (every pointer targets the
+/// separately-allocated wstack or the map's own heap, never `&iter`), so moving
+/// it is sound on the targeted releases and the `Box` is not strictly required
+/// today. It is kept as a forward-compat pin: the struct is documented "all
+/// fields internal and may change" with reserved `__spare__[2]` slots, so a
+/// future ERTS could introduce a self-referential field that would make moves
+/// unsound. See issue robust-12 for the full investigation.
 pub struct MapIterator<'id> {
     iter: Box<enif_ffi::MapIterator>,
     env: AnyEnv<'id>,
