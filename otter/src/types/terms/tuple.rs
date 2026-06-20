@@ -18,19 +18,19 @@ impl<'id> Tuple<'id> {
 
     /// Number of elements (arity) of the tuple.
     pub fn len(self, env: impl Env<'id>) -> usize {
-        self.get(env).map_or(0, |elems| elems.len())
+        self.get(env).len()
     }
 
     /// Returns `true` if the tuple has zero elements.
     pub fn is_empty(self, env: impl Env<'id>) -> bool {
-        self.len(env) == 0
+        self.get(env).is_empty()
     }
 
     /// Return the element at zero-based index `i` as an unresolved [`AnyTerm`].
     ///
     /// Panics if `i >= self.len()`. The element shares this tuple's brand.
     pub fn element(self, env: impl Env<'id>, i: usize) -> AnyTerm<'id> {
-        let elems = self.get(env).expect("Tuple::element on a non-tuple term");
+        let elems = self.get(env);
         assert!(
             i < elems.len(),
             "Tuple::element index {i} out of bounds (arity {})",
@@ -59,21 +59,24 @@ impl<'id> Tuple<'id> {
     }
 
     /// The tuple's elements as a slice into the BEAM heap (`enif_get_tuple`).
-    /// `None` if this term is not a tuple. The slice rides this tuple's brand
-    /// `'id`, which cannot escape its env's scope, so the borrow is sound.
-    fn get(self, env: impl Env<'id>) -> Option<&'id [RawTerm]> {
+    /// The slice rides this tuple's brand `'id`, which cannot escape its env's
+    /// scope, so the borrow is sound.
+    ///
+    /// A `Tuple` is only ever constructed from an already-validated tuple term,
+    /// so `enif_get_tuple` cannot fail here — a zero return is an internal
+    /// contract violation, not a user-input case, hence the assert.
+    fn get(self, env: impl Env<'id>) -> &'id [RawTerm] {
         let mut arity: c_int = 0;
         let mut array: *const RawTerm = std::ptr::null();
-        if unsafe { enif_ffi::get_tuple(env.raw_env(), self.raw_term, &mut arity, &mut array) } == 0 {
-            return None;
-        }
+        let ok = unsafe { enif_ffi::get_tuple(env.raw_env(), self.raw_term, &mut arity, &mut array) };
+        assert!(ok != 0, "enif_get_tuple failed on a validated Tuple");
         // enif_get_tuple may leave `array` null for the empty tuple; never hand
         // a null pointer to from_raw_parts.
-        Some(if arity == 0 {
+        if arity == 0 {
             &[]
         } else {
             unsafe { std::slice::from_raw_parts(array, arity as usize) }
-        })
+        }
     }
 }
 
