@@ -284,27 +284,6 @@ impl<'id> Term<'id> for AnyTerm<'id> {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct AnyFreeTerm {
-    raw_term: RawTerm,
-}
-
-impl AnyFreeTerm {
-    pub(crate) fn wrap(raw_term: RawTerm) -> Self {
-        Self { raw_term }
-    }
-}
-
-impl sealed::Sealed for AnyFreeTerm {}
-
-impl Term<'_> for AnyFreeTerm {
-    fn raw_term(self) -> RawTerm {
-        self.raw_term
-    }
-}
-
-impl FreeTerm for AnyFreeTerm {}
-
 
 #[derive(Clone, Copy)]
 pub struct OwnedEnvTerm {
