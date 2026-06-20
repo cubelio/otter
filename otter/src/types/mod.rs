@@ -2,6 +2,7 @@ mod ops;
 pub mod terms;
 mod typed;
 
+pub use ops::{deserialize, port_command, send_from, serialize};
 pub use terms::*;
 pub use typed::TypedTerm;
 

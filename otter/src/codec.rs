@@ -106,8 +106,8 @@ macro_rules! encode_by_wrap {
 }
 
 encode_by_wrap!(
-    Integer<'id>, Float<'id>, Reference<'id>, Fun<'id>, Tuple<'id>, List<'id>, Map<'id>,
-    Binary<'id>, Bitstring<'id>, Pid<'id>, Port<'id>, Atom, LocalPid, LocalPort,
+    AnyTerm<'id>, Integer<'id>, Float<'id>, Reference<'id>, Fun<'id>, Tuple<'id>, List<'id>,
+    Map<'id>, Binary<'id>, Bitstring<'id>, Pid<'id>, Port<'id>, Atom, LocalPid, LocalPort,
 );
 
 impl<'id> Encoder<'id> for TypedTerm<'id> {

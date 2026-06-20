@@ -4,72 +4,69 @@ use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use otter::codec::Encoder;
-use otter::env::{Env, OwnedTermBuilder};
-use otter::resource::{Resource, ResourceArc};
 use otter::enif_ffi::SelectFlags;
-use otter::term::{Term, TypedTerm, Raised};
-use otter::types::{Atom, Binary, BinaryBuf, Float, Integer, List, LocalPid, LocalPort, Map, Reference, Tuple};
+use otter::resource::{Resource, ResourceArc};
+use otter::types::{
+    AnyTerm, Atom, Binary, BinaryBuf, CallEnv, CallbackEnv, Env, Float, InitEnv, Integer, List,
+    LocalPid, LocalPort, Map, OwnedEnvArena, Raised, Reference, Tuple, TypedTerm,
+};
 
 fn atomize_bool(value: bool) -> Atom {
     if value { otter::atom![true_] } else { otter::atom![false_] }
 }
 
 // --- hello/0 -----------------------------------------------------------
-// Simplest possible NIF: no arguments, returns an atom.
 
 #[otter::nif]
-fn hello(_env: Env) -> Atom {
+fn hello(_env: CallEnv) -> Atom {
     otter::atom![world]
 }
 
 // --- add/2 --------------------------------------------------------------
-// Typed arguments via Decoder, typed return via Encoder.
 
 #[otter::nif]
-fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    let sum = i64::try_from(a).unwrap() + i64::try_from(b).unwrap();
+fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
+    let sum = a.to_i64(env).unwrap() + b.to_i64(env).unwrap();
     Integer::from_i64(env, sum)
 }
 
 // --- echo/1 -------------------------------------------------------------
-// TypedTerm in, TypedTerm out — zero-cost passthrough.
 
 #[otter::nif]
-fn echo<'a>(_env: Env<'a>, val: Term<'a>) -> Term<'a> {
+fn echo<'a>(_env: CallEnv<'a>, val: AnyTerm<'a>) -> AnyTerm<'a> {
     val
 }
 
 // --- type_of/1 ----------------------------------------------------------
-// Pattern match on TypedTerm to inspect the Erlang type.
 
 #[otter::nif]
-fn type_of(_env: Env, val: TypedTerm) -> Atom {
+fn type_of<'a>(env: CallEnv<'a>, val: TypedTerm<'a>) -> Atom {
     match val {
-        TypedTerm::Atom(_)      => otter::atom![atom],
-        TypedTerm::Integer(_)   => otter::atom![integer],
-        TypedTerm::Float(_)     => otter::atom![float],
-        TypedTerm::Bitstring(bs) => if bs.is_binary() {
-            otter::atom![binary]
-        } else {
-            otter::atom![bitstring]
-        },
-        TypedTerm::List(_)      => otter::atom![list],
-        TypedTerm::Tuple(_)     => otter::atom![tuple],
-        TypedTerm::Map(_)       => otter::atom![map],
-        TypedTerm::Pid(_)       => otter::atom![pid],
-        TypedTerm::Port(_)      => otter::atom![port],
-        TypedTerm::Fun(_)       => otter::atom![fun],
+        TypedTerm::Atom(_) => otter::atom![atom],
+        TypedTerm::Integer(_) => otter::atom![integer],
+        TypedTerm::Float(_) => otter::atom![float],
+        TypedTerm::Bitstring(bs) => {
+            if bs.is_binary(env) {
+                otter::atom![binary]
+            } else {
+                otter::atom![bitstring]
+            }
+        }
+        TypedTerm::List(_) => otter::atom![list],
+        TypedTerm::Tuple(_) => otter::atom![tuple],
+        TypedTerm::Map(_) => otter::atom![map],
+        TypedTerm::Pid(_) => otter::atom![pid],
+        TypedTerm::Port(_) => otter::atom![port],
+        TypedTerm::Fun(_) => otter::atom![fun],
         TypedTerm::Reference(_) => otter::atom![reference],
     }
 }
 
 // --- reverse_binary/1 ---------------------------------------------------
-// Decode a Binary, build a new one with reversed bytes.
 
 #[otter::nif]
-fn reverse_binary<'a>(env: Env<'a>, bin: Binary<'a>) -> Binary<'a> {
-    let bytes = bin.as_bytes();
+fn reverse_binary<'a>(env: CallEnv<'a>, bin: Binary<'a>) -> Binary<'a> {
+    let bytes = bin.as_bytes(env);
     let mut builder = BinaryBuf::with_capacity(bytes.len());
     for &b in bytes.iter().rev() {
         builder.push(b);
@@ -78,32 +75,28 @@ fn reverse_binary<'a>(env: Env<'a>, bin: Binary<'a>) -> Binary<'a> {
 }
 
 // --- etf_encode/1 -------------------------------------------------------
-// Serialize a term to the external term format, returning the bytes as an
-// Erlang binary via BinaryBuf::into_binary. Equivalent to term_to_binary/1.
 
 #[otter::nif]
-fn etf_encode<'a>(env: Env<'a>, val: Term<'a>) -> Binary<'a> {
-    val.serialize().expect("serialize").into_binary(env)
+fn etf_encode<'a>(env: CallEnv<'a>, val: AnyTerm<'a>) -> Binary<'a> {
+    otter::types::serialize(env, val).expect("serialize").into_binary(env)
 }
 
 // --- etf_roundtrip/1 ----------------------------------------------------
-// serialize -> read bytes via BinaryBuf::as_bytes -> deserialize. The
-// result must equal the input.
 
 #[otter::nif]
-fn etf_roundtrip<'a>(env: Env<'a>, val: Term<'a>) -> Term<'a> {
-    let buf = val.serialize().expect("serialize");
-    env.deserialize(buf.as_bytes(), false).expect("deserialize")
+fn etf_roundtrip<'a>(env: CallEnv<'a>, val: AnyTerm<'a>) -> AnyTerm<'a> {
+    let buf = otter::types::serialize(env, val).expect("serialize");
+    otter::types::deserialize(env, buf.as_bytes(), false).expect("deserialize")
 }
 
 // --- sum_list/1 ---------------------------------------------------------
-// Walk a proper list of integers and return the sum, using the iterator.
 
 #[otter::nif]
-fn sum_list<'a>(env: Env<'a>, list: List<'a>) -> Integer<'a> {
-    let sum: i64 = list.iter()
-        .filter_map(|raw| match raw.resolve() {
-            Some(TypedTerm::Integer(i)) => Some(i64::try_from(i).unwrap()),
+fn sum_list<'a>(env: CallEnv<'a>, list: List<'a>) -> Integer<'a> {
+    let sum: i64 = list
+        .iter(env)
+        .filter_map(|raw| match raw.resolve(env) {
+            Some(TypedTerm::Integer(i)) => i.to_i64(env),
             _ => None,
         })
         .sum();
@@ -111,10 +104,9 @@ fn sum_list<'a>(env: Env<'a>, list: List<'a>) -> Integer<'a> {
 }
 
 // --- test_eq/2 ----------------------------------------------------------
-// Test PartialEq between two terms of the same type.
 
 #[otter::nif]
-fn test_eq<'a>(_env: Env<'a>, a: TypedTerm<'a>, b: TypedTerm<'a>) -> Atom {
+fn test_eq<'a>(_env: CallEnv<'a>, a: TypedTerm<'a>, b: TypedTerm<'a>) -> Atom {
     let result = match (a, b) {
         (TypedTerm::Atom(a), TypedTerm::Atom(b)) => a == b,
         (TypedTerm::Integer(a), TypedTerm::Integer(b)) => a == b,
@@ -127,16 +119,13 @@ fn test_eq<'a>(_env: Env<'a>, a: TypedTerm<'a>, b: TypedTerm<'a>) -> Atom {
         (TypedTerm::Reference(a), TypedTerm::Reference(b)) => a == b,
         _ => false,
     };
-    // true/false are always pre-existing in the atom table
     atomize_bool(result)
 }
 
 // --- test_ord/2 ---------------------------------------------------------
-// Test Ord between two terms of the same type.
-// Returns less, equal, or greater.
 
 #[otter::nif]
-fn test_ord<'a>(_env: Env<'a>, a: TypedTerm<'a>, b: TypedTerm<'a>) -> Atom {
+fn test_ord<'a>(_env: CallEnv<'a>, a: TypedTerm<'a>, b: TypedTerm<'a>) -> Atom {
     use std::cmp::Ordering;
     let ord = match (a, b) {
         (TypedTerm::Atom(a), TypedTerm::Atom(b)) => a.cmp(&b),
@@ -158,10 +147,9 @@ fn test_ord<'a>(_env: Env<'a>, a: TypedTerm<'a>, b: TypedTerm<'a>) -> Atom {
 }
 
 // --- test_debug/1 -------------------------------------------------------
-// Test Debug formatting — returns the Debug string as a binary.
 
 #[otter::nif]
-fn test_debug<'a>(env: Env<'a>, val: TypedTerm<'a>) -> Binary<'a> {
+fn test_debug<'a>(env: CallEnv<'a>, val: TypedTerm<'a>) -> Binary<'a> {
     let s = match val {
         TypedTerm::Atom(v) => format!("{:?}", v),
         TypedTerm::Integer(v) => format!("{:?}", v),
@@ -179,45 +167,38 @@ fn test_debug<'a>(env: Env<'a>, val: TypedTerm<'a>) -> Binary<'a> {
 }
 
 // --- test_try_from/1 ----------------------------------------------------
-// Test TryFrom<Integer> for i64. Returns the value or the atom 'overflow'.
+// Now `Integer::to_i64(env)` — extraction needs the env on the branded spine.
 
 #[otter::nif]
-fn test_try_from<'a>(env: Env<'a>, val: Integer<'a>) -> TypedTerm<'a> {
-    match i64::try_from(val) {
-        Ok(v) => TypedTerm::Integer(Integer::from_i64(env, v)),
-        Err(_) => TypedTerm::Atom(otter::atom![overflow]),
+fn test_try_from<'a>(env: CallEnv<'a>, val: Integer<'a>) -> TypedTerm<'a> {
+    match val.to_i64(env) {
+        Some(v) => TypedTerm::Integer(Integer::from_i64(env, v)),
+        None => TypedTerm::Atom(otter::atom![overflow]),
     }
 }
 
 // --- test_binary_traits/0 -----------------------------------------------
-// Exercise Binary Deref, AsRef, sub, and BinaryBuf Extend/Deref.
+// Binary's byte access takes an env now (no Deref/AsRef); BinaryBuf keeps them.
 
 #[otter::nif]
-fn test_binary_traits(env: Env) -> Atom {
-    // Binary: Deref gives us slice methods
+fn test_binary_traits(env: CallEnv) -> Atom {
     let bin = Binary::from_bytes(env, b"hello world");
-    assert!(bin.starts_with(b"hello"));  // via Deref<Target=[u8]>
-    assert_eq!(bin.len(), 11);
+    assert!(bin.as_bytes(env).starts_with(b"hello"));
+    assert_eq!(bin.len(env), 11);
 
-    // Binary: sub with bounds check
-    let sub = bin.sub(6, 5);
-    assert_eq!(sub.as_bytes(), b"world");
+    let sub = bin.sub(env, 6, 5);
+    assert_eq!(sub.as_bytes(env), b"world");
 
-    // Binary: AsRef
-    fn takes_asref(b: &impl AsRef<[u8]>) -> usize { b.as_ref().len() }
-    assert_eq!(takes_asref(&bin), 11);
-
-    // BinaryBuf: Extend
+    // BinaryBuf: Extend / Deref / DerefMut / io::Write all still hold (it owns
+    // its allocation — no env needed).
     let mut builder = BinaryBuf::new();
     builder.extend(b"hello".iter().copied());
     assert_eq!(builder.len(), 5);
-    assert_eq!(&*builder, b"hello");  // via Deref
+    assert_eq!(&*builder, b"hello");
 
-    // BinaryBuf: DerefMut
     builder[0] = b'H';
     assert_eq!(&*builder, b"Hello");
 
-    // BinaryBuf: io::Write
     use std::io::Write;
     write!(builder, " world").unwrap();
     assert_eq!(&*builder, b"Hello world");
@@ -228,40 +209,36 @@ fn test_binary_traits(env: Env) -> Atom {
 }
 
 // --- test_from_str/1 ----------------------------------------------------
-// Test List::from_str — returns the Erlang string (list of codepoints).
 
 #[otter::nif]
-fn test_from_str<'a>(env: Env<'a>, bin: Binary<'a>) -> List<'a> {
-    let s = bin.try_str().unwrap();
+fn test_from_str<'a>(env: CallEnv<'a>, bin: Binary<'a>) -> List<'a> {
+    let s = bin.try_str(env).unwrap();
     List::from_str(env, s)
 }
 
 // --- reverse_list/1 -----------------------------------------------------
-// Test List::reverse.
 
 #[otter::nif]
-fn reverse_list<'a>(_env: Env<'a>, list: List<'a>) -> TypedTerm<'a> {
-    match list.reverse() {
+fn reverse_list<'a>(env: CallEnv<'a>, list: List<'a>) -> TypedTerm<'a> {
+    match list.reverse(env) {
         Some(rev) => TypedTerm::List(rev),
         None => TypedTerm::Atom(otter::atom![error]),
     }
 }
 
 // --- list_tail/1 --------------------------------------------------------
-// Return the tail of an iterated list (tests ListIterator::tail).
 
 #[otter::nif]
-fn list_tail<'a>(_env: Env<'a>, list: List<'a>) -> Term<'a> {
-    let mut iter = list.iter();
+fn list_tail<'a>(env: CallEnv<'a>, list: List<'a>) -> AnyTerm<'a> {
+    let mut iter = list.iter(env);
     while iter.next().is_some() {}
     iter.tail().unwrap()
 }
 
 // --- atom_name/1 --------------------------------------------------------
-// Return an atom's name as a binary, exposing the raw bytes from Atom::name().
 
 #[otter::nif]
-fn atom_name<'a>(env: Env<'a>, a: Atom) -> Binary<'a> {
+fn atom_name<'a>(env: CallEnv<'a>, a: Atom) -> Binary<'a> {
     let name = a.name(env);
     Binary::from_bytes(env, name.as_bytes())
 }
@@ -269,26 +246,32 @@ fn atom_name<'a>(env: Env<'a>, a: Atom) -> Binary<'a> {
 // --- hm_new/0 -----------------------------------------------------------
 
 #[otter::nif]
-fn hm_new(env: Env) -> ResourceArc<HashMapResource> {
+fn hm_new(env: CallEnv) -> ResourceArc<HashMapResource> {
     eprintln!("[otter_demo] HashMapResource constructed");
-    env.make_resource(HashMapResource {
-        map: Mutex::new(HashMap::new()),
-    })
+    otter::resource::make_resource(env, HashMapResource { map: Mutex::new(HashMap::new()) })
 }
 
 // --- hm_put/3 -----------------------------------------------------------
 
 #[otter::nif]
-fn hm_put<'a>(_env: Env<'a>, key: Binary<'a>, value: Binary<'a>, hm: ResourceArc<HashMapResource>) -> Atom {
-    hm.map.lock().unwrap().insert(key.as_bytes().to_vec(), value.as_bytes().to_vec());
+fn hm_put<'a>(
+    env: CallEnv<'a>,
+    key: Binary<'a>,
+    value: Binary<'a>,
+    hm: ResourceArc<HashMapResource>,
+) -> Atom {
+    hm.map
+        .lock()
+        .unwrap()
+        .insert(key.as_bytes(env).to_vec(), value.as_bytes(env).to_vec());
     otter::atom![ok]
 }
 
 // --- hm_get/2 -----------------------------------------------------------
 
 #[otter::nif]
-fn hm_get<'a>(env: Env<'a>, key: Binary<'a>, hm: ResourceArc<HashMapResource>) -> TypedTerm<'a> {
-    match hm.map.lock().unwrap().get(key.as_bytes()) {
+fn hm_get<'a>(env: CallEnv<'a>, key: Binary<'a>, hm: ResourceArc<HashMapResource>) -> TypedTerm<'a> {
+    match hm.map.lock().unwrap().get(key.as_bytes(env)) {
         Some(val) => {
             let ok: TypedTerm = otter::atom![ok].into();
             let bin: TypedTerm = Binary::from_bytes(env, val).into();
@@ -299,97 +282,93 @@ fn hm_get<'a>(env: Env<'a>, key: Binary<'a>, hm: ResourceArc<HashMapResource>) -
 }
 
 // --- test_map/0 ---------------------------------------------------------
-// Exercise Map::new, put, get, update, remove, size, iter.
 
 #[otter::nif]
-fn test_map(env: Env) -> Atom {
+fn test_map(env: CallEnv) -> Atom {
     let m = Map::new(env);
-    assert_eq!(m.size(), 0);
+    assert_eq!(m.size(env), 0);
 
     let k1 = Atom::intern(env, "x").unwrap();
     let v1 = Integer::from_i64(env, 1);
-    let m = m.put(k1, v1);
-    assert_eq!(m.size(), 1);
+    let m = m.put(env, k1, v1);
+    assert_eq!(m.size(env), 1);
 
-    // get
-    match m.get(k1).unwrap().resolve() {
-        Some(TypedTerm::Integer(i)) => assert_eq!(i64::try_from(i).unwrap(), 1),
+    match m.get(env, k1).unwrap().resolve(env) {
+        Some(TypedTerm::Integer(i)) => assert_eq!(i.to_i64(env).unwrap(), 1),
         _ => panic!("expected integer"),
     }
-    assert!(m.get(Atom::intern(env, "missing").unwrap()).is_none());
+    assert!(m.get(env, Atom::intern(env, "missing").unwrap()).is_none());
 
-    // update existing key
     let v2 = Integer::from_i64(env, 2);
-    let m = m.update(k1, v2).unwrap();
-    match m.get(k1).unwrap().resolve() {
-        Some(TypedTerm::Integer(i)) => assert_eq!(i64::try_from(i).unwrap(), 2),
+    let m = m.update(env, k1, v2).unwrap();
+    match m.get(env, k1).unwrap().resolve(env) {
+        Some(TypedTerm::Integer(i)) => assert_eq!(i.to_i64(env).unwrap(), 2),
         _ => panic!("expected integer"),
     }
 
-    // update missing key returns None
-    assert!(m.update(Atom::intern(env, "missing").unwrap(), v1).is_none());
+    assert!(m.update(env, Atom::intern(env, "missing").unwrap(), v1).is_none());
 
-    // put second key, iterate
     let k2 = Atom::intern(env, "y").unwrap();
-    let m = m.put(k2, Integer::from_i64(env, 3));
-    assert_eq!(m.size(), 2);
-    assert_eq!(m.iter().count(), 2);
+    let m = m.put(env, k2, Integer::from_i64(env, 3));
+    assert_eq!(m.size(env), 2);
+    assert_eq!(m.iter(env).count(), 2);
 
-    // remove
-    let m = m.remove(k1).unwrap();
-    assert_eq!(m.size(), 1);
-    assert!(m.get(k1).is_none());
+    let m = m.remove(env, k1).unwrap();
+    assert_eq!(m.size(env), 1);
+    assert!(m.get(env, k1).is_none());
 
     otter::atom![ok]
 }
 
 // --- test_tuple/0 -------------------------------------------------------
-// Exercise Tuple::from_terms, element, len, is_empty.
 
 #[otter::nif]
-fn test_tuple(env: Env) -> Atom {
+fn test_tuple(env: CallEnv) -> Atom {
     let a = TypedTerm::Atom(Atom::intern(env, "hello").unwrap());
     let b = TypedTerm::Integer(Integer::from_i64(env, 42));
     let t = Tuple::from_terms(env, [a, b]);
 
-    assert_eq!(t.len(), 2);
-    assert!(!t.is_empty());
-    assert!(t.element(0).resolve() == Some(a));
-    assert!(t.element(1).resolve() == Some(b));
+    assert_eq!(t.len(env), 2);
+    assert!(!t.is_empty(env));
+    assert!(t.element(env, 0).resolve(env) == Some(a));
+    assert!(t.element(env, 1).resolve(env) == Some(b));
 
     let empty = Tuple::from_terms(env, std::iter::empty::<TypedTerm>());
-    assert_eq!(empty.len(), 0);
-    assert!(empty.is_empty());
+    assert_eq!(empty.len(env), 0);
+    assert!(empty.is_empty(env));
 
     otter::atom![ok]
 }
 
 // --- double_float/1 -----------------------------------------------------
-// Float decode → f64 → Float encode roundtrip.
 
 #[otter::nif]
-fn double_float<'a>(env: Env<'a>, val: Float<'a>) -> Result<Float<'a>, Raised<'a>> {
-    Float::from_f64(env, f64::from(val) * 2.0)
+fn double_float<'a>(env: CallEnv<'a>, val: Float<'a>) -> Result<Float<'a>, Raised<'a>> {
+    match Float::from_f64(env, val.to_f64(env).unwrap() * 2.0) {
+        Some(f) => Ok(f),
+        None => env.badarg(),
+    }
 }
 
 // --- nan_float/0 --------------------------------------------------------
-// make_double on a non-finite value raises badarg on the env; the Raised
-// witness propagates out and the BEAM raises it on return.
+// from_f64 rejects NaN in Rust (returns None); raise badarg ourselves so the
+// BEAM raises it on return.
 
 #[otter::nif]
-fn nan_float<'a>(env: Env<'a>) -> Result<Float<'a>, Raised<'a>> {
-    env.make_double(f64::NAN)
+fn nan_float<'a>(env: CallEnv<'a>) -> Result<Float<'a>, Raised<'a>> {
+    match Float::from_f64(env, f64::NAN) {
+        Some(f) => Ok(f),
+        None => env.badarg(),
+    }
 }
 
 // --- test_pid/0 ---------------------------------------------------------
-// Exercise LocalPid::self_, is_alive, whereis.
 
 #[otter::nif]
-fn test_pid(env: Env) -> LocalPid {
+fn test_pid(env: CallEnv) -> LocalPid {
     let pid = LocalPid::self_(env);
     assert!(pid.is_alive(env));
 
-    // whereis — 'init' is always registered
     let init = LocalPid::whereis(env, Atom::intern(env, "init").unwrap());
     assert!(init.is_some());
 
@@ -397,31 +376,27 @@ fn test_pid(env: Env) -> LocalPid {
 }
 
 // --- new_ref/0 ----------------------------------------------------------
-// Exercise Reference::new and Reference encode.
 
 #[otter::nif]
-fn new_ref<'a>(env: Env<'a>) -> Reference<'a> {
+fn new_ref<'a>(env: CallEnv<'a>) -> Reference<'a> {
     Reference::new(env)
 }
 
 // --- divide/2 -----------------------------------------------------------
-// Result<T, Raised> return type — raising goes through env.raise_exception,
-// which yields the Raised that `?` propagates out as the exception.
 
 #[otter::nif]
-fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
-    let b_val = i64::try_from(b).unwrap();
+fn divide<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
+    let b_val = b.to_i64(env).unwrap();
     if b_val == 0 {
-        return env.raise_exception(otter::atom![division_by_zero]);
+        return env.raise(otter::atom![division_by_zero]);
     }
-    Ok(Integer::from_i64(env, i64::try_from(a).unwrap() / b_val))
+    Ok(Integer::from_i64(env, a.to_i64(env).unwrap() / b_val))
 }
 
 // --- dirty_cpu_thread_type/0 --------------------------------------------
-// Dirty CPU scheduler — verifies scheduling via thread_type().
 
 #[otter::nif(schedule = "DirtyCpu")]
-fn dirty_cpu_thread_type(_env: Env) -> Atom {
+fn dirty_cpu_thread_type(_env: CallEnv) -> Atom {
     match otter::system::thread_type() {
         otter::system::ThreadType::DirtyCpu => otter::atom![dirty_cpu],
         _ => otter::atom![error],
@@ -429,35 +404,31 @@ fn dirty_cpu_thread_type(_env: Env) -> Atom {
 }
 
 // --- send_from_thread/0 -------------------------------------------------
-// OwnedTermBuilder: spawn a thread, build a term, send to calling process.
+// Build a term in an owned arena on a spawned thread, then steal-send it.
 
 #[otter::nif]
-fn send_from_thread(env: Env) -> Atom {
+fn send_from_thread(env: CallEnv) -> Atom {
     let pid = LocalPid::self_(env);
     std::thread::spawn(move || {
-        let builder = OwnedTermBuilder::new();
-        let msg = otter::atom![from_thread].encode(builder.env());
-        builder.set(msg);
-        pid.send_owned(builder.build());
+        let mut arena = OwnedEnvArena::new();
+        let msg = arena.run(|oenv| oenv.export(otter::atom![from_thread]));
+        otter::types::send(&pid, &mut arena, msg);
     });
     otter::atom![ok]
 }
 
 // --- send_to/2 ----------------------------------------------------------
-// In-NIF send: copy a term from the caller env into a pid's mailbox.
 
 #[otter::nif]
-fn send_to<'a>(env: Env<'a>, to: LocalPid, msg: Term<'a>) -> Atom {
-    to.send_from(env, msg);
+fn send_to<'a>(env: CallEnv<'a>, to: LocalPid, msg: AnyTerm<'a>) -> Atom {
+    otter::types::send_from(env, &to, msg);
     otter::atom![ok]
 }
 
 // --- cpu_time/0 ---------------------------------------------------------
-// enif_cpu_time returns an erlang:timestamp()-format tuple, or raises badarg
-// if the OS cannot provide it.
 
 #[otter::nif]
-fn cpu_time<'a>(env: Env<'a>) -> Result<Tuple<'a>, Raised<'a>> {
+fn cpu_time<'a>(env: CallEnv<'a>) -> Result<Tuple<'a>, Raised<'a>> {
     env.cpu_time()
 }
 
@@ -468,14 +439,16 @@ struct HashMapResource {
 }
 
 impl Resource for HashMapResource {
-    fn destructor(self, _env: Env<'_>) {
-        eprintln!("[otter_demo] HashMapResource destructed ({} entries)", self.map.lock().unwrap().len());
+    fn destructor(self, _env: CallbackEnv<'_>) {
+        eprintln!(
+            "[otter_demo] HashMapResource destructed ({} entries)",
+            self.map.lock().unwrap().len()
+        );
     }
 }
 
-// Exists solely to exercise the S1 catch_unwind wrapper in otter's resource
-// destructor callback. Drop panics; the wrapper must absorb it and let the
-// BEAM continue. See the panicking_destructor test in otter_demo__nif_test.
+// Exercises the catch_unwind wrapper in otter's resource destructor callback:
+// Drop panics; the wrapper must absorb it and let the BEAM continue.
 struct PanickingResource;
 
 impl Resource for PanickingResource {}
@@ -487,20 +460,12 @@ impl Drop for PanickingResource {
 }
 
 #[otter::nif]
-fn panicking_resource_new(env: Env) -> ResourceArc<PanickingResource> {
-    env.make_resource(PanickingResource)
+fn panicking_resource_new(env: CallEnv) -> ResourceArc<PanickingResource> {
+    otter::resource::make_resource(env, PanickingResource)
 }
 
 // --- select / stop callback (audit-01 regression) -----------------------
-// A resource owning a connected socket pair. select() registers READ
-// interest on one end; select() with STOP drives the select-stop path,
-// which the BEAM dispatches to Resource::stop. Before audit-01 the stop
-// slot was NULL and this call segfaulted the VM. `stop` bumps a counter the
-// Erlang side polls, proving the (non-NULL) callback ran and the VM lived.
-//
-// Both ends are held alive so neither becomes readable: the only event is
-// the explicit STOP. The streams close on Drop, after STOP has already
-// deregistered the fd from the pollset.
+
 struct FdResource {
     a: UnixStream,
     b: UnixStream,
@@ -508,52 +473,66 @@ struct FdResource {
 }
 
 impl Resource for FdResource {
-    fn stop(&self, _env: Env<'_>, _event: otter::enif_ffi::Event, _is_direct_call: bool) {
+    fn stop(&self, _env: CallbackEnv<'_>, _event: otter::enif_ffi::Event, _is_direct_call: bool) {
         self.stop_count.fetch_add(1, Ordering::Relaxed);
     }
 }
 
 #[otter::nif]
-fn select_resource_new(env: Env) -> ResourceArc<FdResource> {
+fn select_resource_new(env: CallEnv) -> ResourceArc<FdResource> {
     let (a, b) = UnixStream::pair().expect("socketpair");
-    env.make_resource(FdResource { a, b, stop_count: AtomicUsize::new(0) })
+    otter::resource::make_resource(env, FdResource { a, b, stop_count: AtomicUsize::new(0) })
 }
 
 #[otter::nif]
-fn select_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
+fn select_register<'a>(env: CallEnv<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
     let pid = LocalPid::self_(env);
     let flags = otter::select::select(
-        env, arc.a.as_raw_fd(), SelectFlags::READ, &arc, &pid, Reference::new(env),
+        env,
+        arc.a.as_raw_fd(),
+        SelectFlags::READ,
+        &arc,
+        &pid,
+        Reference::new(env),
     );
     Integer::from_i64(env, flags as i64)
 }
 
 #[otter::nif]
-fn select_stop<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
+fn select_stop<'a>(env: CallEnv<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
     let pid = LocalPid::self_(env);
     let flags = otter::select::select(
-        env, arc.a.as_raw_fd(), SelectFlags::STOP, &arc, &pid, Reference::new(env),
+        env,
+        arc.a.as_raw_fd(),
+        SelectFlags::STOP,
+        &arc,
+        &pid,
+        Reference::new(env),
     );
     Integer::from_i64(env, flags as i64)
 }
 
 #[otter::nif]
-fn select_stop_count<'a>(env: Env<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
+fn select_stop_count<'a>(env: CallEnv<'a>, arc: ResourceArc<FdResource>) -> Integer<'a> {
     Integer::from_i64(env, arc.stop_count.load(Ordering::Relaxed) as i64)
 }
 
-// select_x with a custom notification message. Selects READ on the fd, then
-// writes to its peer so the fd becomes readable — the BEAM then delivers
-// `msg` (not the default {select,...} tuple) to the calling process.
 #[otter::nif]
-fn select_x_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>, msg: Term<'a>) -> Integer<'a> {
+fn select_x_register<'a>(
+    env: CallEnv<'a>,
+    arc: ResourceArc<FdResource>,
+    msg: AnyTerm<'a>,
+) -> Integer<'a> {
     use std::io::Write;
     let pid = LocalPid::self_(env);
-    // CUSTOM_MSG is required for select_x to deliver `msg` itself; without it
-    // the BEAM sends the default {select,...} tuple with msg nested as the ref.
     let flags = otter::select::select_x(
-        env, arc.a.as_raw_fd(), SelectFlags::READ | SelectFlags::CUSTOM_MSG,
-        &arc, &pid, msg, None,
+        env,
+        arc.a.as_raw_fd(),
+        SelectFlags::READ | SelectFlags::CUSTOM_MSG,
+        &arc,
+        &pid,
+        msg,
+        None::<CallEnv<'a>>,
     );
     let mut peer = &arc.b;
     let _ = peer.write_all(b"x");
@@ -561,13 +540,10 @@ fn select_x_register<'a>(env: Env<'a>, arc: ResourceArc<FdResource>, msg: Term<'
 }
 
 // --- port_send/2 --------------------------------------------------------
-// Send a command to a port via enif_port_command. The caller process owns
-// the port (opened by the test), so the command is permitted; the binary is
-// copied into the port's input. Returns ok if accepted.
 
 #[otter::nif]
-fn port_send<'a>(env: Env<'a>, port: LocalPort, data: Binary<'a>) -> Atom {
-    if env.port_command(&port, data) {
+fn port_send<'a>(env: CallEnv<'a>, port: LocalPort, data: Binary<'a>) -> Atom {
+    if otter::types::port_command(env, &port, data) {
         otter::atom![ok]
     } else {
         otter::atom![error]
@@ -575,22 +551,17 @@ fn port_send<'a>(env: Env<'a>, port: LocalPort, data: Binary<'a>) -> Atom {
 }
 
 // --- test_time/0 --------------------------------------------------------
-// Exercise the time module: monotonic_time, time_offset, convert_time_unit
-// across the TimeUnit variants.
 
 #[otter::nif]
-fn test_time(_env: Env) -> Atom {
+fn test_time(_env: CallEnv) -> Atom {
     use otter::time::{convert_time_unit, monotonic_time, time_offset, TimeUnit};
 
-    // Monotonic time does not go backwards.
     let t1 = monotonic_time(TimeUnit::Nanosecond);
     let t2 = monotonic_time(TimeUnit::Nanosecond);
     assert!(t2 >= t1);
 
-    // time_offset is callable (monotonic + offset = system time).
     let _ = time_offset(TimeUnit::Millisecond);
 
-    // Unit conversion is exact for these ratios.
     assert_eq!(convert_time_unit(1, TimeUnit::Second, TimeUnit::Nanosecond), 1_000_000_000);
     assert_eq!(convert_time_unit(1000, TimeUnit::Millisecond, TimeUnit::Second), 1);
 
@@ -598,13 +569,11 @@ fn test_time(_env: Env) -> Atom {
 }
 
 // --- test_consume_timeslice/0 -------------------------------------------
-// Drive enif_consume_timeslice to exhaustion. Consuming 100% repeatedly
-// must eventually report the timeslice used up (returns true).
 
 #[otter::nif]
-fn test_consume_timeslice(env: Env) -> Atom {
+fn test_consume_timeslice(env: CallEnv) -> Atom {
     for _ in 0..100 {
-        if env.consume_timeslice(100) {
+        if env.as_any_env().consume_timeslice(100) {
             return otter::atom![ok];
         }
     }
@@ -612,27 +581,24 @@ fn test_consume_timeslice(env: Env) -> Atom {
 }
 
 // --- monitor / down callback --------------------------------------------
-// A resource that monitors a process via ResourceArc::monitor. When the
-// monitored process exits, the BEAM dispatches to Resource::down on a
-// scheduler thread; down() bumps a counter the Erlang side polls. Mirrors
-// the select-stop test for the other resource extern "C" callback.
+
 struct MonitorResource {
     down_count: AtomicUsize,
 }
 
 impl Resource for MonitorResource {
-    fn down<'a>(&'a self, _env: Env<'a>, _pid: LocalPid, _monitor: otter::resource::Monitor) {
+    fn down<'a>(&'a self, _env: CallbackEnv<'a>, _pid: LocalPid, _monitor: otter::resource::Monitor) {
         self.down_count.fetch_add(1, Ordering::Relaxed);
     }
 }
 
 #[otter::nif]
-fn monitor_resource_new(env: Env) -> ResourceArc<MonitorResource> {
-    env.make_resource(MonitorResource { down_count: AtomicUsize::new(0) })
+fn monitor_resource_new(env: CallEnv) -> ResourceArc<MonitorResource> {
+    otter::resource::make_resource(env, MonitorResource { down_count: AtomicUsize::new(0) })
 }
 
 #[otter::nif]
-fn monitor_pid<'a>(env: Env<'a>, arc: ResourceArc<MonitorResource>, pid: LocalPid) -> Atom {
+fn monitor_pid<'a>(env: CallEnv<'a>, arc: ResourceArc<MonitorResource>, pid: LocalPid) -> Atom {
     match arc.monitor(Some(env), &pid) {
         Some(_) => otter::atom![ok],
         None => otter::atom![error],
@@ -640,14 +606,13 @@ fn monitor_pid<'a>(env: Env<'a>, arc: ResourceArc<MonitorResource>, pid: LocalPi
 }
 
 #[otter::nif]
-fn monitor_down_count<'a>(env: Env<'a>, arc: ResourceArc<MonitorResource>) -> Integer<'a> {
+fn monitor_down_count<'a>(env: CallEnv<'a>, arc: ResourceArc<MonitorResource>) -> Integer<'a> {
     Integer::from_i64(env, arc.down_count.load(Ordering::Relaxed) as i64)
 }
 
-fn on_load(_env: Env, _load_info: Term) -> bool {
+fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
     // Atoms and resources are interned/registered by the `init!` scaffolding
-    // before this runs; nothing to do here. Kept to exercise the user-load
-    // callback dispatch path.
+    // before this runs; nothing to do here.
     true
 }
 

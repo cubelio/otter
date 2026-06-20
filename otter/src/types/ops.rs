@@ -3,7 +3,8 @@
 use std::ffi::{c_int, c_void, CStr};
 
 use crate::types::{
-    AnyEnv, AnyTerm, BinaryBuf, CallEnv, Env, InitEnv, Integer, Raised, Term, Tuple,
+    AnyEnv, AnyTerm, BinaryBuf, CallEnv, CallingEnv, Env, InitEnv, Integer, LocalPid, LocalPort,
+    RawTerm, Raised, Term, Tuple,
 };
 
 /// Serialize a term to the external term format (`enif_term_to_binary`),
@@ -14,6 +15,32 @@ pub fn serialize<'id>(env: impl Env<'id>, term: impl Term<'id>) -> Option<Binary
         Some(BinaryBuf::from_filled(bin))
     } else {
         None
+    }
+}
+
+/// Deserialize a term from external-term-format bytes (`enif_binary_to_term`).
+/// If `safe`, encoded atoms not already in the atom table are rejected. `None`
+/// on decode failure.
+pub fn deserialize<'id>(env: impl Env<'id>, data: &[u8], safe: bool) -> Option<AnyTerm<'id>> {
+    let opts = if safe { enif_ffi::BIN2TERM_SAFE } else { 0 };
+    let mut term: RawTerm = 0;
+    let consumed =
+        unsafe { enif_ffi::binary_to_term(env.raw_env(), data.as_ptr(), data.len(), &mut term, opts) };
+    (consumed != 0).then(|| AnyTerm::wrap(term, env))
+}
+
+/// Send `msg` to `pid` from inside a NIF, attributing it to the calling process
+/// (`enif_send` with a NULL msg_env — the term is copied from the caller env).
+/// `true` if the process was alive. Only a [`CallingEnv`] carries a caller.
+pub fn send_from<'id>(env: impl CallingEnv<'id>, pid: &LocalPid, msg: impl Term<'id>) -> bool {
+    unsafe { enif_ffi::send(env.raw_env(), &pid.pid, std::ptr::null_mut(), msg.raw_term()) != 0 }
+}
+
+/// Send a command to local `port` (`enif_port_command`, NULL msg_env — copied
+/// from the caller env). `true` if accepted.
+pub fn port_command<'id>(env: impl CallingEnv<'id>, port: &LocalPort, msg: impl Term<'id>) -> bool {
+    unsafe {
+        enif_ffi::port_command(env.raw_env(), &port.port, std::ptr::null_mut(), msg.raw_term()) != 0
     }
 }
 

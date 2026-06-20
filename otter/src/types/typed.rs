@@ -1,8 +1,9 @@
 //! `TypedTerm` and `resolve` — the typed view of a received term.
 
+use crate::types::sealed::Sealed;
 use crate::types::{
-    AnyTerm, Atom, Bitstring, Env, Float, Fun, Integer, List, Map, Pid, Port, RawTerm, Reference,
-    Term, Tuple,
+    AnyTerm, Atom, Binary, Bitstring, Env, Float, Fun, Integer, List, Map, Pid, Port, RawTerm,
+    Reference, Term, Tuple,
 };
 
 /// Typed enum produced by [`AnyTerm::resolve`]. One `enif_term_type` call has
@@ -48,9 +49,11 @@ impl<'id> AnyTerm<'id> {
     }
 }
 
-impl<'id> TypedTerm<'id> {
+impl<'id> Sealed for TypedTerm<'id> {}
+
+impl<'id> Term<'id> for TypedTerm<'id> {
     /// Extract the underlying machine word, discarding the variant tag.
-    pub fn raw_term(self) -> RawTerm {
+    fn raw_term(self) -> RawTerm {
         match self {
             TypedTerm::Atom(v) => v.raw_term(),
             TypedTerm::Bitstring(v) => v.raw_term(),
@@ -64,5 +67,88 @@ impl<'id> TypedTerm<'id> {
             TypedTerm::Reference(v) => v.raw_term(),
             TypedTerm::Tuple(v) => v.raw_term(),
         }
+    }
+}
+
+impl<'id> From<Atom> for TypedTerm<'id> {
+    fn from(v: Atom) -> Self {
+        TypedTerm::Atom(v)
+    }
+}
+impl<'id> From<Binary<'id>> for TypedTerm<'id> {
+    /// A binary is a byte-aligned bitstring, so it lands in the `Bitstring` variant.
+    fn from(v: Binary<'id>) -> Self {
+        TypedTerm::Bitstring(Bitstring::from_raw(v.raw_term()))
+    }
+}
+impl<'id> From<Bitstring<'id>> for TypedTerm<'id> {
+    fn from(v: Bitstring<'id>) -> Self {
+        TypedTerm::Bitstring(v)
+    }
+}
+impl<'id> From<Float<'id>> for TypedTerm<'id> {
+    fn from(v: Float<'id>) -> Self {
+        TypedTerm::Float(v)
+    }
+}
+impl<'id> From<Fun<'id>> for TypedTerm<'id> {
+    fn from(v: Fun<'id>) -> Self {
+        TypedTerm::Fun(v)
+    }
+}
+impl<'id> From<Integer<'id>> for TypedTerm<'id> {
+    fn from(v: Integer<'id>) -> Self {
+        TypedTerm::Integer(v)
+    }
+}
+impl<'id> From<List<'id>> for TypedTerm<'id> {
+    fn from(v: List<'id>) -> Self {
+        TypedTerm::List(v)
+    }
+}
+impl<'id> From<Map<'id>> for TypedTerm<'id> {
+    fn from(v: Map<'id>) -> Self {
+        TypedTerm::Map(v)
+    }
+}
+impl<'id> From<Pid<'id>> for TypedTerm<'id> {
+    fn from(v: Pid<'id>) -> Self {
+        TypedTerm::Pid(v)
+    }
+}
+impl<'id> From<Port<'id>> for TypedTerm<'id> {
+    fn from(v: Port<'id>) -> Self {
+        TypedTerm::Port(v)
+    }
+}
+impl<'id> From<Reference<'id>> for TypedTerm<'id> {
+    fn from(v: Reference<'id>) -> Self {
+        TypedTerm::Reference(v)
+    }
+}
+impl<'id> From<Tuple<'id>> for TypedTerm<'id> {
+    fn from(v: Tuple<'id>) -> Self {
+        TypedTerm::Tuple(v)
+    }
+}
+
+impl PartialEq for TypedTerm<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe { enif_ffi::is_identical(Term::raw_term(*self), Term::raw_term(*other)) != 0 }
+    }
+}
+
+impl Eq for TypedTerm<'_> {}
+
+impl PartialOrd for TypedTerm<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TypedTerm<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let c = unsafe { enif_ffi::compare(Term::raw_term(*self), Term::raw_term(*other)) };
+        c.cmp(&0)
     }
 }
