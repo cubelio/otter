@@ -278,6 +278,34 @@ smoke_test_() ->
     ?_assertError(badarg, otter_demo__nif:codec_map([])),
     ?_assertEqual(6, otter_demo__nif:map_sum_values(#{<<"a">> => 1, <<"b">> => 2, <<"c">> => 3})),
 
+    %% Native bignum codec — arbitrary precision via ETF. Small values use the
+    %% i64/u64 fast path; values beyond 64 bits go through the ETF big path.
+    ?_assertEqual(42, otter_demo__nif:codec_bigint(42)),
+    ?_assertEqual(-42, otter_demo__nif:codec_bigint(-42)),
+    ?_assertEqual(0, otter_demo__nif:codec_bigint(0)),
+    %% i64 / u64 boundaries (fast path).
+    ?_assertEqual(9223372036854775807, otter_demo__nif:codec_bigint(9223372036854775807)),
+    ?_assertEqual(-9223372036854775808, otter_demo__nif:codec_bigint(-9223372036854775808)),
+    ?_assertEqual(18446744073709551615, otter_demo__nif:codec_bigint(18446744073709551615)),
+    %% Just past i64::MAX and u64::MAX — true bignums the 64-bit codecs reject.
+    ?_assertEqual(9223372036854775808, otter_demo__nif:codec_bigint(9223372036854775808)),
+    ?_assertEqual(18446744073709551616, otter_demo__nif:codec_bigint(18446744073709551616)),
+    %% Large magnitudes, both signs.
+    ?_assertEqual(1 bsl 200, otter_demo__nif:codec_bigint(1 bsl 200)),
+    ?_assertEqual(-(1 bsl 200), otter_demo__nif:codec_bigint(-(1 bsl 200))),
+    %% Spanning the SMALL_BIG_EXT (<=255 bytes) / LARGE_BIG_EXT boundary.
+    ?_assertEqual(1 bsl 5000, otter_demo__nif:codec_bigint(1 bsl 5000)),
+    %% Non-integer terms raise badarg.
+    ?_assertError(badarg, otter_demo__nif:codec_bigint(1.5)),
+    ?_assertError(badarg, otter_demo__nif:codec_bigint(foo)),
+    %% Arithmetic on the Rust side, carrying across the 64-bit boundary.
+    ?_assertEqual(9223372036854775808, otter_demo__nif:bigint_add(9223372036854775807, 1)),
+    ?_assertEqual(1 bsl 201, otter_demo__nif:bigint_add(1 bsl 200, 1 bsl 200)),
+    ?_assertEqual(0, otter_demo__nif:bigint_add(1 bsl 200, -(1 bsl 200))),
+    %% 2^n built in Rust — exercises the >64-bit write path.
+    ?_assertEqual(1 bsl 200, otter_demo__nif:bigint_pow2(200)),
+    ?_assertEqual(1 bsl 64, otter_demo__nif:bigint_pow2(64)),
+
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.
     %% The destructor wrapper in otter catches the panic via catch_unwind;

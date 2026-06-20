@@ -4,6 +4,8 @@
 //! `Result<T, Raised>` impl live here. Conversions for native Rust types are
 //! split across submodules by concern.
 
+#[cfg(feature = "bigint")]
+mod bigint;
 mod bool;
 mod float;
 mod integer;

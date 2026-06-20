@@ -13,6 +13,7 @@ categories = ["api-bindings", "external-ffi-bindings"]
 [dependencies]
 otter_codegen = { path = "../otter_codegen" }
 enif-ffi = { version = "0.1.0", features = ["nif_2_17"] }
+num-bigint = { version = "0.4", optional = true }
 
 [dev-dependencies]
 trybuild = "1"
@@ -22,6 +23,10 @@ nif_2_18 = ["enif-ffi/nif_2_18"]
 # Expose the raw, 1:1, all-unsafe `enif` module as a public escape hatch, and
 # accept the tier-2 `_raw` lifecycle callbacks in `init!`.
 raw = ["otter_codegen/raw"]
+# Read/write arbitrary-precision integers (bignums beyond i64/u64) as
+# `num_bigint::BigInt`, with `Encoder`/`Decoder` impls. Off by default — only
+# NIFs that handle out-of-range integers need it.
+bigint = ["dep:num-bigint"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
