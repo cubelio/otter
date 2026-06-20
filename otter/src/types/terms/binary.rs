@@ -93,6 +93,12 @@ impl<'id> Binary<'id> {
         let mut raw_term: RawTerm = 0;
         unsafe {
             let ptr = enif_ffi::make_new_binary(env.raw_env(), data.len(), &mut raw_term);
+            // enif_make_new_binary cannot return null: tracing the ERTS source
+            // (verified across OTP 26 and 27) it allocates via HAlloc or
+            // erts_bin_nrml_alloc, both of which abort the VM on OOM rather than
+            // returning null. The assert pins that invariant so the copy below
+            // never runs against a null destination.
+            assert!(!ptr.is_null(), "enif_make_new_binary returned null");
             std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
         }
         Binary { raw_term, _id: PhantomData }
