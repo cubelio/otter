@@ -95,11 +95,14 @@ unsafe extern "C" fn add_nif(
     let result = std::panic::catch_unwind(|| {
         let a = Integer::decode(Term::new(env, argv[0]).resolve())?;
         let b = Integer::decode(Term::new(env, argv[1]).resolve())?;
-        Ok::<_, CodecError>(assert_encoder(add(env, a, b)))
+        let val = assert_encoder(add(env, a, b));
+        // Encoding runs INSIDE the catch: an `Encoder::encode` panic must not
+        // unwind across the FFI boundary. `encode` returns the result word.
+        Ok::<_, CodecError>(val.encode(env).as_raw())
     });
 
     match result {
-        Ok(Ok(val))  => val.encode(env).as_raw(),   // success (incl. Result<_, Raised>)
+        Ok(Ok(word)) => word,                        // decode + call + encode ok
         Ok(Err(_))   => raise_badarg(env),           // an argument failed to decode
         Err(_panic)  => raise(env, nif_panicked),    // panic caught at the FFI boundary
     }
@@ -140,7 +143,7 @@ fn divide(_env: Env, a: Integer, b: Integer) -> Result<Integer, Atom> {
 #[otter::nif(name = "erlang_name")]    // override the exported function name
 ```
 
-**Panic safety:** Every NIF wrapper catches panics via `std::panic::catch_unwind`. A panicking NIF raises a `nif_panicked` atom exception in the calling process rather than crashing the VM.
+**Panic safety:** Every NIF wrapper runs argument decoding, the NIF body, *and* return-value encoding inside a single `std::panic::catch_unwind`. A panic in any of those three stages — including a panic inside an `Encoder::encode` impl — is caught and raises a `nif_panicked` atom exception in the calling process rather than unwinding across the `extern "C"` boundary (which would be UB) or crashing the VM. The only code outside the catch is the small result dispatch that interns short static atoms, which must itself stay panic-free.
 
 ---
 

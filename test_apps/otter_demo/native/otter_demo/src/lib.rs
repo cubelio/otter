@@ -477,6 +477,23 @@ fn panicking_resource_new(env: CallEnv) -> ResourceArc<PanickingResource> {
     otter::resource::make_resource(env, PanickingResource)
 }
 
+// Exercises the catch_unwind wrapper's RETURN-ENCODING stage (audit-16 / H1):
+// the return type's `Encoder::encode` panics. The generated wrapper must catch
+// it and surface `nif_panicked`, not let the panic unwind across the `extern
+// "C"` boundary (UB). Before the fix, encoding ran outside the catch.
+struct PanickingEncode;
+
+impl<'id> otter::codec::Encoder<'id> for PanickingEncode {
+    fn encode(&self, _env: impl Env<'id>) -> Result<AnyTerm<'id>, otter::codec::CodecError> {
+        panic!("intentional panic from PanickingEncode::encode");
+    }
+}
+
+#[otter::nif]
+fn panic_in_encoder(_env: CallEnv) -> PanickingEncode {
+    PanickingEncode
+}
+
 // --- select / stop callback (audit-01 regression) -----------------------
 
 struct FdResource {
@@ -850,6 +867,7 @@ otter::init!("otter_demo__nif", [
     bigint_pow2,
     intern_atom,
     panicking_resource_new,
+    panic_in_encoder,
     select_resource_new,
     select_register,
     select_stop,
