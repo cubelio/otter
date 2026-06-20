@@ -32,6 +32,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([codec_bool/1, negate/1]).
 -export([codec_string/1, shout/1]).
 -export([codec_pair/1, codec_triple/1, swap/1]).
+-export([codec_int_list/1, sum_i64/1, codec_str_list/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -332,3 +333,18 @@ codec_triple(_T) -> exit(nif_not_loaded).
 
 -spec swap({integer(), integer()}) -> {integer(), integer()}.
 swap(_T) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — Vec / lists
+%%
+%% Requires a proper list; an improper tail, a non-list, or an element that
+%% fails to decode raises badarg.
+
+-spec codec_int_list([integer()]) -> [integer()].
+codec_int_list(_V) -> exit(nif_not_loaded).
+
+-spec sum_i64([integer()]) -> integer().
+sum_i64(_V) -> exit(nif_not_loaded).
+
+-spec codec_str_list([binary() | string()]) -> [binary()].
+codec_str_list(_V) -> exit(nif_not_loaded).

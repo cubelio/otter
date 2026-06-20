@@ -717,6 +717,24 @@ fn swap(_env: CallEnv, t: (i64, i64)) -> (i64, i64) {
     (t.1, t.0)
 }
 
+// --- native codec round-trips: Vec/lists --------------------------------
+// Decodes a proper list element-wise into a Vec and re-encodes it.
+
+#[otter::nif]
+fn codec_int_list(_env: CallEnv, v: Vec<i64>) -> Vec<i64> {
+    v
+}
+
+#[otter::nif]
+fn sum_i64(_env: CallEnv, v: Vec<i64>) -> i64 {
+    v.iter().sum()
+}
+
+#[otter::nif]
+fn codec_str_list(_env: CallEnv, v: Vec<String>) -> Vec<String> {
+    v
+}
+
 fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
     // Atoms and resources are interned/registered by the `init!` scaffolding
     // before this runs; nothing to do here.
@@ -773,6 +791,9 @@ otter::init!("otter_demo__nif", [
     codec_pair,
     codec_triple,
     swap,
+    codec_int_list,
+    sum_i64,
+    codec_str_list,
     panicking_resource_new,
     select_resource_new,
     select_register,
