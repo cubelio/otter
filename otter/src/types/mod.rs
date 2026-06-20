@@ -303,21 +303,21 @@ impl OwnedEnvArena {
 
     pub fn copy_in<'a>(&mut self, term: impl Term<'a>) -> OwnedEnvTerm {
         assert!(!self.is_dirty);
-        self.export(unsafe { enif_ffi::make_copy(self.env, term.raw_term()) })
+        self.wrap_term(unsafe { enif_ffi::make_copy(self.env, term.raw_term()) })
     }
 
     pub fn copy_out<'a>(&self, oterm: OwnedEnvTerm, env: impl Env<'a>) -> AnyTerm<'a> {
         assert!(!self.is_dirty);
-        let remote_term = unsafe { enif_ffi::make_copy(env.raw_env(), self.import(oterm)) };
+        let remote_term = unsafe { enif_ffi::make_copy(env.raw_env(), self.unwrap_term(oterm)) };
         AnyTerm { raw_term: remote_term, _id: PhantomData }
     }
 
-    fn export(&self, raw_term: RawTerm) -> OwnedEnvTerm {
+    fn wrap_term(&self, raw_term: RawTerm) -> OwnedEnvTerm {
         assert!(!self.is_dirty);
         OwnedEnvTerm { env: self.env, version: self.version, term: raw_term }
     }
 
-    fn import(&self, oterm: OwnedEnvTerm) -> RawTerm {
+    fn unwrap_term(&self, oterm: OwnedEnvTerm) -> RawTerm {
         assert!(!self.is_dirty);
         assert!(self.env == oterm.env);
         assert!(self.version == oterm.version);
@@ -349,11 +349,11 @@ pub struct OwnedEnv<'a, 'id> {
 
 impl<'a, 'id> OwnedEnv<'a, 'id> {
     pub fn export(self, term: impl Term<'id>) -> OwnedEnvTerm {
-        self.owner.export(term.raw_term())
+        self.owner.wrap_term(term.raw_term())
     }
 
     pub fn import(self, oterm: OwnedEnvTerm) -> AnyTerm<'id> {
-        AnyTerm { raw_term: self.owner.import(oterm), _id: PhantomData }
+        AnyTerm { raw_term: self.owner.unwrap_term(oterm), _id: PhantomData }
     }
 }
 
@@ -371,7 +371,7 @@ impl<'a, 'id> Env<'id> for OwnedEnv<'a, 'id> {
 /// not owners of the operation.
 pub fn send(pid: &LocalPid, env: &mut OwnedEnvArena, term: OwnedEnvTerm) -> bool {
     assert!(!env.is_dirty);
-    let msg = env.import(term);
+    let msg = env.unwrap_term(term);
     let ok = unsafe { enif_ffi::send(std::ptr::null_mut(), &pid.pid, env.env, msg) != 0 };
     env.is_dirty = ok;
     ok
