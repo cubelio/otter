@@ -622,6 +622,132 @@ fn monitor_down_count<'a>(env: CallEnv<'a>, arc: ResourceArc<MonitorResource>) -
     Integer::from_i64(env, arc.down_count.load(Ordering::Relaxed) as i64)
 }
 
+// --- native codec round-trips: integers ---------------------------------
+// Each takes the native Rust integer as an argument (decode) and returns it
+// (encode). Out-of-range arguments fail to decode and surface as badarg.
+
+#[otter::nif]
+fn codec_i8(_env: CallEnv, x: i8) -> i8 {
+    x
+}
+
+#[otter::nif]
+fn codec_u8(_env: CallEnv, x: u8) -> u8 {
+    x
+}
+
+#[otter::nif]
+fn codec_i64(_env: CallEnv, x: i64) -> i64 {
+    x
+}
+
+#[otter::nif]
+fn codec_u64(_env: CallEnv, x: u64) -> u64 {
+    x
+}
+
+#[otter::nif]
+fn codec_usize(_env: CallEnv, x: usize) -> usize {
+    x
+}
+
+// --- native codec round-trips: floats -----------------------------------
+
+#[otter::nif]
+fn codec_f64(_env: CallEnv, x: f64) -> f64 {
+    x
+}
+
+#[otter::nif]
+fn codec_f32(_env: CallEnv, x: f32) -> f32 {
+    x
+}
+
+// Returns a non-finite f64: encoding it fails (NotFinite), which the nif
+// macro turns into a `badret` exception — the encode-side mirror of badarg.
+#[otter::nif]
+fn encode_inf(_env: CallEnv) -> f64 {
+    f64::INFINITY
+}
+
+#[otter::nif]
+fn encode_nan(_env: CallEnv) -> f64 {
+    f64::NAN
+}
+
+// --- native codec round-trips: bool -------------------------------------
+
+#[otter::nif]
+fn codec_bool(_env: CallEnv, x: bool) -> bool {
+    x
+}
+
+#[otter::nif]
+fn negate(_env: CallEnv, x: bool) -> bool {
+    !x
+}
+
+// --- native codec round-trips: String -----------------------------------
+// Decodes from a binary or a charlist; always encodes to a binary.
+
+#[otter::nif]
+fn codec_string(_env: CallEnv, s: String) -> String {
+    s
+}
+
+#[otter::nif]
+fn shout(_env: CallEnv, s: String) -> String {
+    s.to_uppercase()
+}
+
+// --- native codec round-trips: tuples -----------------------------------
+
+#[otter::nif]
+fn codec_pair(_env: CallEnv, t: (i64, bool)) -> (i64, bool) {
+    t
+}
+
+#[otter::nif]
+fn codec_triple(_env: CallEnv, t: (u8, String, f64)) -> (u8, String, f64) {
+    t
+}
+
+#[otter::nif]
+fn swap(_env: CallEnv, t: (i64, i64)) -> (i64, i64) {
+    (t.1, t.0)
+}
+
+// --- native codec round-trips: Vec/lists --------------------------------
+// Decodes a proper list element-wise into a Vec and re-encodes it.
+
+#[otter::nif]
+fn codec_int_list(_env: CallEnv, v: Vec<i64>) -> Vec<i64> {
+    v
+}
+
+#[otter::nif]
+fn sum_i64(_env: CallEnv, v: Vec<i64>) -> i64 {
+    v.iter().sum()
+}
+
+#[otter::nif]
+fn codec_str_list(_env: CallEnv, v: Vec<String>) -> Vec<String> {
+    v
+}
+
+// --- native codec round-trips: HashMap ----------------------------------
+// Decodes an Erlang map into a HashMap<String, i64> and re-encodes it.
+
+#[otter::nif]
+fn codec_map(_env: CallEnv, m: HashMap<String, i64>) -> HashMap<String, i64> {
+    m
+}
+
+#[otter::nif]
+fn map_sum_values(_env: CallEnv, m: HashMap<String, i64>) -> i64 {
+    m.values().sum()
+}
+
 fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
     // Atoms and resources are interned/registered by the `init!` scaffolding
     // before this runs; nothing to do here.
@@ -662,6 +788,27 @@ otter::init!("otter_demo__nif", [
     send_from_thread,
     send_to,
     cpu_time,
+    codec_i8,
+    codec_u8,
+    codec_i64,
+    codec_u64,
+    codec_usize,
+    codec_f64,
+    codec_f32,
+    encode_inf,
+    encode_nan,
+    codec_bool,
+    negate,
+    codec_string,
+    shout,
+    codec_pair,
+    codec_triple,
+    swap,
+    codec_int_list,
+    sum_i64,
+    codec_str_list,
+    codec_map,
+    map_sum_values,
     panicking_resource_new,
     select_resource_new,
     select_register,

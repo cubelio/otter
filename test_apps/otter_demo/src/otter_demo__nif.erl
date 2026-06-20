@@ -27,6 +27,13 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([monitor_resource_new/0, monitor_pid/2, monitor_down_count/1]).
 -export([test_time/0, test_consume_timeslice/0]).
 -export([port_send/2]).
+-export([codec_i8/1, codec_u8/1, codec_i64/1, codec_u64/1, codec_usize/1]).
+-export([codec_f64/1, codec_f32/1, encode_inf/0, encode_nan/0]).
+-export([codec_bool/1, negate/1]).
+-export([codec_string/1, shout/1]).
+-export([codec_pair/1, codec_triple/1, swap/1]).
+-export([codec_int_list/1, sum_i64/1, codec_str_list/1]).
+-export([codec_map/1, map_sum_values/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -252,3 +259,105 @@ own the port. Returns `ok` if the command was accepted, `error` otherwise.
 """.
 -spec port_send(port(), binary()) -> ok | error.
 port_send(_Port, _Data) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — integers
+%%
+%% Each decodes its argument into a Rust integer type and re-encodes it. An
+%% out-of-range argument fails to decode and raises badarg.
+
+-spec codec_i8(integer()) -> integer().
+codec_i8(_X) -> exit(nif_not_loaded).
+
+-spec codec_u8(integer()) -> integer().
+codec_u8(_X) -> exit(nif_not_loaded).
+
+-spec codec_i64(integer()) -> integer().
+codec_i64(_X) -> exit(nif_not_loaded).
+
+-spec codec_u64(integer()) -> integer().
+codec_u64(_X) -> exit(nif_not_loaded).
+
+-spec codec_usize(integer()) -> integer().
+codec_usize(_X) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — floats
+%%
+%% encode_inf/encode_nan return a non-finite f64 whose encoding fails, raising
+%% badret (the encode-side mirror of badarg).
+
+-spec codec_f64(float()) -> float().
+codec_f64(_X) -> exit(nif_not_loaded).
+
+-spec codec_f32(float()) -> float().
+codec_f32(_X) -> exit(nif_not_loaded).
+
+-spec encode_inf() -> no_return().
+encode_inf() -> exit(nif_not_loaded).
+
+-spec encode_nan() -> no_return().
+encode_nan() -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — bool <-> true/false
+
+-spec codec_bool(boolean()) -> boolean().
+codec_bool(_X) -> exit(nif_not_loaded).
+
+-spec negate(boolean()) -> boolean().
+negate(_X) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — String
+%%
+%% Decodes a binary or charlist into a Rust String and re-encodes it as a binary.
+
+-spec codec_string(binary() | string()) -> binary().
+codec_string(_S) -> exit(nif_not_loaded).
+
+-spec shout(binary() | string()) -> binary().
+shout(_S) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — tuples
+%%
+%% Fixed-arity, element-wise. A tuple of the wrong arity, a non-tuple, or an
+%% element that fails to decode all raise badarg.
+
+-spec codec_pair({integer(), boolean()}) -> {integer(), boolean()}.
+codec_pair(_T) -> exit(nif_not_loaded).
+
+-spec codec_triple({integer(), binary() | string(), float()}) ->
+        {integer(), binary(), float()}.
+codec_triple(_T) -> exit(nif_not_loaded).
+
+-spec swap({integer(), integer()}) -> {integer(), integer()}.
+swap(_T) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — Vec / lists
+%%
+%% Requires a proper list; an improper tail, a non-list, or an element that
+%% fails to decode raises badarg.
+
+-spec codec_int_list([integer()]) -> [integer()].
+codec_int_list(_V) -> exit(nif_not_loaded).
+
+-spec sum_i64([integer()]) -> integer().
+sum_i64(_V) -> exit(nif_not_loaded).
+
+-spec codec_str_list([binary() | string()]) -> [binary()].
+codec_str_list(_V) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — HashMap
+%%
+%% Decodes an Erlang map into HashMap<String, i64>. A key or value that fails to
+%% decode, or a non-map term, raises badarg.
+
+-spec codec_map(#{binary() | string() => integer()}) -> #{binary() => integer()}.
+codec_map(_M) -> exit(nif_not_loaded).
+
+-spec map_sum_values(#{binary() | string() => integer()}) -> integer().
+map_sum_values(_M) -> exit(nif_not_loaded).

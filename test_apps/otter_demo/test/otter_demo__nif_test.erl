@@ -194,6 +194,90 @@ smoke_test_() ->
     %% cpu_time returns an erlang:timestamp()-format 3-tuple.
     ?_assertMatch({_, _, _}, otter_demo__nif:cpu_time()),
 
+    %% Native integer codecs — round-trip in range, badarg out of range.
+    ?_assertEqual(127,  otter_demo__nif:codec_i8(127)),
+    ?_assertEqual(-128, otter_demo__nif:codec_i8(-128)),
+    ?_assertError(badarg, otter_demo__nif:codec_i8(128)),
+    ?_assertError(badarg, otter_demo__nif:codec_i8(-129)),
+    ?_assertEqual(255, otter_demo__nif:codec_u8(255)),
+    ?_assertEqual(0,   otter_demo__nif:codec_u8(0)),
+    ?_assertError(badarg, otter_demo__nif:codec_u8(256)),
+    ?_assertError(badarg, otter_demo__nif:codec_u8(-1)),
+    ?_assertEqual(9223372036854775807, otter_demo__nif:codec_i64(9223372036854775807)),
+    ?_assertEqual(-9223372036854775808, otter_demo__nif:codec_i64(-9223372036854775808)),
+    %% i64::MAX + 1 is a bignum that does not fit the 64-bit read.
+    ?_assertError(badarg, otter_demo__nif:codec_i64(9223372036854775808)),
+    ?_assertEqual(18446744073709551615, otter_demo__nif:codec_u64(18446744073709551615)),
+    ?_assertError(badarg, otter_demo__nif:codec_u64(-1)),
+    ?_assertError(badarg, otter_demo__nif:codec_u64(18446744073709551616)),
+    ?_assertEqual(42, otter_demo__nif:codec_usize(42)),
+    ?_assertError(badarg, otter_demo__nif:codec_usize(-1)),
+
+    %% Native float codecs — f64 round-trips exactly; f32 round-trips for
+    %% exactly-representable values and rejects out-of-range magnitudes.
+    ?_assertEqual(3.14,  otter_demo__nif:codec_f64(3.14)),
+    ?_assertEqual(+0.0,  otter_demo__nif:codec_f64(+0.0)),
+    ?_assertEqual(-2.5,  otter_demo__nif:codec_f64(-2.5)),
+    ?_assertError(badarg, otter_demo__nif:codec_f64(42)),
+    ?_assertEqual(0.5,   otter_demo__nif:codec_f32(0.5)),
+    ?_assertEqual(-2.0,  otter_demo__nif:codec_f32(-2.0)),
+    ?_assertEqual(1.5,   otter_demo__nif:codec_f32(1.5)),
+    %% Beyond f32::MAX — narrowing would overflow to infinity, so it is rejected.
+    ?_assertError(badarg, otter_demo__nif:codec_f32(1.0e300)),
+    %% Encoding a non-finite f64 fails with badret (the encode-side mirror).
+    ?_assertError(badret, otter_demo__nif:encode_inf()),
+    ?_assertError(badret, otter_demo__nif:encode_nan()),
+
+    %% Native bool codec — only the true/false atoms decode; others reject.
+    ?_assertEqual(true,  otter_demo__nif:codec_bool(true)),
+    ?_assertEqual(false, otter_demo__nif:codec_bool(false)),
+    ?_assertError(badarg, otter_demo__nif:codec_bool(yes)),
+    ?_assertError(badarg, otter_demo__nif:codec_bool(1)),
+    ?_assertEqual(false, otter_demo__nif:negate(true)),
+    ?_assertEqual(true,  otter_demo__nif:negate(false)),
+
+    %% Native String codec — decode binary OR charlist, always encode binary.
+    ?_assertEqual(<<"hello">>, otter_demo__nif:codec_string(<<"hello">>)),
+    ?_assertEqual(<<"hello">>, otter_demo__nif:codec_string("hello")),
+    ?_assertEqual(<<"héllo"/utf8>>, otter_demo__nif:codec_string(<<"héllo"/utf8>>)),
+    ?_assertEqual(<<>>, otter_demo__nif:codec_string(<<>>)),
+    %% Invalid UTF-8 binary, and a non-string term.
+    ?_assertError(badarg, otter_demo__nif:codec_string(<<255>>)),
+    ?_assertError(badarg, otter_demo__nif:codec_string(42)),
+    ?_assertEqual(<<"HELLO">>, otter_demo__nif:shout(<<"hello">>)),
+    ?_assertEqual(<<"HELLO">>, otter_demo__nif:shout("hello")),
+
+    %% Native tuple codec — fixed arity, element-wise.
+    ?_assertEqual({1, true},   otter_demo__nif:codec_pair({1, true})),
+    ?_assertEqual({-5, false}, otter_demo__nif:codec_pair({-5, false})),
+    ?_assertError(badarg, otter_demo__nif:codec_pair({1, 2, 3})),
+    ?_assertError(badarg, otter_demo__nif:codec_pair({1})),
+    ?_assertError(badarg, otter_demo__nif:codec_pair([1, true])),
+    ?_assertError(badarg, otter_demo__nif:codec_pair({1, notbool})),
+    ?_assertEqual({7, <<"hi">>, 2.5}, otter_demo__nif:codec_triple({7, <<"hi">>, 2.5})),
+    ?_assertEqual({7, <<"hi">>, 2.5}, otter_demo__nif:codec_triple({7, "hi", 2.5})),
+    ?_assertEqual({2, 1}, otter_demo__nif:swap({1, 2})),
+
+    %% Native Vec/list codec — proper lists only, element-wise.
+    ?_assertEqual([1,2,3], otter_demo__nif:codec_int_list([1,2,3])),
+    ?_assertEqual([],      otter_demo__nif:codec_int_list([])),
+    ?_assertError(badarg, otter_demo__nif:codec_int_list([1,foo,3])),
+    % eqwalizer:ignore
+    ?_assertError(badarg, otter_demo__nif:codec_int_list([1|2])),
+    ?_assertError(badarg, otter_demo__nif:codec_int_list(42)),
+    ?_assertEqual(15, otter_demo__nif:sum_i64([1,2,3,4,5])),
+    ?_assertEqual([<<"a">>, <<"b">>], otter_demo__nif:codec_str_list([<<"a">>, <<"b">>])),
+    ?_assertEqual([<<"a">>, <<"b">>], otter_demo__nif:codec_str_list(["a", "b"])),
+
+    %% Native HashMap codec — String keys, integer values.
+    ?_assertEqual(#{<<"a">> => 1, <<"b">> => 2},
+                  otter_demo__nif:codec_map(#{<<"a">> => 1, <<"b">> => 2})),
+    ?_assertEqual(#{}, otter_demo__nif:codec_map(#{})),
+    ?_assertError(badarg, otter_demo__nif:codec_map(#{<<"a">> => foo})),
+    ?_assertError(badarg, otter_demo__nif:codec_map(#{1 => 2})),
+    ?_assertError(badarg, otter_demo__nif:codec_map([])),
+    ?_assertEqual(6, otter_demo__nif:map_sum_values(#{<<"a">> => 1, <<"b">> => 2, <<"c">> => 3})),
+
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.
     %% The destructor wrapper in otter catches the panic via catch_unwind;

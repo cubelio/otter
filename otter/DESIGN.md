@@ -322,23 +322,31 @@ impl<'a> Env<'a> {
 
 ---
 
-## Layer 5: Codec (`codec.rs`)
+## Layer 5: Codec (`codec/`)
 
 ```rust
-pub enum CodecError { WrongType, IntegerOverflow }
-
-pub trait Encoder {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a>;
+pub enum CodecError {
+    WrongType, IntegerOverflow, NotFinite, FloatRange, NotUtf8, WrongArity, UnknownTermType,
 }
 
-pub trait Decoder<'a>: Sized {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
+pub trait Encoder<'id> {
+    fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError>;
+}
+
+pub trait Decoder<'id>: Sized {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError>;
 }
 ```
 
-Implemented for all otter term types. Not implemented for native Rust types.
+Both directions are fallible and symmetric: a failed `Decoder` on a NIF argument
+becomes `badarg`, a failed `Encoder` on a NIF return becomes `badret`. otter term
+types implement both and never fail (encoding wraps the word). The `codec/`
+submodules add conversions for native Rust types — integers, floats, `bool`,
+`str`/`String`, tuples (arity 1–12), `Vec<T>`, and `HashMap<K, V>` — and these
+are the only impls that can actually fail (a non-finite float on encode; an
+out-of-range integer, bad UTF-8, or wrong-arity tuple on decode).
 
-Note: a blanket `TryFrom<TypedTerm<'a>> for T: Decoder<'a>` cannot be provided — it violates Rust's orphan rules (E0210). Use `T::decode(term)` directly.
+Note: a blanket `TryFrom<TypedTerm<'a>> for T: Decoder<'a>` cannot be provided — it violates Rust's orphan rules (E0210). Use `T::decode(term, env)` directly.
 
 ---
 
