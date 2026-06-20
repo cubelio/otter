@@ -354,7 +354,7 @@ fn test_tuple(env: CallEnv) -> Atom {
 
 #[otter::nif]
 fn double_float<'a>(env: CallEnv<'a>, val: Float<'a>) -> Result<Float<'a>, Raised<'a>> {
-    match Float::from_f64(env, val.to_f64(env).unwrap() * 2.0) {
+    match Float::from_f64(env, val.to_f64(env) * 2.0) {
         Some(f) => Ok(f),
         None => env.badarg(),
     }

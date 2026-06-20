@@ -30,11 +30,15 @@ impl<'id> Float<'id> {
         Some(Float { raw_term, _id: PhantomData })
     }
 
-    /// Read back the `f64` (`enif_get_double`). `None` if the term is not a
-    /// float. `env` must carry the same brand as this term.
-    pub fn to_f64(self, env: impl Env<'id>) -> Option<f64> {
+    /// Read back the `f64` (`enif_get_double`). `env` must carry the same brand
+    /// as this term.
+    pub fn to_f64(self, env: impl Env<'id>) -> f64 {
         let mut val: f64 = 0.0;
-        (unsafe { enif_ffi::get_double(env.raw_env(), self.raw_term, &mut val) } != 0).then_some(val)
+        // get_double fails only on a non-float; a Float is always a validated
+        // float term and every Erlang float is an f64, so this cannot fail.
+        let ok = unsafe { enif_ffi::get_double(env.raw_env(), self.raw_term, &mut val) };
+        assert!(ok != 0, "enif_get_double failed on a validated Float");
+        val
     }
 }
 
