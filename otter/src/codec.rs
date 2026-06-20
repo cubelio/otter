@@ -38,12 +38,16 @@ impl std::error::Error for CodecError {}
 
 /// Convert a value into an Erlang term of brand `'id`.
 ///
-/// Implemented by otter term types and `ResourceArc<T>` — never by native Rust
-/// types (conversions are always explicit). A same-brand term encodes by
-/// wrapping its word for free; cross-env terms are not encoded — copy them
-/// first with [`Term::copy_to`].
+/// Fallible, mirroring [`Decoder`]: a value outside the Erlang term domain
+/// (e.g. a non-finite `f64`) returns `Err(CodecError)`. The `#[otter::nif]`
+/// return path turns an `Err` into a `badret` exception — symmetric to the
+/// `badarg` a failed [`Decoder`] raises on the way in. Impls that cannot fail —
+/// every otter term type encodes by wrapping its word for free — return `Ok`.
+///
+/// A same-brand term encodes for free; cross-env terms are not encoded — copy
+/// them first with [`Term::copy_to`].
 pub trait Encoder<'id> {
-    fn encode(&self, env: impl Env<'id>) -> AnyTerm<'id>;
+    fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError>;
 }
 
 /// Encode a `Result<T, Raised>` in **return position only**.
@@ -54,10 +58,10 @@ pub trait Encoder<'id> {
 /// tuple/list/map) — that diverts the marker into a value position. Always
 /// propagate a `Result<T, Raised>` with `?` or `return`.
 impl<'id, T: Encoder<'id>> Encoder<'id> for Result<T, Raised<'id>> {
-    fn encode(&self, env: impl Env<'id>) -> AnyTerm<'id> {
+    fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
         match self {
             Ok(v) => v.encode(env),
-            Err(_) => AnyTerm::wrap(THE_NON_VALUE, env),
+            Err(_) => Ok(AnyTerm::wrap(THE_NON_VALUE, env)),
         }
     }
 }
@@ -100,8 +104,8 @@ impl<'id> Decoder<'id> for AnyTerm<'id> {
 macro_rules! encode_by_wrap {
     ($($t:ty),+ $(,)?) => { $(
         impl<'id> Encoder<'id> for $t {
-            fn encode(&self, env: impl Env<'id>) -> AnyTerm<'id> {
-                AnyTerm::wrap(Term::raw_term(*self), env)
+            fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
+                Ok(AnyTerm::wrap(Term::raw_term(*self), env))
             }
         }
     )+ };
@@ -114,8 +118,8 @@ encode_by_wrap!(
 );
 
 impl<'id> Encoder<'id> for TypedTerm<'id> {
-    fn encode(&self, env: impl Env<'id>) -> AnyTerm<'id> {
-        AnyTerm::wrap((*self).raw_term(), env)
+    fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
+        Ok(AnyTerm::wrap((*self).raw_term(), env))
     }
 }
 

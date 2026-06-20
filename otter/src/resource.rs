@@ -336,9 +336,9 @@ impl<T: Resource> std::ops::Deref for ResourceArc<T> {
 impl<'id, T: Resource> Encoder<'id> for ResourceArc<T> {
     /// Encode the resource as a reference term (`enif_make_resource`). The BEAM
     /// releases that reference when the term is garbage collected.
-    fn encode(&self, env: impl Env<'id>) -> AnyTerm<'id> {
+    fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
         let raw = unsafe { enif_ffi::make_resource(env.raw_env(), self.raw) };
-        AnyTerm::wrap(raw, env)
+        Ok(AnyTerm::wrap(raw, env))
     }
 }
 

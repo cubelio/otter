@@ -78,14 +78,36 @@ pub fn decode_arg<'id, T: Decoder<'id>>(
 }
 
 /// Encode a NIF result into the raw word to return from the wrapper.
-pub fn encode_result<'id, T: Encoder<'id>>(val: &T, env: impl Env<'id>) -> enif_ffi::Term {
-    Term::raw_term(val.encode(env))
+///
+/// An encoder failure — a value outside the Erlang term domain — raises
+/// `badret`, symmetric to the `badarg` a failed argument decode raises.
+pub fn encode_result<'id, T: Encoder<'id>>(val: &T, env: CallEnv<'id>) -> enif_ffi::Term {
+    match val.encode(env) {
+        Ok(term) => Term::raw_term(term),
+        Err(_) => badret_word(env),
+    }
 }
 
 /// Raise `badarg` on the call env and return the non-value word.
 pub fn badarg_word(env: CallEnv<'_>) -> enif_ffi::Term {
     let _ = env.badarg::<()>();
     THE_NON_VALUE
+}
+
+/// Raise `badret` (an encoder failed on the way out) and return the non-value
+/// word. Symmetric to [`badarg_word`]: a NIF whose return value could not be
+/// converted to a term surfaces as `error:badret`, the encode-side mirror of the
+/// `error:badarg` a rejected argument raises. The pending exception is set via
+/// `enif_raise_exception`; the returned `THE_NON_VALUE` is the ignored sentinel.
+/// Falls back to `badarg` only if the atom table is too full to intern `badret`.
+pub fn badret_word(env: CallEnv<'_>) -> enif_ffi::Term {
+    match Atom::intern(env, "badret") {
+        Some(atom) => {
+            let _ = env.raise::<()>(atom);
+            THE_NON_VALUE
+        }
+        None => badarg_word(env),
+    }
 }
 
 /// Raise an exception with reason word `reason` and return the non-value word.
