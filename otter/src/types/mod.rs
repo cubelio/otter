@@ -8,6 +8,7 @@ pub use typed::TypedTerm;
 
 
 use core::marker::PhantomData;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 mod sealed {
     pub trait Sealed {}
@@ -293,16 +294,28 @@ impl<'id> Term<'id> for AnyTerm<'id> {
 }
 
 
+/// Process-global source of arena generation stamps. Handed out monotonically,
+/// so every `(arena, post-clear state)` gets a value no other arena ever holds.
+/// Wrap is unreachable at 2^64 stamps.
+static GENERATION: AtomicU64 = AtomicU64::new(1);
+
+fn next_generation() -> u64 {
+    GENERATION.fetch_add(1, Ordering::Relaxed)
+}
+
+/// A portable handle to a term stored in an [`OwnedEnvArena`]. `Copy` and
+/// unbranded so it can cross the `run` closure / be carried to a worker thread;
+/// its `version` is a globally-unique generation stamp, so it is only valid
+/// against the exact arena-generation that produced it.
 #[derive(Clone, Copy)]
 pub struct OwnedEnvTerm {
-    env: RawEnv,
-    version: usize,
+    version: u64,
     term: RawTerm,
 }
 
 pub struct OwnedEnvArena {
     env: RawEnv,
-    version: usize,
+    version: u64,
     is_dirty: bool,
 }
 
@@ -310,13 +323,15 @@ impl OwnedEnvArena {
     pub fn new() -> Self {
         let env = unsafe { enif_ffi::alloc_env() };
         assert!(!env.is_null(), "enif_alloc_env returned null");
-        OwnedEnvArena { env, version: 0, is_dirty: false }
+        OwnedEnvArena { env, version: next_generation(), is_dirty: false }
     }
 
     /// Drop all stored terms and wipe the env heap, in lockstep, for reuse.
+    /// Takes a fresh generation stamp so every term stored before the clear is
+    /// invalidated.
     pub fn clear(&mut self) {
         unsafe { enif_ffi::clear_env(self.env) };
-        self.version = self.version.wrapping_add(1);
+        self.version = next_generation();
         self.is_dirty = false;
     }
 
@@ -333,13 +348,17 @@ impl OwnedEnvArena {
 
     fn wrap_term(&self, raw_term: RawTerm) -> OwnedEnvTerm {
         assert!(!self.is_dirty);
-        OwnedEnvTerm { env: self.env, version: self.version, term: raw_term }
+        OwnedEnvTerm { version: self.version, term: raw_term }
     }
 
     fn unwrap_term(&self, oterm: OwnedEnvTerm) -> RawTerm {
         assert!(!self.is_dirty);
-        assert!(self.env == oterm.env);
-        assert!(self.version == oterm.version);
+        // The generation stamp is globally unique, so a matching version
+        // identifies this exact arena-generation — and since an arena's env
+        // pointer is fixed for its life, equal versions imply the same env. The
+        // version check alone is therefore sufficient (no env-pointer compare,
+        // which could otherwise alias a freed-then-reused env).
+        assert!(self.version == oterm.version, "OwnedEnvTerm used with a different arena or after clear");
         oterm.term
     }
 
@@ -444,6 +463,6 @@ mod owned_env_tests {
     // to re-verify.
     //
     // fn escape(b: &mut OwnedEnvArena) {
-    //     let _leaked = b.run(|ctx, env| ctx.import(OwnedEnvTerm { env: b.env, version: b.version, term: 0 }));
+    //     let _leaked = b.run(|ctx, env| ctx.import(OwnedEnvTerm { version: b.version, term: 0 }));
     // }
 }
