@@ -269,6 +269,15 @@ smoke_test_() ->
     ?_assertEqual([<<"a">>, <<"b">>], otter_demo__nif:codec_str_list([<<"a">>, <<"b">>])),
     ?_assertEqual([<<"a">>, <<"b">>], otter_demo__nif:codec_str_list(["a", "b"])),
 
+    %% Native HashMap codec — String keys, integer values.
+    ?_assertEqual(#{<<"a">> => 1, <<"b">> => 2},
+                  otter_demo__nif:codec_map(#{<<"a">> => 1, <<"b">> => 2})),
+    ?_assertEqual(#{}, otter_demo__nif:codec_map(#{})),
+    ?_assertError(badarg, otter_demo__nif:codec_map(#{<<"a">> => foo})),
+    ?_assertError(badarg, otter_demo__nif:codec_map(#{1 => 2})),
+    ?_assertError(badarg, otter_demo__nif:codec_map([])),
+    ?_assertEqual(6, otter_demo__nif:map_sum_values(#{<<"a">> => 1, <<"b">> => 2, <<"c">> => 3})),
+
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.
     %% The destructor wrapper in otter catches the panic via catch_unwind;

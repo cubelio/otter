@@ -8,6 +8,7 @@ mod bool;
 mod float;
 mod integer;
 mod list;
+mod map;
 mod string;
 mod tuple;
 

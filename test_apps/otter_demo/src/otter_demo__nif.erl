@@ -33,6 +33,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([codec_string/1, shout/1]).
 -export([codec_pair/1, codec_triple/1, swap/1]).
 -export([codec_int_list/1, sum_i64/1, codec_str_list/1]).
+-export([codec_map/1, map_sum_values/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -348,3 +349,15 @@ sum_i64(_V) -> exit(nif_not_loaded).
 
 -spec codec_str_list([binary() | string()]) -> [binary()].
 codec_str_list(_V) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — HashMap
+%%
+%% Decodes an Erlang map into HashMap<String, i64>. A key or value that fails to
+%% decode, or a non-map term, raises badarg.
+
+-spec codec_map(#{binary() | string() => integer()}) -> #{binary() => integer()}.
+codec_map(_M) -> exit(nif_not_loaded).
+
+-spec map_sum_values(#{binary() | string() => integer()}) -> integer().
+map_sum_values(_M) -> exit(nif_not_loaded).
