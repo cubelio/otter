@@ -295,7 +295,9 @@ impl<T: Resource> ResourceArc<T> {
     /// `env` may be `None` when calling from a non-NIF thread.
     pub fn monitor<'id, E: Env<'id>>(&self, env: Option<E>, pid: &LocalPid) -> Option<Monitor> {
         let env_ptr = env.map(|e| e.raw_env()).unwrap_or(std::ptr::null_mut());
-        let mut mon = enif_ffi::Monitor([0u8; 32]);
+        // Zero-init an out-param the BEAM fills; sized by enif-ffi (sizeof(void*)*4,
+        // 32 on 64-bit / 16 on 32-bit), so never hardcode the length here.
+        let mut mon: enif_ffi::Monitor = unsafe { std::mem::zeroed() };
         let rc = unsafe { enif_ffi::monitor_process(env_ptr, self.raw, &pid.pid, &mut mon) };
         if rc == 0 {
             Some(Monitor(mon))
