@@ -1,12 +1,25 @@
 -module(rebar3_otter__cargo).
 -moduledoc """
-Cargo invocation, JSON output parsing, and change detection.
+Cargo invocation and cdylib artifact resolution.
 
 This module handles all interaction with the Rust toolchain.
 It is independent of the rebar3 provider API.
+
+The build pins cargo's `--target-dir` to `<crate>/target` and computes the
+output cdylib path by convention rather than parsing cargo's JSON output.
+cdylib final artifacts are not content-hashed, so the name is deterministic
+(`lib<name>.so` / `.dylib`, `<name>.dll`), and pinning the target dir makes
+its location a guarantee instead of a guess. This keeps the plugin free of
+the OTP-27-only stdlib `json` module, so it builds on OTP 26 (otter's own
+NIF floor) and up.
 """.
 
 -export([build/5, clean/1, nif_filename/1]).
+
+-ifdef(TEST).
+%% Exposed for unit tests of the cross-platform / cross-target path logic.
+-export([artifact_path/4, artifact_filename/2]).
+-endif.
 
 %%------------------------------------------------------------------------------
 
@@ -21,12 +34,16 @@ build(CratePath, Name, Mode, Features, Target) ->
       Err;
     {ok, Cargo} ->
       ManifestPath = filename:join(CratePath, "Cargo.toml"),
-      Args = build_args(ManifestPath, Name, Mode, Features, Target),
+      TargetDir = target_dir(CratePath),
+      Args = build_args(ManifestPath, Name, Mode, Features, Target, TargetDir),
       case run(Cargo, Args) of
-        {0, Output} ->
-          case find_cdylib(Output, Name) of
-            {ok, _} = Ok -> Ok;
-            error -> {error, {no_cdylib, Name}}
+        {0, _Output} ->
+          %% We pinned --target-dir, so the cdylib path is fully determined
+          %% by the inputs — no need to scrape cargo's output for it.
+          Artifact = artifact_path(TargetDir, Name, Mode, Target),
+          case filelib:is_file(Artifact) of
+            true  -> {ok, Artifact};
+            false -> {error, {no_cdylib, Name}}
           end;
         {Code, _Output} ->
           {error, {cargo_failed, Name, Code}}
@@ -34,18 +51,23 @@ build(CratePath, Name, Mode, Features, Target) ->
   end.
 
 -doc """
-Run `cargo clean` for the given crate.
+Remove the crate's build output.
+
+The build pins `--target-dir` to `<crate>/target`, so cleaning is just
+removing that directory — exact in scope and independent of cargo (so it
+works even without a toolchain installed).
 """.
 -spec clean(string()) -> ok.
 clean(CratePath) ->
-  case find_cargo() of
-    {error, _} ->
-      ok;
-    {ok, Cargo} ->
-      ManifestPath = filename:join(CratePath, "Cargo.toml"),
-      _ = run(Cargo, ["clean", "--manifest-path", ManifestPath]),
-      ok
-  end.
+  _ = file:del_dir_r(target_dir(CratePath)),
+  ok.
+
+%% The directory cargo is told to write into (`--target-dir`) and that the
+%% artifact path is computed against. Pinning it removes the workspace
+%% target-dir ambiguity that would otherwise make the output location a guess.
+-spec target_dir(string()) -> string().
+target_dir(CratePath) ->
+  filename:join(CratePath, "target").
 
 %%%=============================================================================
 %%% Private
@@ -60,12 +82,16 @@ find_cargo() ->
     Path  -> {ok, Path}
   end.
 
--spec build_args(string(), string(), release | debug, [atom() | string()], atom() | string() | undefined) ->
+-spec build_args(string(), string(), release | debug, [atom() | string()], atom() | string() | undefined, string()) ->
   [string()].
-build_args(ManifestPath, Name, Mode, Features, Target) ->
-  Base = ["rustc",
-          "--message-format=json-render-diagnostics",
+build_args(ManifestPath, Name, Mode, Features, Target, TargetDir) ->
+  %% Plain `cargo build` (human message format): compiler diagnostics render
+  %% to stderr, which `run/2` lets through to the terminal. `--target-dir`
+  %% pins the output location so `artifact_path/4` can compute the cdylib path
+  %% without parsing JSON (which would pull in the OTP-27-only `json` module).
+  Base = ["build",
           "--manifest-path", ManifestPath,
+          "--target-dir", TargetDir,
           "-p", Name],
   ModeArgs = case Mode of
     release -> ["--release"];
@@ -110,41 +136,55 @@ erts_include_dir() ->
                  "include"]).
 
 %%------------------------------------------------------------------------------
-%% Artifact detection
+%% Artifact path (by convention)
 
-%% Scan cargo's JSON stdout for the compiler-artifact message belonging to
-%% the crate we asked for (a cdylib target whose name matches Name) and
-%% return its filename. Matching the target name — not just the first
-%% cdylib — keeps a cdylib *dependency* from shadowing the target crate.
-%% cargo underscores lib target names, so Name is normalized the same way.
--spec find_cdylib(binary(), string()) -> {ok, string()} | error.
-find_cdylib(Output, Name) ->
-  Lines = binary:split(Output, <<"\n">>, [global, trim_all]),
-  Target = list_to_binary(normalize_crate_name(Name)),
-  find_cdylib_line(Lines, Target).
+%% Absolute path of the cdylib cargo writes for crate Name, given the pinned
+%% target dir, the build mode, and the optional --target triple. cargo lays
+%% artifacts out as `<target_dir>/[<triple>/]<release|debug>/<file>` and the
+%% cdylib final name is not content-hashed, so this is exact.
+-spec artifact_path(string(), string(), release | debug, atom() | string() | undefined) ->
+  string().
+artifact_path(TargetDir, Name, Mode, Target) ->
+  ProfileDir = case Mode of release -> "release"; debug -> "debug" end,
+  File = artifact_filename(normalize_crate_name(Name), Target),
+  Parts = case Target of
+            undefined -> [TargetDir, ProfileDir, File];
+            _         -> [TargetDir, to_str(Target), ProfileDir, File]
+          end,
+  filename:join(Parts).
 
--spec find_cdylib_line([binary()], binary()) -> {ok, string()} | error.
-find_cdylib_line([], _Target) ->
-  error;
-find_cdylib_line([Line | Rest], Target) ->
-  try json:decode(Line) of
-    #{<<"reason">> := <<"compiler-artifact">>,
-      <<"target">> := #{<<"kind">> := Kinds, <<"name">> := TName},
-      <<"filenames">> := [Path | _]} when is_list(Kinds) ->
-      case lists:member(<<"cdylib">>, Kinds) andalso TName =:= Target of
-        true  -> {ok, binary_to_list(Path)};
-        false -> find_cdylib_line(Rest, Target)
-      end;
-    _ ->
-      find_cdylib_line(Rest, Target)
-  catch
-    _:_ ->
-      find_cdylib_line(Rest, Target)
+%% The cdylib filename for the already-normalized crate name. The library
+%% prefix/extension follow the *target* platform: derived from the --target
+%% triple when one is set (so cross-compiles resolve correctly), otherwise
+%% from the build host. Note this is the cargo *source* name (`.dylib` on
+%% macOS); `nif_filename/1` gives the `.so` *destination* Erlang expects.
+-spec artifact_filename(string(), atom() | string() | undefined) -> string().
+artifact_filename(Norm, undefined) ->
+  case os:type() of
+    {win32, _}     -> Norm ++ ".dll";
+    {unix, darwin} -> "lib" ++ Norm ++ ".dylib";
+    {unix, _}      -> "lib" ++ Norm ++ ".so"
+  end;
+artifact_filename(Norm, Target) ->
+  case classify_triple(to_str(Target)) of
+    windows -> Norm ++ ".dll";
+    darwin  -> "lib" ++ Norm ++ ".dylib";
+    other   -> "lib" ++ Norm ++ ".so"
+  end.
+
+-spec classify_triple(string()) -> windows | darwin | other.
+classify_triple(Triple) ->
+  IsWindows = string:find(Triple, "windows") =/= nomatch,
+  IsDarwin  = (string:find(Triple, "darwin") =/= nomatch)
+              orelse (string:find(Triple, "apple") =/= nomatch),
+  if
+    IsWindows -> windows;
+    IsDarwin  -> darwin;
+    true      -> other
   end.
 
 %% cargo replaces '-' with '_' in lib target names, so a package named
-%% `my-nif` builds the target `my_nif`. Normalize the configured name to
-%% match the target.name field cargo emits.
+%% `my-nif` produces `libmy_nif.so`. Normalize the configured name to match.
 -spec normalize_crate_name(string()) -> string().
 normalize_crate_name(Name) ->
   lists:flatten(string:replace(Name, "-", "_", all)).

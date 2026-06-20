@@ -75,19 +75,19 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
 
 2. **Invoke cargo:**
    ```
-   cargo rustc \
-     --message-format=json-render-diagnostics \
+   cargo build \
      --manifest-path <path>/Cargo.toml \
+     --target-dir <path>/target \
      [--release] \
      [--features feat1,feat2] \
      [--target <triple>] \
      -p <name>
    ```
-   `--message-format=json-render-diagnostics` causes cargo to emit one JSON object per line on stdout while rendering human-readable diagnostics to stderr. Cargo is invoked unconditionally — its own incremental check decides whether real work needs to happen, and no-ops cost ~50–200ms.
+   Plain `cargo build` (the default *human* message format) renders compiler diagnostics to stderr; `run/2` lets the child's stderr through to the terminal, so errors and warnings appear in the rebar3 output directly. `--target-dir` is pinned to `<crate>/target` so the output location is dictated rather than discovered (see step 3). Cargo is invoked unconditionally — its own incremental check decides whether real work needs to happen, and no-ops cost ~50–200ms.
 
-3. **Parse artifact location** — scan cargo's JSON output for a `"reason": "compiler-artifact"` line whose target is a `"cdylib"` *and* whose `target.name` matches the configured crate name (normalized `-`→`_`, as cargo does for lib targets). Matching the name — not just the first cdylib — keeps a cdylib *dependency* in the build graph from shadowing the target crate. Extract the path from `"filenames"`. This handles workspace layouts, custom `target-dir` settings, and cross-compilation output directories.
+3. **Compute artifact path (by convention)** — because the target dir is pinned and cdylib final artifacts are *not* content-hashed, the output path is fully determined by the inputs: `<target_dir>/[<triple>/]<release|debug>/<file>`, where `<file>` is `lib<name>.so` (Linux), `lib<name>.dylib` (macOS), or `<name>.dll` (Windows), with `<name>` normalized `-`→`_` as cargo does for lib targets. The `lib` prefix / extension follow the *target* platform — derived from the `--target` triple when set (so cross-compiles resolve), otherwise the build host (`os:type/0`). This deliberately avoids parsing cargo's JSON output, which would pull in the OTP-27-only stdlib `json` module; pinning `--target-dir` is what makes the path a guarantee instead of a guess (it removes the workspace / custom-`target-dir` ambiguity the JSON scrape previously absorbed). The computed path is confirmed to exist (`filelib:is_file/1`); a miss yields the `{no_cdylib, _}` error below.
 
-4. **Determine output filename** — platform-appropriate extension:
+4. **Determine output filename** — the *destination* uses the platform-appropriate extension Erlang expects:
    - Linux: `<name>.so`
    - macOS: `<name>.so` (not `.dylib` — Erlang expects `.so` regardless)
    - Windows: `<name>.dll`
@@ -109,7 +109,7 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
 Runs as a `pre_clean` hook.
 
 1. For each project app's configured crates, remove the app's `priv/native/<name>.so` if it exists.
-2. Run `cargo clean --manifest-path <path>/Cargo.toml` to remove the Rust build artifacts.
+2. Remove the crate's pinned target directory (`<crate>/target`) directly. Since the build dictates that directory via `--target-dir`, cleaning is an exact `file:del_dir_r/1` — no cargo invocation, so it works even without a toolchain installed and cannot over-clean a shared workspace target dir.
 
 ---
 
@@ -187,7 +187,7 @@ rebar3_otter/src/
 ├── rebar3_otter__compile.erl  % pre_compile provider (otter_compile)
 ├── rebar3_otter__clean.erl    % pre_clean provider (otter_clean)
 ├── rebar3_otter__new.erl      % scaffold provider (otter new)
-├── rebar3_otter__cargo.erl    % cargo invocation and JSON output parsing
+├── rebar3_otter__cargo.erl    % cargo invocation and cdylib artifact resolution
 └── rebar3_otter__config.erl   % otter_crates schema validation
 ```
 
