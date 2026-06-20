@@ -2,7 +2,20 @@
 
 use std::ffi::{c_int, c_void, CStr};
 
-use crate::types::{AnyEnv, AnyTerm, CallEnv, Env, InitEnv, Raised, Term};
+use crate::types::{
+    AnyEnv, AnyTerm, BinaryBuf, CallEnv, Env, InitEnv, Integer, Raised, Term, Tuple,
+};
+
+/// Serialize a term to the external term format (`enif_term_to_binary`),
+/// returning the bytes in a [`BinaryBuf`]. Type-agnostic. `None` on failure.
+pub fn serialize<'id>(env: impl Env<'id>, term: impl Term<'id>) -> Option<BinaryBuf> {
+    let mut bin: enif_ffi::Binary = unsafe { std::mem::zeroed() };
+    if unsafe { enif_ffi::term_to_binary(env.raw_env(), term.raw_term(), &mut bin) } != 0 {
+        Some(BinaryBuf::from_filled(bin))
+    } else {
+        None
+    }
+}
 
 impl<'id> AnyEnv<'id> {
     /// The dynamic type of `term` (`enif_term_type`). `None` for a type code
@@ -29,9 +42,24 @@ impl<'id> AnyEnv<'id> {
     pub fn is_current_process_alive(self) -> bool {
         unsafe { enif_ffi::is_current_process_alive(self.raw_env()) != 0 }
     }
+
+    /// Create a unique integer (`enif_make_unique_integer`). `properties` is a
+    /// bitmask of `UniqueInteger::POSITIVE` / `MONOTONIC`.
+    pub fn make_unique_integer(self, properties: enif_ffi::UniqueInteger) -> Integer<'id> {
+        let raw = unsafe { enif_ffi::make_unique_integer(self.raw_env(), properties) };
+        Integer::from_raw(raw)
+    }
 }
 
 impl<'id> CallEnv<'id> {
+    /// The current logical CPU's execution time in `erlang:timestamp/0` format
+    /// (`enif_cpu_time`). `Err(Raised)` (`badarg`) if the OS does not support it.
+    pub fn cpu_time(self) -> Result<Tuple<'id>, Raised<'id>> {
+        let raw = unsafe { enif_ffi::cpu_time(self.raw_env()) };
+        let term = self.check_raised(AnyTerm::wrap(raw, self))?;
+        Ok(Tuple::from_raw(term.raw_term()))
+    }
+
     /// Reschedule the current NIF to run `fp` (`enif_schedule_nif`). The success
     /// value must be returned directly from the NIF; a bad `fun_name` raises
     /// `badarg`, surfaced as `Err(Raised)`.

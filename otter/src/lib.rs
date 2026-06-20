@@ -1,6 +1,4 @@
-pub mod env;
 pub mod types;
-pub mod term;
 pub mod codec;
 pub mod resource;
 pub mod priv_data;
