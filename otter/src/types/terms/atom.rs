@@ -67,6 +67,7 @@ impl Atom {
         (ok != 0).then_some(Atom { term })
     }
 
+    #[crate::raw]
     pub(crate) fn from_raw(term: RawTerm) -> Atom {
         Atom { term }
     }

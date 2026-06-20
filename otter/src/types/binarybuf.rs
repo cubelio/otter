@@ -42,6 +42,7 @@ impl BinaryBuf {
     /// reallocates via `enif_realloc_binary`, which silently allocates a mutable
     /// *copy* when handed a read-only source (orphaning the original); the
     /// owned-mutable precondition is what makes the in-place grow/shrink sound.
+    #[crate::raw]
     pub(crate) fn from_filled(bin: enif_ffi::Binary) -> BinaryBuf {
         BinaryBuf { len: bin.size, bin, released: false }
     }

@@ -16,6 +16,7 @@ pub struct Port<'id> {
 }
 
 impl<'id> Port<'id> {
+    #[crate::raw]
     pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
         Self { raw_term, _id: PhantomData }
     }

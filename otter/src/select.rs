@@ -6,6 +6,16 @@
 use crate::resource::{Resource, ResourceArc};
 use crate::types::{Env, LocalPid, Term};
 
+/// The select event handle and input flags, plus the result-bitmask constants
+/// that [`select`]/[`select_x`] return. Re-exported from `enif_ffi` so the
+/// select API is fully usable without the `raw` feature. (A typed result wrapper
+/// replacing the raw `i32` + `SELECT_*` decode is tracked as enhance-12.)
+pub use enif_ffi::{
+    Event, SELECT_ERROR_CANCELLED, SELECT_FAILED, SELECT_INVALID_EVENT, SELECT_NOTSUP,
+    SELECT_READ_CANCELLED, SELECT_STOP_CALLED, SELECT_STOP_SCHEDULED, SELECT_WRITE_CANCELLED,
+    SelectFlags,
+};
+
 // `select`/`select_x` return a raw `i32` bitmask of result flags. otter does not
 // yet wrap that in a typed result, so callers decode it against the raw
 // `enif_ffi::SELECT_*` constants. A typed surface is tracked as enhance-12.

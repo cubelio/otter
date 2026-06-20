@@ -27,6 +27,7 @@ pub struct Bitstring<'id> {
 }
 
 impl<'id> Bitstring<'id> {
+    #[crate::raw]
     pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
         Self { raw_term, _id: PhantomData }
     }
@@ -44,6 +45,7 @@ impl<'id> Bitstring<'id> {
 }
 
 impl<'id> Binary<'id> {
+    #[crate::raw]
     pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
         Self { raw_term, _id: PhantomData }
     }

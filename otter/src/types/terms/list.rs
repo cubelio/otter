@@ -34,6 +34,7 @@ fn list_cell<'id>(env: impl Env<'id>, term: RawTerm) -> Option<(RawTerm, RawTerm
 }
 
 impl<'id> List<'id> {
+    #[crate::raw]
     pub(crate) fn from_raw(raw_term: RawTerm) -> Self {
         Self { raw_term, _id: PhantomData }
     }

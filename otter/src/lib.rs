@@ -12,12 +12,13 @@ pub mod select;
 #[path = "__codegen.rs"]
 pub mod __codegen;
 
-// Re-export the raw enif-ffi crate so codegen-generated code — which is spliced
-// into the *user's* crate and can therefore only name `::otter::…` paths — can
-// reference the raw C ABI types (`Env`, `Term`, `Entry`, …) that appear in the
-// `extern "C"` entry points it emits. Unconditional and only `#[doc(hidden)]`
-// for now; gating it behind `raw` is tracked as issue enhance-11.
-#[doc(hidden)]
+// The raw, 1:1, all-unsafe `enif_ffi` crate — the escape hatch, available only
+// under the `raw` feature. Generated code no longer names this path (it uses
+// `__codegen::ffi::*`), and the enif types that appear in otter's own public API
+// are re-exported through their modules (`select::{Event, SelectFlags, …}`,
+// `types::{TermType, Hash, UniqueInteger}`, `time::*`, `system::SysInfo`,
+// `resource::ResourceFlags`), so nothing in the safe surface needs this. (enhance-11)
+#[cfg(feature = "raw")]
 pub use enif_ffi;
 
 // enif-ffi's `nif_init!` builds the platform entry point and resolves the
@@ -37,6 +38,12 @@ pub use num_bigint;
 pub use otter_codegen::nif;
 pub use otter_codegen::init;
 pub use otter_codegen::resource_impl;
+
+// Internal: widen an item to `pub` under the `raw` feature without duplicating
+// it. Used within otter to expose selected internals on the raw escape hatch;
+// the emitted `cfg(feature = "raw")` resolves against otter's own `raw` feature.
+#[doc(hidden)]
+pub use otter_codegen::raw;
 
 /// Retrieve an atom pre-declared in the `atoms = [...]` list of
 /// [`init!`](crate::init).

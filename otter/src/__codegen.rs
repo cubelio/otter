@@ -17,6 +17,21 @@ pub use crate::types::{
 
 use crate::types::{AnyTerm, Env, Term, THE_NON_VALUE};
 
+/// Raw `enif_ffi` types and constants named by generated entry points
+/// (`#[otter::nif]` wrappers and `init!`'s `nif_init` scaffolding). They live
+/// here, always public, so the crate-root `enif_ffi` re-export can be gated
+/// behind the `raw` feature without breaking generated code — which references
+/// `::otter::__codegen::ffi::*` instead. (enhance-11)
+///
+/// A nested module so these raw names don't collide with otter's own `Env` /
+/// `Term` traits imported above.
+pub mod ffi {
+    pub use enif_ffi::{
+        DIRTY_JOB_CPU_BOUND, DIRTY_JOB_IO_BOUND, Entry, Env, MAJOR_VERSION, MIN_ERTS_VERSION,
+        MINOR_VERSION, ResourceTypeInit, Term, VM_VARIANT,
+    };
+}
+
 /// Value for `enif_ffi::Entry.options` indicating `sizeof_resource_type_init` is set.
 pub const NIF_ENTRY_OPTIONS: u32 = 1;
 
