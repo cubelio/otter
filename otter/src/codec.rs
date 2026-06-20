@@ -1,6 +1,9 @@
 //! `Encoder`, `Decoder`, and `CodecError`.
 
-use crate::types::{AnyTerm, Env, Raised};
+use crate::types::{
+    AnyTerm, Atom, Binary, Bitstring, Env, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,
+    Port, Raised, Reference, Term, Tuple, TypedTerm,
+};
 
 /// The BEAM's non-value marker. Returned from a NIF whose `Result` is `Err`, so
 /// the BEAM raises the already-pending exception.
@@ -81,5 +84,177 @@ pub trait Decoder<'id>: Sized {
 impl<'id> Decoder<'id> for AnyTerm<'id> {
     fn decode(term: AnyTerm<'id>, _env: impl Env<'id>) -> Result<Self, CodecError> {
         Ok(term)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Built-in type impls
+//
+// Centralized here because each impl uses only the noun's public surface
+// (`Term::raw_term`, the `is_*`/`term_type` predicates, `from_raw`): `encode`
+// wraps the same-brand word for free, `decode` checks the type then rewraps.
+// ---------------------------------------------------------------------------
+
+macro_rules! encode_by_wrap {
+    ($($t:ty),+ $(,)?) => { $(
+        impl<'id> Encoder<'id> for $t {
+            fn encode(&self, env: impl Env<'id>) -> AnyTerm<'id> {
+                AnyTerm::wrap(Term::raw_term(*self), env)
+            }
+        }
+    )+ };
+}
+
+encode_by_wrap!(
+    Integer<'id>, Float<'id>, Reference<'id>, Fun<'id>, Tuple<'id>, List<'id>, Map<'id>,
+    Binary<'id>, Bitstring<'id>, Pid<'id>, Port<'id>, Atom, LocalPid, LocalPort,
+);
+
+impl<'id> Encoder<'id> for TypedTerm<'id> {
+    fn encode(&self, env: impl Env<'id>) -> AnyTerm<'id> {
+        AnyTerm::wrap((*self).raw_term(), env)
+    }
+}
+
+// --- Decoders ---
+
+impl<'id> Decoder<'id> for Integer<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if env.as_any_env().term_type(term) == Some(enif_ffi::TermType::Integer) {
+            Ok(Integer::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for Float<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if env.as_any_env().term_type(term) == Some(enif_ffi::TermType::Float) {
+            Ok(Float::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for Bitstring<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        // Every binary is a bitstring, so this accepts both byte-aligned and
+        // sub-byte; use `Binary` for the byte-aligned refinement.
+        if env.as_any_env().term_type(term) == Some(enif_ffi::TermType::Bitstring) {
+            Ok(Bitstring::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for Reference<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if Reference::is_ref(env, term) {
+            Ok(Reference::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for Fun<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if Fun::is_fun(env, term) {
+            Ok(Fun::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for Tuple<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if Tuple::is_tuple(env, term) {
+            Ok(Tuple::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for List<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if List::is_list(env, term) {
+            Ok(List::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for Map<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if Map::is_map(env, term) {
+            Ok(Map::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for Binary<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if Binary::is_binary(env, term) {
+            Ok(Binary::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for Pid<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if Pid::is_pid(env, term) {
+            Ok(Pid::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for Port<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if Port::is_port(env, term) {
+            Ok(Port::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for Atom {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        if Atom::is_atom(env, term) {
+            Ok(Atom::from_raw(term.raw_term()))
+        } else {
+            Err(CodecError::WrongType)
+        }
+    }
+}
+
+impl<'id> Decoder<'id> for LocalPid {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        // An external pid passes is_pid but is not local; get_local_pid rejects.
+        Pid::from_raw(term.raw_term()).to_local(env).ok_or(CodecError::WrongType)
+    }
+}
+
+impl<'id> Decoder<'id> for LocalPort {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        Port::from_raw(term.raw_term()).to_local(env).ok_or(CodecError::WrongType)
+    }
+}
+
+impl<'id> Decoder<'id> for TypedTerm<'id> {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
+        term.resolve(env).ok_or(CodecError::UnknownTermType)
     }
 }
