@@ -1,3 +1,4 @@
+mod ops;
 pub mod terms;
 
 pub use terms::*;
