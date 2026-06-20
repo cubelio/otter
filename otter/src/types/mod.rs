@@ -327,6 +327,12 @@ pub struct OwnedEnvArena {
     is_dirty: bool,
 }
 
+impl Default for OwnedEnvArena {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OwnedEnvArena {
     pub fn new() -> Self {
         let env = unsafe { enif_ffi::alloc_env() };
