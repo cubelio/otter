@@ -247,6 +247,17 @@ smoke_test_() ->
     ?_assertEqual(<<"HELLO">>, otter_demo__nif:shout(<<"hello">>)),
     ?_assertEqual(<<"HELLO">>, otter_demo__nif:shout("hello")),
 
+    %% Native tuple codec — fixed arity, element-wise.
+    ?_assertEqual({1, true},   otter_demo__nif:codec_pair({1, true})),
+    ?_assertEqual({-5, false}, otter_demo__nif:codec_pair({-5, false})),
+    ?_assertError(badarg, otter_demo__nif:codec_pair({1, 2, 3})),
+    ?_assertError(badarg, otter_demo__nif:codec_pair({1})),
+    ?_assertError(badarg, otter_demo__nif:codec_pair([1, true])),
+    ?_assertError(badarg, otter_demo__nif:codec_pair({1, notbool})),
+    ?_assertEqual({7, <<"hi">>, 2.5}, otter_demo__nif:codec_triple({7, <<"hi">>, 2.5})),
+    ?_assertEqual({7, <<"hi">>, 2.5}, otter_demo__nif:codec_triple({7, "hi", 2.5})),
+    ?_assertEqual({2, 1}, otter_demo__nif:swap({1, 2})),
+
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.
     %% The destructor wrapper in otter catches the panic via catch_unwind;

@@ -700,6 +700,23 @@ fn shout(_env: CallEnv, s: String) -> String {
     s.to_uppercase()
 }
 
+// --- native codec round-trips: tuples -----------------------------------
+
+#[otter::nif]
+fn codec_pair(_env: CallEnv, t: (i64, bool)) -> (i64, bool) {
+    t
+}
+
+#[otter::nif]
+fn codec_triple(_env: CallEnv, t: (u8, String, f64)) -> (u8, String, f64) {
+    t
+}
+
+#[otter::nif]
+fn swap(_env: CallEnv, t: (i64, i64)) -> (i64, i64) {
+    (t.1, t.0)
+}
+
 fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
     // Atoms and resources are interned/registered by the `init!` scaffolding
     // before this runs; nothing to do here.
@@ -753,6 +770,9 @@ otter::init!("otter_demo__nif", [
     negate,
     codec_string,
     shout,
+    codec_pair,
+    codec_triple,
+    swap,
     panicking_resource_new,
     select_resource_new,
     select_register,

@@ -31,6 +31,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([codec_f64/1, codec_f32/1, encode_inf/0, encode_nan/0]).
 -export([codec_bool/1, negate/1]).
 -export([codec_string/1, shout/1]).
+-export([codec_pair/1, codec_triple/1, swap/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -315,3 +316,19 @@ codec_string(_S) -> exit(nif_not_loaded).
 
 -spec shout(binary() | string()) -> binary().
 shout(_S) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — tuples
+%%
+%% Fixed-arity, element-wise. A tuple of the wrong arity, a non-tuple, or an
+%% element that fails to decode all raise badarg.
+
+-spec codec_pair({integer(), boolean()}) -> {integer(), boolean()}.
+codec_pair(_T) -> exit(nif_not_loaded).
+
+-spec codec_triple({integer(), binary() | string(), float()}) ->
+        {integer(), binary(), float()}.
+codec_triple(_T) -> exit(nif_not_loaded).
+
+-spec swap({integer(), integer()}) -> {integer(), integer()}.
+swap(_T) -> exit(nif_not_loaded).
