@@ -34,6 +34,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([codec_pair/1, codec_triple/1, swap/1]).
 -export([codec_int_list/1, sum_i64/1, codec_str_list/1]).
 -export([codec_map/1, map_sum_values/1]).
+-export([codec_bigint/1, bigint_add/2, bigint_pow2/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -361,3 +362,18 @@ codec_map(_M) -> exit(nif_not_loaded).
 
 -spec map_sum_values(#{binary() | string() => integer()}) -> integer().
 map_sum_values(_M) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — bignums (num-bigint BigInt)
+%%
+%% Reads/writes arbitrary-precision integers, including bignums beyond i64/u64
+%% that the native integer codecs reject. A non-integer term raises badarg.
+
+-spec codec_bigint(integer()) -> integer().
+codec_bigint(_X) -> exit(nif_not_loaded).
+
+-spec bigint_add(integer(), integer()) -> integer().
+bigint_add(_A, _B) -> exit(nif_not_loaded).
+
+-spec bigint_pow2(non_neg_integer()) -> integer().
+bigint_pow2(_N) -> exit(nif_not_loaded).

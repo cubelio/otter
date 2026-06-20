@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use otter::enif_ffi::SelectFlags;
+use otter::num_bigint::BigInt;
 use otter::resource::{Resource, ResourceArc};
 use otter::types::{
     AnyTerm, Atom, Binary, BinaryBuf, CallEnv, CallbackEnv, Env, Float, InitEnv, Integer, List,
@@ -748,6 +749,28 @@ fn map_sum_values(_env: CallEnv, m: HashMap<String, i64>) -> i64 {
     m.values().sum()
 }
 
+// --- native codec round-trips: bignums (num-bigint) ---------------------
+// Decodes an arbitrary-precision integer (including bignums beyond i64/u64,
+// which the native i64/u64 codecs reject as badarg) into a BigInt and
+// re-encodes it. Exercises the ETF read/write path in Integer::to/from_bigint.
+
+#[otter::nif]
+fn codec_bigint(_env: CallEnv, x: BigInt) -> BigInt {
+    x
+}
+
+#[otter::nif]
+fn bigint_add(_env: CallEnv, a: BigInt, b: BigInt) -> BigInt {
+    a + b
+}
+
+// Produces 2^n as a BigInt — a clean bignum for n >= 64, proving the >64-bit
+// write path.
+#[otter::nif]
+fn bigint_pow2(_env: CallEnv, n: u32) -> BigInt {
+    BigInt::from(1u8) << (n as usize)
+}
+
 fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
     // Atoms and resources are interned/registered by the `init!` scaffolding
     // before this runs; nothing to do here.
@@ -809,6 +832,9 @@ otter::init!("otter_demo__nif", [
     codec_str_list,
     codec_map,
     map_sum_values,
+    codec_bigint,
+    bigint_add,
+    bigint_pow2,
     panicking_resource_new,
     select_resource_new,
     select_register,

@@ -1,5 +1,8 @@
 use core::marker::PhantomData;
 
+#[cfg(feature = "bigint")]
+use num_bigint::{BigInt, Sign};
+
 use crate::types::sealed::Sealed;
 use crate::types::{Env, Invariant, RawTerm, Term};
 
@@ -45,6 +48,112 @@ impl<'id> Integer<'id> {
         let mut val: u64 = 0;
         (unsafe { enif_ffi::get_uint64(env.raw_env(), self.raw_term, &mut val) } != 0).then_some(val)
     }
+
+    /// Read this integer as an arbitrary-precision [`BigInt`], including bignums
+    /// that exceed `i64`/`u64` — which [`to_i64`](Self::to_i64) /
+    /// [`to_u64`](Self::to_u64) cannot reach, since the NIF API has no accessor
+    /// beyond `enif_get_int64`/`enif_get_uint64`.
+    ///
+    /// Total over every integer term: it serializes the term to the external
+    /// term format (`enif_term_to_binary`) and reconstructs the value from the
+    /// ETF integer encoding. Infallible — the term is already a validated
+    /// integer, so it always serializes to one of the four ETF integer tags.
+    ///
+    /// Requires the `bigint` feature.
+    #[cfg(feature = "bigint")]
+    pub fn to_bigint(self, env: impl Env<'id>) -> BigInt {
+        let buf = crate::types::serialize(env, self)
+            .expect("enif_term_to_binary failed on an integer term");
+        etf_integer_to_bigint(buf.as_bytes())
+    }
+
+    /// Construct an integer term from an arbitrary-precision [`BigInt`],
+    /// including values beyond `i64`/`u64`.
+    ///
+    /// Values within range go straight through `enif_make_int64` /
+    /// `enif_make_uint64`; larger magnitudes are emitted as an ETF bignum
+    /// (`SMALL_BIG_EXT`/`LARGE_BIG_EXT`) and parsed back with
+    /// `enif_binary_to_term`. Infallible.
+    ///
+    /// Requires the `bigint` feature.
+    #[cfg(feature = "bigint")]
+    pub fn from_bigint(env: impl Env<'id>, val: &BigInt) -> Self {
+        if let Ok(i) = i64::try_from(val) {
+            return Self::from_i64(env, i);
+        }
+        if let Ok(u) = u64::try_from(val) {
+            return Self::from_u64(env, u);
+        }
+        let etf = bigint_to_etf(val);
+        let term = crate::types::deserialize(env, &etf, false)
+            .expect("enif_binary_to_term failed on otter-authored bignum ETF");
+        Integer::from_raw(term.raw_term())
+    }
+}
+
+// ETF integer tags (external term format §). The version byte 131 prefixes
+// every term `enif_term_to_binary` produces.
+#[cfg(feature = "bigint")]
+const ETF_VERSION: u8 = 131;
+#[cfg(feature = "bigint")]
+const SMALL_INTEGER_EXT: u8 = 97; // 1 unsigned byte
+#[cfg(feature = "bigint")]
+const INTEGER_EXT: u8 = 98; // 4 bytes, big-endian, signed
+#[cfg(feature = "bigint")]
+const SMALL_BIG_EXT: u8 = 110; // n:u8, sign:u8, n bytes little-endian magnitude
+#[cfg(feature = "bigint")]
+const LARGE_BIG_EXT: u8 = 111; // n:u32 big-endian, sign:u8, n bytes LE magnitude
+
+/// Parse a `BigInt` out of the ETF bytes `enif_term_to_binary` produced for an
+/// integer term. The term is a validated integer, so the body is exactly one of
+/// the four integer tags; any other shape is a contract violation and panics.
+#[cfg(feature = "bigint")]
+fn etf_integer_to_bigint(bytes: &[u8]) -> BigInt {
+    assert!(
+        bytes.len() >= 2 && bytes[0] == ETF_VERSION,
+        "malformed ETF from enif_term_to_binary"
+    );
+    let body = &bytes[1..];
+    match body[0] {
+        SMALL_INTEGER_EXT => BigInt::from(body[1]),
+        INTEGER_EXT => BigInt::from(i32::from_be_bytes([body[1], body[2], body[3], body[4]])),
+        SMALL_BIG_EXT => {
+            let n = body[1] as usize;
+            BigInt::from_bytes_le(etf_sign(body[2]), &body[3..3 + n])
+        }
+        LARGE_BIG_EXT => {
+            let n = u32::from_be_bytes([body[1], body[2], body[3], body[4]]) as usize;
+            BigInt::from_bytes_le(etf_sign(body[5]), &body[6..6 + n])
+        }
+        tag => panic!("enif_term_to_binary of an integer produced unexpected ETF tag {tag}"),
+    }
+}
+
+/// ETF big sign byte: 0 = non-negative, anything else = negative.
+#[cfg(feature = "bigint")]
+fn etf_sign(byte: u8) -> Sign {
+    if byte == 0 { Sign::Plus } else { Sign::Minus }
+}
+
+/// Encode a `BigInt` as a version-prefixed ETF bignum. Caller has already ruled
+/// out the i64/u64 fast paths, so the value never fits a smaller integer tag.
+#[cfg(feature = "bigint")]
+fn bigint_to_etf(val: &BigInt) -> Vec<u8> {
+    let (sign, mag) = val.to_bytes_le();
+    let sign_byte = if sign == Sign::Minus { 1 } else { 0 };
+    let mut etf = Vec::with_capacity(mag.len() + 7);
+    etf.push(ETF_VERSION);
+    if mag.len() <= u8::MAX as usize {
+        etf.push(SMALL_BIG_EXT);
+        etf.push(mag.len() as u8);
+        etf.push(sign_byte);
+    } else {
+        etf.push(LARGE_BIG_EXT);
+        etf.extend_from_slice(&(mag.len() as u32).to_be_bytes());
+        etf.push(sign_byte);
+    }
+    etf.extend_from_slice(&mag);
+    etf
 }
 
 impl<'id> Sealed for Integer<'id> {}
