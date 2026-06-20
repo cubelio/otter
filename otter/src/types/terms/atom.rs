@@ -1,5 +1,5 @@
 use std::ffi::{c_char, c_uint};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::OnceLock;
 
 use crate::types::sealed::Sealed;
 use crate::types::{Env, FreeTerm, RawTerm, Term};
@@ -181,39 +181,40 @@ impl std::error::Error for AtomError {}
 /// `StaticAtom`s directly and call [`init`](Self::init) yourself.
 pub struct StaticAtom {
     name: &'static str,
-    term: AtomicUsize,
+    atom: OnceLock<Atom>,
 }
 
 impl StaticAtom {
     /// Create a new uninitialized `StaticAtom`. Must call [`init`](Self::init)
     /// before [`get`](Self::get).
     pub const fn new(name: &'static str) -> Self {
-        Self { name, term: AtomicUsize::new(0) }
+        Self { name, atom: OnceLock::new() }
     }
 
     /// Initialize this atom by interning it in the BEAM atom table. Must be
     /// called from a NIF load/upgrade callback.
-    pub fn init<'id>(&self, env: impl Env<'id>) {
-        let atom =
-            Atom::intern(env, self.name).expect("StaticAtom::init: atom name exceeds 255 characters");
-        // Relaxed is sufficient: `init` runs in the load/upgrade callback, which
-        // completes before the BEAM publishes the library and dispatches any NIF
-        // call. That load barrier supplies the happens-before to every later
-        // `get`, so no acquire/release pairing is needed on the atomic itself.
-        self.term.store(atom.term, Ordering::Relaxed);
+    ///
+    /// Returns [`AtomError::NameTooLong`] if the name exceeds 255 characters.
+    /// Atoms declared in the `atoms = [...]` list of [`init!`](crate::init) are
+    /// length-checked at compile time, so this never fails for them — the error
+    /// is reachable only through a hand-constructed `StaticAtom`. Calling `init`
+    /// more than once is harmless: the name maps to the same VM-global atom, so
+    /// the second `set` is a no-op.
+    pub fn init<'id>(&self, env: impl Env<'id>) -> Result<(), AtomError> {
+        let atom = Atom::intern(env, self.name)?;
+        let _ = self.atom.set(atom);
+        Ok(())
     }
 
-    /// Retrieve the cached atom — a single atomic load, no lookup cost.
+    /// Retrieve the cached atom — an acquire load plus a field read, no lookup.
+    ///
+    /// Stores the [`Atom`] itself, so it assumes nothing about the underlying
+    /// term representation.
     ///
     /// # Panics
     /// Panics if called before [`init`](Self::init).
     #[inline]
     pub fn get(&self) -> Atom {
-        let term = self.term.load(Ordering::Relaxed);
-        assert!(term != 0, "StaticAtom::get called before init");
-        Atom { term }
+        *self.atom.get().expect("StaticAtom::get called before init")
     }
 }
-
-// SAFETY: StaticAtom is just an atomic integer + a static string.
-unsafe impl Sync for StaticAtom {}
