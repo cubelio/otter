@@ -1,150 +1,135 @@
+use core::marker::PhantomData;
 use std::str::Utf8Error;
-use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
-use crate::term::{Term, AsNifTerm};
+
+use crate::types::sealed::Sealed;
+use crate::types::{AnyTerm, Env, Invariant, RawTerm, Term};
 
 /// A byte-aligned binary (`enif_is_binary` returned true).
 ///
-/// Data is on the BEAM heap. Nothing is copied until `as_bytes` or
-/// `from_bytes` is called.
+/// Data is on the BEAM heap. Nothing is copied until `as_bytes`/`from_bytes` is
+/// called. The byte accessors take an `impl Env<'id>` (this brand) because the
+/// term carries only its brand, not its env.
 #[derive(Clone, Copy)]
-pub struct Binary<'a> {
-    pub(crate) term: enif_ffi::Term,
-    pub(crate) env: Env<'a>,
+pub struct Binary<'id> {
+    raw_term: RawTerm,
+    _id: Invariant<'id>,
 }
 
 /// An Erlang bitstring (`enif_term_type` returned `Bitstring`).
 ///
-/// In BEAM, every binary is a bitstring. A `Bitstring` may hold a byte-
-/// aligned binary or a sub-byte bitstring; decoding via `Bitstring::decode`
-/// accepts both. Call [`is_binary`](Self::is_binary) or
-/// [`to_binary`](Self::to_binary) to refine. The NIF API
-/// provides no inspection functions for the sub-byte case, so a sub-byte
-/// `Bitstring` can only be held and passed back to Erlang unchanged.
+/// In BEAM every binary is a bitstring; a `Bitstring` may be byte-aligned or
+/// sub-byte. Call [`is_binary`](Self::is_binary) / [`to_binary`](Self::to_binary)
+/// to refine. The NIF API offers no inspection of the sub-byte case.
 #[derive(Clone, Copy)]
-pub struct Bitstring<'a> {
-    pub(crate) term: enif_ffi::Term,
-    pub(crate) env: Env<'a>,
+pub struct Bitstring<'id> {
+    raw_term: RawTerm,
+    _id: Invariant<'id>,
 }
 
-impl<'a> Bitstring<'a> {
-    /// Returns `true` if this bitstring is byte-aligned (a binary).
-    ///
-    /// One `enif_is_binary` call.
-    pub fn is_binary(self) -> bool {
-        self.env.is_binary(self)
+impl<'id> Bitstring<'id> {
+    /// Returns `true` if this bitstring is byte-aligned (`enif_is_binary`).
+    pub fn is_binary(self, env: impl Env<'id>) -> bool {
+        unsafe { enif_ffi::is_binary(env.raw_env(), self.raw_term) != 0 }
     }
 
-    /// View as a [`Binary`] if this bitstring is byte-aligned, else `None`.
-    ///
-    /// One `enif_is_binary` call.
-    pub fn to_binary(self) -> Option<Binary<'a>> {
-        if self.is_binary() {
-            Some(Binary { term: self.term, env: self.env })
-        } else {
-            None
-        }
+    /// View as a [`Binary`] if byte-aligned, else `None`.
+    pub fn to_binary(self, env: impl Env<'id>) -> Option<Binary<'id>> {
+        self.is_binary(env)
+            .then_some(Binary { raw_term: self.raw_term, _id: PhantomData })
     }
 }
 
-impl<'a> Binary<'a> {
-    /// View the binary data as a byte slice.
+impl<'id> Binary<'id> {
+    /// View the binary data as a byte slice (`enif_inspect_binary`).
     ///
-    /// Zero-copy — the slice points directly into the BEAM heap. Valid for
-    /// the lifetime `'a` of the environment.
-    pub fn as_bytes(self) -> &'a [u8] {
+    /// Zero-copy — the slice points into the BEAM heap and rides this binary's
+    /// brand `'id`, which cannot escape its env's scope.
+    pub fn as_bytes(self, env: impl Env<'id>) -> &'id [u8] {
         let mut bin: enif_ffi::Binary = unsafe { std::mem::zeroed() };
-        // A Binary is always a valid binary, so inspect cannot fail here.
-        self.env.inspect_binary(self, &mut bin);
+        let ok = unsafe { enif_ffi::inspect_binary(env.raw_env(), self.raw_term, &mut bin) };
+        assert!(ok != 0, "inspect_binary failed on a validated Binary");
         unsafe { std::slice::from_raw_parts(bin.data, bin.size) }
     }
 
     /// Number of bytes in the binary.
-    pub fn len(self) -> usize {
-        self.as_bytes().len()
+    pub fn len(self, env: impl Env<'id>) -> usize {
+        self.as_bytes(env).len()
     }
 
     /// Returns `true` if the binary contains no bytes.
-    pub fn is_empty(self) -> bool {
-        self.len() == 0
+    pub fn is_empty(self, env: impl Env<'id>) -> bool {
+        self.len(env) == 0
     }
 
-    /// Attempt to interpret the binary as a UTF-8 string.
-    ///
-    /// Zero-copy — the returned `&str` points into the BEAM heap with the
-    /// full environment lifetime `'a`. Returns `Err(Utf8Error)` if the
-    /// bytes are not valid UTF-8.
-    ///
-    /// Equivalent to `std::str::from_utf8(binary.as_bytes())`. You can also
-    /// use `std::str::from_utf8(&binary)` via `Deref`, but the returned
-    /// lifetime will be shorter (tied to the borrow, not `'a`).
-    pub fn try_str(self) -> Result<&'a str, Utf8Error> {
-        std::str::from_utf8(self.as_bytes())
+    /// Interpret the binary as a UTF-8 string (zero-copy). `Err` if the bytes
+    /// are not valid UTF-8.
+    pub fn try_str(self, env: impl Env<'id>) -> Result<&'id str, Utf8Error> {
+        std::str::from_utf8(self.as_bytes(env))
     }
 
-    /// Create a zero-copy sub-binary term from `pos..pos+len`.
-    ///
-    /// The returned `Binary` is a first-class BEAM term that references a
-    /// range within the parent binary's heap data — no bytes are copied.
-    ///
-    /// Panics if `pos + len` exceeds the binary length.
-    pub fn sub(self, pos: usize, len: usize) -> Binary<'a> {
+    /// Create a zero-copy sub-binary term spanning `pos..pos+len`
+    /// (`enif_make_sub_binary`). Panics if out of bounds.
+    pub fn sub(self, env: impl Env<'id>, pos: usize, len: usize) -> Binary<'id> {
+        let total = self.len(env);
         assert!(
-            pos.checked_add(len).is_some_and(|end| end <= self.len()),
-            "sub-binary out of bounds: pos({}) + len({}) > {}",
-            pos, len, self.len()
+            pos.checked_add(len).is_some_and(|end| end <= total),
+            "sub-binary out of bounds: pos({pos}) + len({len}) > {total}"
         );
-        self.env.make_sub_binary(self, pos, len)
+        let raw_term = unsafe { enif_ffi::make_sub_binary(env.raw_env(), self.raw_term, pos, len) };
+        Binary { raw_term, _id: PhantomData }
     }
 
-    /// Allocate a new binary on the BEAM heap and copy `data` into it.
-    pub fn from_bytes(env: Env<'a>, data: &[u8]) -> Binary<'a> {
-        let mut term: enif_ffi::Term = 0;
+    /// Allocate a new binary on the BEAM heap and copy `data` into it
+    /// (`enif_make_new_binary`).
+    pub fn from_bytes(env: impl Env<'id>, data: &[u8]) -> Binary<'id> {
+        let mut raw_term: RawTerm = 0;
         unsafe {
-            let ptr = env.make_new_binary(data.len(), &mut term);
+            let ptr = enif_ffi::make_new_binary(env.raw_env(), data.len(), &mut raw_term);
             std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
         }
-        Binary { term, env }
+        Binary { raw_term, _id: PhantomData }
     }
-}
 
-impl<'a> std::ops::Deref for Binary<'a> {
-    type Target = [u8];
-    fn deref(&self) -> &[u8] {
-        self.as_bytes()
+    /// Returns `true` if `term` is a byte-aligned binary (`enif_is_binary`).
+    /// Sub-byte bitstrings return `false`.
+    pub fn is_binary(env: impl Env<'id>, term: impl Term<'id>) -> bool {
+        unsafe { enif_ffi::is_binary(env.raw_env(), term.raw_term()) != 0 }
     }
-}
 
-impl<'a> AsRef<[u8]> for Binary<'a> {
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
+    /// Deserialize a term from this binary's external-term-format contents
+    /// (`enif_binary_to_term`). If `safe`, encoded atoms not already in the atom
+    /// table are rejected. `None` on decode failure.
+    pub fn deserialize(self, env: impl Env<'id>, safe: bool) -> Option<AnyTerm<'id>> {
+        let bytes = self.as_bytes(env);
+        let opts = if safe { enif_ffi::BIN2TERM_SAFE } else { 0 };
+        let mut term: RawTerm = 0;
+        let consumed = unsafe {
+            enif_ffi::binary_to_term(env.raw_env(), bytes.as_ptr(), bytes.len(), &mut term, opts)
+        };
+        (consumed != 0).then(|| AnyTerm::wrap(term, env))
     }
 }
 
 impl std::fmt::Debug for Binary<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Binary({} bytes)", self.len())
+        write!(f, "Binary")
     }
 }
 
 impl PartialEq for Binary<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.raw_term, other.raw_term) != 0 }
     }
 }
-
 impl Eq for Binary<'_> {}
-
 impl PartialOrd for Binary<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-
 impl Ord for Binary<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { enif_ffi::compare(self.term, other.term) };
-        c.cmp(&0)
+        unsafe { enif_ffi::compare(self.raw_term, other.raw_term) }.cmp(&0)
     }
 }
 
@@ -153,48 +138,52 @@ impl std::fmt::Debug for Bitstring<'_> {
         write!(f, "Bitstring")
     }
 }
-
 impl PartialEq for Bitstring<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.raw_term, other.raw_term) != 0 }
     }
 }
-
 impl Eq for Bitstring<'_> {}
-
 impl PartialOrd for Bitstring<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-
 impl Ord for Bitstring<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { enif_ffi::compare(self.term, other.term) };
-        c.cmp(&0)
+        unsafe { enif_ffi::compare(self.raw_term, other.raw_term) }.cmp(&0)
+    }
+}
+
+impl<'id> Sealed for Binary<'id> {}
+impl<'id> Term<'id> for Binary<'id> {
+    fn raw_term(self) -> RawTerm {
+        self.raw_term
+    }
+}
+
+impl<'id> Sealed for Bitstring<'id> {}
+impl<'id> Term<'id> for Bitstring<'id> {
+    fn raw_term(self) -> RawTerm {
+        self.raw_term
     }
 }
 
 // ---------------------------------------------------------------------------
-// BinaryBuf — growable binary buffer (Vec<u8> model)
+// BinaryBuf — owned, growable binary buffer (Vec<u8> model)
 // ---------------------------------------------------------------------------
 
 /// An owned, mutable binary buffer backed by `enif_alloc_binary`.
 ///
-/// The RAII owner of a mutable `ErlNifBinary`: `Drop` releases it
-/// (`enif_release_binary`), so the allocation is guaranteed to be reclaimed
-/// or handed to the BEAM. Mirrors `Vec<u8>` — tracks `len` (bytes written)
-/// and `capacity` (bytes allocated) separately and grows via
-/// `enif_realloc_binary` — and is also what [`Term::serialize`] returns.
+/// The RAII owner of a mutable `ErlNifBinary`: it owns its allocation directly
+/// (no env, no brand), so it is a plain owned value. `Drop` releases it
+/// (`enif_release_binary`). Mirrors `Vec<u8>` — tracks `len` and `capacity`
+/// separately, grows via `enif_realloc_binary` — and is what term serialization
+/// returns.
 ///
 /// Read the bytes with [`as_bytes`](Self::as_bytes) (zero-copy) or `Deref`;
-/// copy them out with `.to_vec()`. Consume it with
-/// [`into_binary`](Self::into_binary) to hand the allocation to the BEAM as a
-/// `Binary` term. If dropped without converting, the buffer is released.
-///
-/// Implements [`std::io::Write`] for use with `write!` and friends.
-///
-/// [`Term::serialize`]: crate::term::Term::serialize
+/// consume it with [`into_binary`](Self::into_binary) to hand the allocation to
+/// the BEAM as a `Binary` term. Implements [`std::io::Write`].
 pub struct BinaryBuf {
     bin: enif_ffi::Binary,
     len: usize,
@@ -207,9 +196,7 @@ impl BinaryBuf {
         BinaryBuf::with_capacity(0)
     }
 
-    /// Create a buffer with preallocated capacity.
-    ///
-    /// Panics if the allocation fails.
+    /// Create a buffer with preallocated capacity. Panics if allocation fails.
     pub fn with_capacity(capacity: usize) -> BinaryBuf {
         let mut bin: enif_ffi::Binary = unsafe { std::mem::zeroed() };
         let ok = unsafe { enif_ffi::alloc_binary(capacity, &mut bin) != 0 };
@@ -248,10 +235,7 @@ impl BinaryBuf {
         unsafe { std::slice::from_raw_parts_mut(self.bin.data, self.len) }
     }
 
-    /// Resize the buffer to `new_len`.
-    ///
-    /// If `new_len > len`, the new bytes are filled with `value`.
-    /// If `new_len < len`, the buffer is truncated.
+    /// Resize to `new_len`, filling new bytes with `value` or truncating.
     pub fn resize(&mut self, new_len: usize, value: u8) {
         if new_len > self.len {
             self.reserve(new_len - self.len);
@@ -278,9 +262,7 @@ impl BinaryBuf {
         self.len += bytes.len();
     }
 
-    /// Ensure there is room for at least `additional` more bytes.
-    ///
-    /// Panics if reallocation fails.
+    /// Ensure room for at least `additional` more bytes. Panics if realloc fails.
     pub fn reserve(&mut self, additional: usize) {
         let required = self.len + additional;
         if required <= self.bin.size {
@@ -292,16 +274,15 @@ impl BinaryBuf {
     }
 
     /// Consume the buffer, handing its allocation to the BEAM as a `Binary`
-    /// term (`enif_make_binary`).
-    ///
-    /// Shrinks the allocation to the exact written length first.
-    pub fn into_binary<'a>(mut self, env: Env<'a>) -> Binary<'a> {
+    /// term (`enif_make_binary`). Shrinks to the exact written length first.
+    pub fn into_binary<'id>(mut self, env: impl Env<'id>) -> Binary<'id> {
         if self.len < self.bin.size {
             let ok = unsafe { enif_ffi::realloc_binary(&mut self.bin, self.len) != 0 };
             assert!(ok, "enif_realloc_binary failed on shrink");
         }
         self.released = true;
-        env.make_binary(&mut self.bin)
+        let raw_term = unsafe { enif_ffi::make_binary(env.raw_env(), &mut self.bin) };
+        Binary { raw_term, _id: PhantomData }
     }
 }
 
@@ -378,125 +359,5 @@ impl std::fmt::Debug for BinaryBuf {
             .field("len", &self.len)
             .field("capacity", &self.bin.size)
             .finish()
-    }
-}
-
-impl Binary<'_> {
-    /// Deserialize a term from this binary's external-term-format contents.
-    ///
-    /// If `safe` is true, encoded atoms that don't already exist in the atom
-    /// table are rejected. Returns `None` on decode failure. The decoded value
-    /// is an unresolved [`Term`]; call [`Term::resolve`] or a decoder to type it.
-    ///
-    /// Wraps `enif_binary_to_term`.
-    pub fn deserialize<'a>(&self, env: Env<'a>, safe: bool) -> Option<Term<'a>> {
-        env.deserialize(self.as_bytes(), safe)
-    }
-}
-
-impl<'b> Encoder for Binary<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        if self.env.as_ptr() == env.as_ptr() {
-            Term::new(env, self.term)
-        } else {
-            env.make_copy(*self)
-        }
-    }
-}
-
-impl<'a> Env<'a> {
-    /// Returns `true` if `term` is a byte-aligned binary (`enif_is_binary`).
-    /// Sub-byte bitstrings return `false`.
-    pub fn is_binary(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { enif_ffi::is_binary(self.as_ptr(), term.as_nif_term()) != 0 }
-    }
-
-    /// Inspect a binary term, filling `bin` (`enif_inspect_binary`).
-    /// Returns `false` if `term` is not a byte-aligned binary.
-    pub fn inspect_binary(self, term: impl AsNifTerm<'a>, bin: &mut enif_ffi::Binary) -> bool {
-        unsafe { enif_ffi::inspect_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
-    }
-
-    /// Convert an allocated `enif_ffi::Binary` into a binary term (`enif_make_binary`).
-    /// After this call the BEAM owns the binary; `bin` must not be used again.
-    pub fn make_binary(self, bin: &mut enif_ffi::Binary) -> Binary<'a> {
-        let term = unsafe { enif_ffi::make_binary(self.as_ptr(), bin) };
-        Binary { term, env: self }
-    }
-
-    /// Allocate `size` bytes of writable binary data on the heap, writing the
-    /// term to `term_out` and returning a pointer to the bytes
-    /// (`enif_make_new_binary`).
-    ///
-    /// # Safety
-    ///
-    /// All `size` bytes must be initialized before `term_out` is observed by
-    /// Erlang.
-    pub unsafe fn make_new_binary(self, size: usize, term_out: &mut enif_ffi::Term) -> *mut u8 {
-        unsafe { enif_ffi::make_new_binary(self.as_ptr(), size, term_out) }
-    }
-
-    /// Create a zero-copy sub-binary of `term` spanning `pos..pos+len`
-    /// (`enif_make_sub_binary`). The caller is responsible for bounds.
-    pub fn make_sub_binary(self, term: impl AsNifTerm<'a>, pos: usize, len: usize) -> Binary<'a> {
-        let t = unsafe { enif_ffi::make_sub_binary(self.as_ptr(), term.as_nif_term(), pos, len) };
-        Binary { term: t, env: self }
-    }
-
-    /// Serialize a term to the external binary format, filling `bin`
-    /// (`enif_term_to_binary`). Returns `false` on failure. `bin` is allocated
-    /// via enif_alloc_binary; pass it to `make_binary` or release it.
-    pub fn term_to_binary(self, term: impl AsNifTerm<'a>, bin: &mut enif_ffi::Binary) -> bool {
-        unsafe { enif_ffi::term_to_binary(self.as_ptr(), term.as_nif_term(), bin) != 0 }
-    }
-
-    /// Deserialize a term from external-term-format bytes
-    /// (`enif_binary_to_term`). If `safe`, encoded atoms not already in the
-    /// atom table are rejected. `None` on decode failure. The decoded value is
-    /// an unresolved [`Term`]; call [`Term::resolve`] or a decoder to type it.
-    pub fn deserialize(self, data: &[u8], safe: bool) -> Option<Term<'a>> {
-        let opts = if safe { enif_ffi::BIN2TERM_SAFE } else { 0 };
-        let mut term: enif_ffi::Term = 0;
-        let consumed = unsafe {
-            enif_ffi::binary_to_term(self.as_ptr(), data.as_ptr(), data.len(), &mut term, opts)
-        };
-        if consumed == 0 {
-            None
-        } else {
-            Some(Term::new(self, term))
-        }
-    }
-}
-
-impl<'a> Decoder<'a> for Binary<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.is_binary(term) {
-            Ok(Binary { term: term.term, env: term.env })
-        } else {
-            Err(CodecError::WrongType)
-        }
-    }
-}
-
-impl<'b> Encoder for Bitstring<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        if self.env.as_ptr() == env.as_ptr() {
-            Term::new(env, self.term)
-        } else {
-            env.make_copy(*self)
-        }
-    }
-}
-
-impl<'a> Decoder<'a> for Bitstring<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        // In BEAM every binary is a bitstring, so `Bitstring::decode` accepts
-        // both byte-aligned binaries and sub-byte bitstrings. Use `Binary` if
-        // you want the byte-aligned refinement.
-        if term.env.term_type(term) == Some(enif_ffi::TermType::Bitstring) {
-            Ok(Bitstring { term: term.term, env: term.env })
-        } else {
-            Err(CodecError::WrongType)
-        }
     }
 }
