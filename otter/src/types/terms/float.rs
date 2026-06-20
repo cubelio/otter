@@ -1,58 +1,50 @@
-use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
-use crate::term::{Term, AsNifTerm, Raised};
+use core::marker::PhantomData;
 
-/// An Erlang float. Always IEEE 754 double precision.
-///
-/// Floats are heap-allocated in the BEAM even though the value is always `f64`.
+use crate::types::sealed::Sealed;
+use crate::types::{Env, Invariant, RawTerm, Term};
+
+/// An Erlang float. Always IEEE 754 double precision (heap-allocated in the
+/// BEAM even though the value is always `f64`).
 #[derive(Clone, Copy)]
-pub struct Float<'a> {
-    pub(crate) term: enif_ffi::Term,
-    pub(crate) env: Env<'a>,
+pub struct Float<'id> {
+    raw_term: RawTerm,
+    _id: Invariant<'id>,
 }
 
-impl<'a> Float<'a> {
-    /// Construct a float term from an `f64`.
-    ///
-    /// Returns `Err(Raised)` if `val` is not finite: `enif_make_double` raises
-    /// `badarg` for NaN and infinities.
-    pub fn from_f64(env: Env<'a>, val: f64) -> Result<Float<'a>, Raised<'a>> {
-        env.make_double(val)
-    }
-}
-
-impl<'a> Env<'a> {
+impl<'id> Float<'id> {
     /// Construct a float term from an `f64` (`enif_make_double`).
     ///
-    /// Returns `Err(Raised)` if `val` is not finite (NaN or infinity), which
-    /// the BEAM rejects with `badarg`.
-    pub fn make_double(self, val: f64) -> Result<Float<'a>, Raised<'a>> {
-        let term = unsafe { enif_ffi::make_double(self.as_ptr(), val) };
-        Ok(Float { term: self.check_raised(term)?.as_raw(), env: self })
+    /// Returns `None` if `val` is not finite (NaN or infinity), which the BEAM
+    /// rejects with `badarg`. The check is done in Rust, so a rejected value
+    /// never calls into the BEAM and the env is never left with a pending
+    /// exception. A caller that wants a `badarg` can raise one from a `CallEnv`.
+    pub fn from_f64(env: impl Env<'id>, val: f64) -> Option<Self> {
+        if !val.is_finite() {
+            return None;
+        }
+        let raw_term = unsafe { enif_ffi::make_double(env.raw_env(), val) };
+        Some(Float { raw_term, _id: PhantomData })
     }
 
-    /// Extract an `f64` from a float term (`enif_get_double`).
-    /// `None` if the term is not a float.
-    pub fn get_double(self, term: impl AsNifTerm<'a>) -> Option<f64> {
+    /// Read back the `f64` (`enif_get_double`). `None` if the term is not a
+    /// float. `env` must carry the same brand as this term.
+    pub fn to_f64(self, env: impl Env<'id>) -> Option<f64> {
         let mut val: f64 = 0.0;
-        if unsafe { enif_ffi::get_double(self.as_ptr(), term.as_nif_term(), &mut val) != 0 } {
-            Some(val)
-        } else {
-            None
-        }
+        (unsafe { enif_ffi::get_double(env.raw_env(), self.raw_term, &mut val) } != 0).then_some(val)
     }
 }
 
-impl From<Float<'_>> for f64 {
-    /// Extract the `f64` value. Infallible — the BEAM only stores `f64`.
-    fn from(float: Float<'_>) -> f64 {
-        float.env.get_double(float).unwrap_or(0.0)
+impl<'id> Sealed for Float<'id> {}
+
+impl<'id> Term<'id> for Float<'id> {
+    fn raw_term(self) -> RawTerm {
+        self.raw_term
     }
 }
 
 impl PartialEq for Float<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.raw_term, other.raw_term) != 0 }
     }
 }
 
@@ -66,7 +58,7 @@ impl PartialOrd for Float<'_> {
 
 impl Ord for Float<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { enif_ffi::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.raw_term, other.raw_term) };
         c.cmp(&0)
     }
 }
@@ -74,25 +66,5 @@ impl Ord for Float<'_> {
 impl std::fmt::Debug for Float<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Float")
-    }
-}
-
-impl<'b> Encoder for Float<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        if self.env.as_ptr() == env.as_ptr() {
-            Term::new(env, self.term)
-        } else {
-            env.make_copy(*self)
-        }
-    }
-}
-
-impl<'a> Decoder<'a> for Float<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.term_type(term) == Some(enif_ffi::TermType::Float) {
-            Ok(Float { term: term.term, env: term.env })
-        } else {
-            Err(CodecError::WrongType)
-        }
     }
 }

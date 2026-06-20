@@ -1,26 +1,39 @@
-use crate::codec::{CodecError, Decoder, Encoder};
-use crate::env::Env;
-use crate::term::{Term, AsNifTerm};
+use core::marker::PhantomData;
+
+use crate::types::sealed::Sealed;
+use crate::types::{Env, Invariant, RawTerm, Term};
 
 /// An Erlang reference.
 #[derive(Clone, Copy)]
-pub struct Reference<'a> {
-    pub(crate) term: enif_ffi::Term,
-    pub(crate) env: Env<'a>,
+pub struct Reference<'id> {
+    raw_term: RawTerm,
+    _id: Invariant<'id>,
 }
 
-impl<'a> Reference<'a> {
-    /// Create a new unique reference.
-    ///
-    /// Wraps `enif_make_ref`.
-    pub fn new(env: Env<'a>) -> Reference<'a> {
-        env.make_ref()
+impl<'id> Reference<'id> {
+    /// Create a new unique reference (`enif_make_ref`).
+    pub fn new(env: impl Env<'id>) -> Self {
+        let raw_term = unsafe { enif_ffi::make_ref(env.raw_env()) };
+        Reference { raw_term, _id: PhantomData }
+    }
+
+    /// Returns `true` if `term` is a reference (`enif_is_ref`).
+    pub fn is_ref(env: impl Env<'id>, term: impl Term<'id>) -> bool {
+        unsafe { enif_ffi::is_ref(env.raw_env(), term.raw_term()) != 0 }
+    }
+}
+
+impl<'id> Sealed for Reference<'id> {}
+
+impl<'id> Term<'id> for Reference<'id> {
+    fn raw_term(self) -> RawTerm {
+        self.raw_term
     }
 }
 
 impl PartialEq for Reference<'_> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { enif_ffi::is_identical(self.term, other.term) != 0 }
+        unsafe { enif_ffi::is_identical(self.raw_term, other.raw_term) != 0 }
     }
 }
 
@@ -34,7 +47,7 @@ impl PartialOrd for Reference<'_> {
 
 impl Ord for Reference<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let c = unsafe { enif_ffi::compare(self.term, other.term) };
+        let c = unsafe { enif_ffi::compare(self.raw_term, other.raw_term) };
         c.cmp(&0)
     }
 }
@@ -42,38 +55,5 @@ impl Ord for Reference<'_> {
 impl std::fmt::Debug for Reference<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Reference")
-    }
-}
-
-impl<'b> Encoder for Reference<'b> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
-        if self.env.as_ptr() == env.as_ptr() {
-            Term::new(env, self.term)
-        } else {
-            env.make_copy(*self)
-        }
-    }
-}
-
-impl<'a> Env<'a> {
-    /// Returns `true` if `term` is a reference (`enif_is_ref`).
-    pub fn is_ref(self, term: impl AsNifTerm<'a>) -> bool {
-        unsafe { enif_ffi::is_ref(self.as_ptr(), term.as_nif_term()) != 0 }
-    }
-
-    /// Create a new unique reference (`enif_make_ref`).
-    pub fn make_ref(self) -> Reference<'a> {
-        let term = unsafe { enif_ffi::make_ref(self.as_ptr()) };
-        Reference { term, env: self }
-    }
-}
-
-impl<'a> Decoder<'a> for Reference<'a> {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError> {
-        if term.env.is_ref(term) {
-            Ok(Reference { term: term.term, env: term.env })
-        } else {
-            Err(CodecError::WrongType)
-        }
     }
 }
