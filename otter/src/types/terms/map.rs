@@ -24,11 +24,11 @@ impl<'id> Map<'id> {
     /// Number of key-value pairs (`enif_get_map_size`).
     pub fn size(self, env: impl Env<'id>) -> usize {
         let mut size: usize = 0;
-        if unsafe { enif_ffi::get_map_size(env.raw_env(), self.raw_term, &mut size) } != 0 {
-            size
-        } else {
-            0
-        }
+        // get_map_size fails only on a non-map; a Map is always a validated map
+        // term, so this cannot fail (and 0 is a real size — never fake it).
+        let ok = unsafe { enif_ffi::get_map_size(env.raw_env(), self.raw_term, &mut size) };
+        assert!(ok != 0, "enif_get_map_size failed on a validated Map");
+        size
     }
 
     /// Look up `key` (`enif_get_map_value`). `None` if absent.
@@ -66,14 +66,17 @@ impl<'id> Map<'id> {
             .then_some(Map { raw_term: out, _id: PhantomData })
     }
 
-    /// Return a new map with `key` removed (`enif_make_map_remove`).
-    /// `None` if the key was absent.
-    pub fn remove(self, env: impl Env<'id>, key: impl Term<'id>) -> Option<Map<'id>> {
+    /// Return a new map with `key` removed (`enif_make_map_remove`). Removing a
+    /// key the map does not contain returns it unchanged.
+    pub fn remove(self, env: impl Env<'id>, key: impl Term<'id>) -> Map<'id> {
         let mut out: RawTerm = 0;
-        (unsafe {
+        // make_map_remove fails only on a non-map (an absent key yields the map
+        // unchanged, not a failure), so this cannot fail on a validated Map.
+        let ok = unsafe {
             enif_ffi::make_map_remove(env.raw_env(), self.raw_term, key.raw_term(), &mut out)
-        } != 0)
-            .then_some(Map { raw_term: out, _id: PhantomData })
+        };
+        assert!(ok != 0, "make_map_remove on a valid map failed");
+        Map { raw_term: out, _id: PhantomData }
     }
 
     /// Returns `true` if `term` is a map (`enif_is_map`).
@@ -84,7 +87,10 @@ impl<'id> Map<'id> {
     /// Iterate `(key, value)` pairs in unspecified order.
     pub fn iter(self, env: impl Env<'id>) -> MapIterator<'id> {
         let mut iter: Box<enif_ffi::MapIterator> = Box::new(unsafe { std::mem::zeroed() });
-        unsafe {
+        // create fails only on a non-map; on a validated Map it cannot fail.
+        // Proceeding on a failed create would leave the iterator zeroed and the
+        // first get_pair would read an uninitialized cursor.
+        let ok = unsafe {
             enif_ffi::map_iterator_create(
                 env.raw_env(),
                 self.raw_term,
@@ -92,6 +98,7 @@ impl<'id> Map<'id> {
                 enif_ffi::MapIteratorEntry::First,
             )
         };
+        assert!(ok != 0, "enif_map_iterator_create failed on a validated Map");
         MapIterator { iter, env: env.as_any_env(), exhausted: false }
     }
 }

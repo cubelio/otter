@@ -25,9 +25,13 @@ fn hello(_env: CallEnv) -> Atom {
 // --- add/2 --------------------------------------------------------------
 
 #[otter::nif]
-fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    let sum = a.to_i64(env).unwrap() + b.to_i64(env).unwrap();
-    Integer::from_i64(env, sum)
+fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
+    // A bignum argument does not fit i64 — reject it as badarg rather than
+    // panicking (which the wrapper would surface as `nif_panicked`).
+    let (Some(a), Some(b)) = (a.to_i64(env), b.to_i64(env)) else {
+        return env.badarg();
+    };
+    Ok(Integer::from_i64(env, a + b))
 }
 
 // --- echo/1 -------------------------------------------------------------
@@ -211,9 +215,12 @@ fn test_binary_traits(env: CallEnv) -> Atom {
 // --- test_from_str/1 ----------------------------------------------------
 
 #[otter::nif]
-fn test_from_str<'a>(env: CallEnv<'a>, bin: Binary<'a>) -> List<'a> {
-    let s = bin.try_str(env).unwrap();
-    List::from_str(env, s)
+fn test_from_str<'a>(env: CallEnv<'a>, bin: Binary<'a>) -> Result<List<'a>, Raised<'a>> {
+    // Non-UTF-8 argument bytes are badarg, not a panic.
+    let Ok(s) = bin.try_str(env) else {
+        return env.badarg();
+    };
+    Ok(List::from_str(env, s))
 }
 
 // --- reverse_list/1 -----------------------------------------------------
@@ -313,7 +320,7 @@ fn test_map(env: CallEnv) -> Atom {
     assert_eq!(m.size(env), 2);
     assert_eq!(m.iter(env).count(), 2);
 
-    let m = m.remove(env, k1).unwrap();
+    let m = m.remove(env, k1);
     assert_eq!(m.size(env), 1);
     assert!(m.get(env, k1).is_none());
 
@@ -326,16 +333,19 @@ fn test_map(env: CallEnv) -> Atom {
 fn test_tuple(env: CallEnv) -> Atom {
     let a = TypedTerm::Atom(Atom::intern(env, "hello").unwrap());
     let b = TypedTerm::Integer(Integer::from_i64(env, 42));
-    let t = Tuple::from_terms(env, [a, b]);
+    let t = Tuple::from_terms(env, [a, b]).with_elements(env);
 
-    assert_eq!(t.len(env), 2);
-    assert!(!t.is_empty(env));
-    assert!(t.element(env, 0).resolve(env) == Some(a));
-    assert!(t.element(env, 1).resolve(env) == Some(b));
+    assert_eq!(t.len(), 2);
+    assert!(!t.is_empty());
+    assert!(t[0].resolve(env) == Some(a));
+    assert!(t[1].resolve(env) == Some(b));
+    // Iteration yields the elements as unresolved terms, in order.
+    let collected: Vec<_> = t.into_iter().map(|e| e.resolve(env)).collect();
+    assert!(collected == vec![Some(a), Some(b)]);
 
-    let empty = Tuple::from_terms(env, std::iter::empty::<TypedTerm>());
-    assert_eq!(empty.len(env), 0);
-    assert!(empty.is_empty(env));
+    let empty = Tuple::from_terms(env, std::iter::empty::<TypedTerm>()).with_elements(env);
+    assert_eq!(empty.len(), 0);
+    assert!(empty.is_empty());
 
     otter::atom![ok]
 }
@@ -344,7 +354,7 @@ fn test_tuple(env: CallEnv) -> Atom {
 
 #[otter::nif]
 fn double_float<'a>(env: CallEnv<'a>, val: Float<'a>) -> Result<Float<'a>, Raised<'a>> {
-    match Float::from_f64(env, val.to_f64(env).unwrap() * 2.0) {
+    match Float::from_f64(env, val.to_f64(env) * 2.0) {
         Some(f) => Ok(f),
         None => env.badarg(),
     }
@@ -386,11 +396,13 @@ fn new_ref<'a>(env: CallEnv<'a>) -> Reference<'a> {
 
 #[otter::nif]
 fn divide<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
-    let b_val = b.to_i64(env).unwrap();
-    if b_val == 0 {
+    let (Some(a), Some(b)) = (a.to_i64(env), b.to_i64(env)) else {
+        return env.badarg();
+    };
+    if b == 0 {
         return env.raise(otter::atom![division_by_zero]);
     }
-    Ok(Integer::from_i64(env, a.to_i64(env).unwrap() / b_val))
+    Ok(Integer::from_i64(env, a / b))
 }
 
 // --- dirty_cpu_thread_type/0 --------------------------------------------
@@ -573,7 +585,7 @@ fn test_time(_env: CallEnv) -> Atom {
 #[otter::nif]
 fn test_consume_timeslice(env: CallEnv) -> Atom {
     for _ in 0..100 {
-        if env.as_any_env().consume_timeslice(100) {
+        if env.consume_timeslice(100) {
             return otter::atom![ok];
         }
     }

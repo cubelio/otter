@@ -39,7 +39,11 @@ fn self_path() -> Option<std::path::PathBuf> {
     use std::os::unix::ffi::OsStrExt;
 
     // The address of any function in this crate lies inside the one cdylib
-    // (otter is linked in as an rlib), so dladdr resolves to its path.
+    // (otter is linked in as an rlib), so dladdr resolves to its path. This
+    // holds ONLY because otter is a static rlib inside the user's NIF cdylib:
+    // if otter were ever built as its own shared object, `compute` would resolve
+    // to otter's `.so` instead of the user's NIF library, and the tag would no
+    // longer distinguish one user build from another. otter must stay an rlib.
     let mut info: libc::Dl_info = unsafe { std::mem::zeroed() };
     let addr = compute as *const std::ffi::c_void;
     if unsafe { libc::dladdr(addr, &mut info) } == 0 || info.dli_fname.is_null() {

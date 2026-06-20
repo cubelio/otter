@@ -11,7 +11,7 @@ pub mod reference;
 pub mod tuple;
 
 pub use atom::Atom;
-pub use binary::{Binary, BinaryBuf, Bitstring};
+pub use binary::{Binary, Bitstring};
 pub use float::Float;
 pub use fun::Fun;
 pub use integer::Integer;
@@ -20,4 +20,4 @@ pub use map::{Map, MapIterator};
 pub use pid::{LocalPid, Pid};
 pub use port::{LocalPort, Port};
 pub use reference::Reference;
-pub use tuple::Tuple;
+pub use tuple::{Tuple, TupleView};

@@ -1,13 +1,16 @@
+mod binarybuf;
 mod ops;
 pub mod terms;
 mod typed;
 
+pub use binarybuf::BinaryBuf;
 pub use ops::{deserialize, port_command, send_from, serialize};
 pub use terms::*;
 pub use typed::TypedTerm;
 
 
 use core::marker::PhantomData;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 mod sealed {
     pub trait Sealed {}
@@ -26,6 +29,38 @@ pub trait Env<'id>: Copy + sealed::Sealed {
     /// to the same `AnyEnv` for a given brand.
     fn as_any_env(self) -> AnyEnv<'id> {
         AnyEnv { raw_env: self.raw_env(), _id: PhantomData }
+    }
+
+    /// The dynamic type of `term` (`enif_term_type`). `None` for a type code
+    /// this otter build does not recognize (a newer-OTP type).
+    fn term_type(self, term: impl Term<'id>) -> Option<enif_ffi::TermType> {
+        let code = unsafe { enif_ffi::term_type(self.raw_env(), term.raw_term()) };
+        enif_ffi::TermType::from_raw(code)
+    }
+
+    /// Hash a term (`enif_hash`). `algorithm` is `Phash2` (portable) or
+    /// `InternalHash` (node-local, faster).
+    fn hash(self, algorithm: enif_ffi::Hash, term: impl Term<'id>, salt: u64) -> u64 {
+        unsafe { enif_ffi::hash(algorithm, term.raw_term(), salt) }
+    }
+
+    /// Tell the scheduler how much of the timeslice this NIF used
+    /// (`enif_consume_timeslice`). `true` if the timeslice is exhausted.
+    fn consume_timeslice(self, percent: i32) -> bool {
+        unsafe { enif_ffi::consume_timeslice(self.raw_env(), percent) != 0 }
+    }
+
+    /// Whether the calling process is still alive
+    /// (`enif_is_current_process_alive`).
+    fn is_current_process_alive(self) -> bool {
+        unsafe { enif_ffi::is_current_process_alive(self.raw_env()) != 0 }
+    }
+
+    /// Create a unique integer (`enif_make_unique_integer`). `properties` is a
+    /// bitmask of `UniqueInteger::POSITIVE` / `MONOTONIC`.
+    fn make_unique_integer(self, properties: enif_ffi::UniqueInteger) -> Integer<'id> {
+        let raw = unsafe { enif_ffi::make_unique_integer(self.raw_env(), properties) };
+        Integer::from_raw(raw)
     }
 }
 
@@ -214,6 +249,11 @@ impl<'id> CallEnv<'id> {
 
 pub(crate) type RawTerm = enif_ffi::Term;
 
+/// The BEAM's non-value marker (`THE_NON_VALUE`). Returned from a NIF whose
+/// `Result` raised: the word is ignored once an exception is pending, and the
+/// BEAM raises the pending exception on return.
+pub(crate) const THE_NON_VALUE: RawTerm = 0;
+
 pub trait Term<'id>: sealed::Sealed {
     fn raw_term(self) -> RawTerm;
 
@@ -232,7 +272,10 @@ pub trait Term<'id>: sealed::Sealed {
 
 pub trait FreeTerm: for<'id> Term<'id> {}
 
+// repr(transparent) over RawTerm (the brand marker is a ZST): lets a
+// `&[RawTerm]` be viewed in place as `&[AnyTerm<'id>]` — see `TupleView`.
 #[derive(Clone, Copy)]
+#[repr(transparent)]
 pub struct AnyTerm<'id> {
     raw_term: RawTerm,
     _id: Invariant<'id>,
@@ -252,38 +295,29 @@ impl<'id> Term<'id> for AnyTerm<'id> {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct AnyFreeTerm {
-    raw_term: RawTerm,
+
+/// Process-global source of arena generation stamps. Handed out monotonically,
+/// so every `(arena, post-clear state)` gets a value no other arena ever holds.
+/// Wrap is unreachable at 2^64 stamps.
+static GENERATION: AtomicU64 = AtomicU64::new(1);
+
+fn next_generation() -> u64 {
+    GENERATION.fetch_add(1, Ordering::Relaxed)
 }
 
-impl AnyFreeTerm {
-    pub(crate) fn wrap(raw_term: RawTerm) -> Self {
-        Self { raw_term }
-    }
-}
-
-impl sealed::Sealed for AnyFreeTerm {}
-
-impl Term<'_> for AnyFreeTerm {
-    fn raw_term(self) -> RawTerm {
-        self.raw_term
-    }
-}
-
-impl FreeTerm for AnyFreeTerm {}
-
-
+/// A portable handle to a term stored in an [`OwnedEnvArena`]. `Copy` and
+/// unbranded so it can cross the `run` closure / be carried to a worker thread;
+/// its `version` is a globally-unique generation stamp, so it is only valid
+/// against the exact arena-generation that produced it.
 #[derive(Clone, Copy)]
 pub struct OwnedEnvTerm {
-    env: RawEnv,
-    version: usize,
+    version: u64,
     term: RawTerm,
 }
 
 pub struct OwnedEnvArena {
     env: RawEnv,
-    version: usize,
+    version: u64,
     is_dirty: bool,
 }
 
@@ -291,36 +325,42 @@ impl OwnedEnvArena {
     pub fn new() -> Self {
         let env = unsafe { enif_ffi::alloc_env() };
         assert!(!env.is_null(), "enif_alloc_env returned null");
-        OwnedEnvArena { env, version: 0, is_dirty: false }
+        OwnedEnvArena { env, version: next_generation(), is_dirty: false }
     }
 
     /// Drop all stored terms and wipe the env heap, in lockstep, for reuse.
+    /// Takes a fresh generation stamp so every term stored before the clear is
+    /// invalidated.
     pub fn clear(&mut self) {
         unsafe { enif_ffi::clear_env(self.env) };
-        self.version = self.version.wrapping_add(1);
+        self.version = next_generation();
         self.is_dirty = false;
     }
 
     pub fn copy_in<'a>(&mut self, term: impl Term<'a>) -> OwnedEnvTerm {
         assert!(!self.is_dirty);
-        self.export(unsafe { enif_ffi::make_copy(self.env, term.raw_term()) })
+        self.wrap_term(unsafe { enif_ffi::make_copy(self.env, term.raw_term()) })
     }
 
     pub fn copy_out<'a>(&self, oterm: OwnedEnvTerm, env: impl Env<'a>) -> AnyTerm<'a> {
         assert!(!self.is_dirty);
-        let remote_term = unsafe { enif_ffi::make_copy(env.raw_env(), self.import(oterm)) };
+        let remote_term = unsafe { enif_ffi::make_copy(env.raw_env(), self.unwrap_term(oterm)) };
         AnyTerm { raw_term: remote_term, _id: PhantomData }
     }
 
-    fn export(&self, raw_term: RawTerm) -> OwnedEnvTerm {
+    fn wrap_term(&self, raw_term: RawTerm) -> OwnedEnvTerm {
         assert!(!self.is_dirty);
-        OwnedEnvTerm { env: self.env, version: self.version, term: raw_term }
+        OwnedEnvTerm { version: self.version, term: raw_term }
     }
 
-    fn import(&self, oterm: OwnedEnvTerm) -> RawTerm {
+    fn unwrap_term(&self, oterm: OwnedEnvTerm) -> RawTerm {
         assert!(!self.is_dirty);
-        assert!(self.env == oterm.env);
-        assert!(self.version == oterm.version);
+        // The generation stamp is globally unique, so a matching version
+        // identifies this exact arena-generation — and since an arena's env
+        // pointer is fixed for its life, equal versions imply the same env. The
+        // version check alone is therefore sufficient (no env-pointer compare,
+        // which could otherwise alias a freed-then-reused env).
+        assert!(self.version == oterm.version, "OwnedEnvTerm used with a different arena or after clear");
         oterm.term
     }
 
@@ -349,11 +389,11 @@ pub struct OwnedEnv<'a, 'id> {
 
 impl<'a, 'id> OwnedEnv<'a, 'id> {
     pub fn export(self, term: impl Term<'id>) -> OwnedEnvTerm {
-        self.owner.export(term.raw_term())
+        self.owner.wrap_term(term.raw_term())
     }
 
     pub fn import(self, oterm: OwnedEnvTerm) -> AnyTerm<'id> {
-        AnyTerm { raw_term: self.owner.import(oterm), _id: PhantomData }
+        AnyTerm { raw_term: self.owner.unwrap_term(oterm), _id: PhantomData }
     }
 }
 
@@ -371,7 +411,7 @@ impl<'a, 'id> Env<'id> for OwnedEnv<'a, 'id> {
 /// not owners of the operation.
 pub fn send(pid: &LocalPid, env: &mut OwnedEnvArena, term: OwnedEnvTerm) -> bool {
     assert!(!env.is_dirty);
-    let msg = env.import(term);
+    let msg = env.unwrap_term(term);
     let ok = unsafe { enif_ffi::send(std::ptr::null_mut(), &pid.pid, env.env, msg) != 0 };
     env.is_dirty = ok;
     ok
@@ -425,6 +465,6 @@ mod owned_env_tests {
     // to re-verify.
     //
     // fn escape(b: &mut OwnedEnvArena) {
-    //     let _leaked = b.run(|ctx, env| ctx.import(OwnedEnvTerm { env: b.env, version: b.version, term: 0 }));
+    //     let _leaked = b.run(|env| env.import(OwnedEnvTerm { version: b.version, term: 0 }));
     // }
 }

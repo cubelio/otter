@@ -2,12 +2,8 @@
 
 use crate::types::{
     AnyTerm, Atom, Binary, Bitstring, Env, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,
-    Port, Raised, Reference, Term, Tuple, TypedTerm,
+    Port, Raised, Reference, Term, Tuple, TupleView, TypedTerm, THE_NON_VALUE,
 };
-
-/// The BEAM's non-value marker. Returned from a NIF whose `Result` is `Err`, so
-/// the BEAM raises the already-pending exception.
-const THE_NON_VALUE: enif_ffi::Term = 0;
 
 /// Error returned by term type conversion operations.
 ///
@@ -93,6 +89,12 @@ impl<'id> Decoder<'id> for AnyTerm<'id> {
 // Centralized here because each impl uses only the noun's public surface
 // (`Term::raw_term`, the `is_*`/`term_type` predicates, `from_raw`): `encode`
 // wraps the same-brand word for free, `decode` checks the type then rewraps.
+//
+// Two decode idioms appear below, chosen by what the NIF API offers, not by
+// taste: types with a dedicated `enif_is_*` predicate (atom, binary, fun, pid,
+// port, ref, list, map, tuple) check via `Type::is_*(env, term)`; the three
+// with no such predicate (integer, float, bitstring) fall back to comparing
+// `env.term_type(term)` against the expected `TermType`.
 // ---------------------------------------------------------------------------
 
 macro_rules! encode_by_wrap {
@@ -107,7 +109,8 @@ macro_rules! encode_by_wrap {
 
 encode_by_wrap!(
     AnyTerm<'id>, Integer<'id>, Float<'id>, Reference<'id>, Fun<'id>, Tuple<'id>, List<'id>,
-    Map<'id>, Binary<'id>, Bitstring<'id>, Pid<'id>, Port<'id>, Atom, LocalPid, LocalPort,
+    Map<'id>, Binary<'id>, Bitstring<'id>, Pid<'id>, Port<'id>, TupleView<'id>, Atom, LocalPid,
+    LocalPort,
 );
 
 impl<'id> Encoder<'id> for TypedTerm<'id> {
@@ -120,7 +123,7 @@ impl<'id> Encoder<'id> for TypedTerm<'id> {
 
 impl<'id> Decoder<'id> for Integer<'id> {
     fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
-        if env.as_any_env().term_type(term) == Some(enif_ffi::TermType::Integer) {
+        if env.term_type(term) == Some(enif_ffi::TermType::Integer) {
             Ok(Integer::from_raw(term.raw_term()))
         } else {
             Err(CodecError::WrongType)
@@ -130,7 +133,7 @@ impl<'id> Decoder<'id> for Integer<'id> {
 
 impl<'id> Decoder<'id> for Float<'id> {
     fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
-        if env.as_any_env().term_type(term) == Some(enif_ffi::TermType::Float) {
+        if env.term_type(term) == Some(enif_ffi::TermType::Float) {
             Ok(Float::from_raw(term.raw_term()))
         } else {
             Err(CodecError::WrongType)
@@ -142,7 +145,7 @@ impl<'id> Decoder<'id> for Bitstring<'id> {
     fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
         // Every binary is a bitstring, so this accepts both byte-aligned and
         // sub-byte; use `Binary` for the byte-aligned refinement.
-        if env.as_any_env().term_type(term) == Some(enif_ffi::TermType::Bitstring) {
+        if env.term_type(term) == Some(enif_ffi::TermType::Bitstring) {
             Ok(Bitstring::from_raw(term.raw_term()))
         } else {
             Err(CodecError::WrongType)
