@@ -38,6 +38,12 @@ pub use otter_codegen::nif;
 pub use otter_codegen::init;
 pub use otter_codegen::resource_impl;
 
+// Internal: widen an item to `pub` under the `raw` feature without duplicating
+// it. Used within otter to expose selected internals on the raw escape hatch;
+// the emitted `cfg(feature = "raw")` resolves against otter's own `raw` feature.
+#[doc(hidden)]
+pub use otter_codegen::raw;
+
 /// Retrieve an atom pre-declared in the `atoms = [...]` list of
 /// [`init!`](crate::init).
 ///
