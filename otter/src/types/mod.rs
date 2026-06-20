@@ -164,12 +164,66 @@ pub trait CallingEnv<'id>: Env<'id> {}
 impl<'id> CallingEnv<'id> for CallEnv<'id> {}
 impl<'id> CallingEnv<'id> for CallbackEnv<'id> {}
 
+// --- Exceptions ---
+
+/// Proof that an exception is pending on a [`CallEnv`].
+///
+/// A term-less typestate token: it can only be produced by an operation that
+/// raises or detects a pending exception, so holding one means the env is in the
+/// pending-exception state in which no further env operation is valid. Propagate
+/// it straight out of the NIF with `?`; the generated wrapper returns the
+/// non-value word and the BEAM raises the pending exception. (No term is kept —
+/// detection via `has_pending_exception` yields no reason term, and the returned
+/// word is ignored once an exception is pending.)
+pub struct Raised<'id> {
+    _id: Invariant<'id>,
+}
+
+impl<'id> CallEnv<'id> {
+    /// Raise an exception with `reason` (`enif_raise_exception`). Always `Err`,
+    /// generic over the success type so it fits any position:
+    /// `return env.raise(reason)`.
+    pub fn raise<T>(self, reason: impl Term<'id>) -> Result<T, Raised<'id>> {
+        unsafe { enif_ffi::raise_exception(self.raw_env(), reason.raw_term()) };
+        Err(Raised { _id: PhantomData })
+    }
+
+    /// Raise a `badarg` error (`enif_make_badarg`). Always `Err`.
+    pub fn badarg<T>(self) -> Result<T, Raised<'id>> {
+        unsafe { enif_ffi::make_badarg(self.raw_env()) };
+        Err(Raised { _id: PhantomData })
+    }
+
+    /// If the env has a pending exception, return `Err(Raised)`; otherwise
+    /// `Ok(term)` (`enif_has_pending_exception`). The safe way to call a `raw`
+    /// enif function that may raise: pass its result straight through.
+    pub fn check_raised(self, term: AnyTerm<'id>) -> Result<AnyTerm<'id>, Raised<'id>> {
+        if unsafe { enif_ffi::has_pending_exception(self.raw_env(), std::ptr::null_mut()) } != 0 {
+            Err(Raised { _id: PhantomData })
+        } else {
+            Ok(term)
+        }
+    }
+}
+
 // --- Term ---
 
 pub(crate) type RawTerm = enif_ffi::Term;
 
 pub trait Term<'id>: sealed::Sealed {
     fn raw_term(self) -> RawTerm;
+
+    /// Copy this term into another environment (`enif_make_copy`), producing a
+    /// term branded to the destination. The general cross-env copy — distinct
+    /// from same-brand [`Encoder`](crate::codec::Encoder) (which wraps for free)
+    /// and from [`OwnedEnvArena`] `copy_out` (the arena exit).
+    fn copy_to<'dst>(self, env: impl Env<'dst>) -> AnyTerm<'dst>
+    where
+        Self: Sized,
+    {
+        let raw = unsafe { enif_ffi::make_copy(env.raw_env(), self.raw_term()) };
+        AnyTerm::wrap(raw, env)
+    }
 }
 
 pub trait FreeTerm: for<'id> Term<'id> {}

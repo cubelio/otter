@@ -1,34 +1,32 @@
 //! `Encoder`, `Decoder`, and `CodecError`.
-//!
-//! `CodecError` is defined here and used by the type methods.
-//! `Encoder` and `Decoder` trait definitions and implementations follow in a
-//! subsequent step.
 
-use crate::env::Env;
-use crate::term::{Term, Raised};
+use crate::types::{AnyTerm, Env, Raised};
+
+/// The BEAM's non-value marker. Returned from a NIF whose `Result` is `Err`, so
+/// the BEAM raises the already-pending exception.
+const THE_NON_VALUE: enif_ffi::Term = 0;
 
 /// Error returned by term type conversion operations.
 ///
-/// This is otter's internal error type — it never appears in user NIF function
-/// signatures. The `#[otter::nif]` macro converts codec failures to
-/// `raise_badarg()` automatically.
+/// otter's internal error type — it never appears in user NIF signatures. The
+/// `#[otter::nif]` macro converts codec failures to `badarg` automatically.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodecError {
     /// The term was not the expected type.
     WrongType,
     /// An integer term did not fit the requested Rust integer type.
     IntegerOverflow,
-    /// The term's type code is one this otter build does not recognize — a
-    /// term type added by a newer OTP than otter knows about.
+    /// The term's type code is one this otter build does not recognize — a term
+    /// type added by a newer OTP than otter knows about.
     UnknownTermType,
 }
 
 impl std::fmt::Display for CodecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CodecError::WrongType        => write!(f, "wrong term type"),
-            CodecError::IntegerOverflow  => write!(f, "integer overflow"),
-            CodecError::UnknownTermType  => write!(f, "unknown term type"),
+            CodecError::WrongType => write!(f, "wrong term type"),
+            CodecError::IntegerOverflow => write!(f, "integer overflow"),
+            CodecError::UnknownTermType => write!(f, "unknown term type"),
         }
     }
 }
@@ -39,45 +37,28 @@ impl std::error::Error for CodecError {}
 // Encoder
 // ---------------------------------------------------------------------------
 
-/// Convert a value into an Erlang term.
+/// Convert a value into an Erlang term of brand `'id`.
 ///
-/// Implemented by otter term types (`Integer<'a>`, `Binary<'a>`, `Atom`, etc.)
-/// and by `ResourceArc<T>`. Native Rust types do not implement this trait —
-/// conversions are always explicit via type methods.
-///
-/// Returns a [`Term<'a>`] tied to the target env's lifetime. Callers that
-/// want the typed enum can call `.resolve()`; the NIF wrapper macro calls
-/// `.as_raw()` directly and avoids the dispatch.
-pub trait Encoder {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a>;
+/// Implemented by otter term types and `ResourceArc<T>` — never by native Rust
+/// types (conversions are always explicit). A same-brand term encodes by
+/// wrapping its word for free; cross-env terms are not encoded — copy them
+/// first with [`Term::copy_to`].
+pub trait Encoder<'id> {
+    fn encode(&self, env: impl Env<'id>) -> AnyTerm<'id>;
 }
 
-/// Encode a `Result<T, Raised>` as either a returned term or the pending
-/// exception.
+/// Encode a `Result<T, Raised>` in **return position only**.
 ///
-/// `Ok(v)` encodes `v`. `Err(raised)` carries proof that an exception has
-/// already been raised on the env (a [`Raised`] can only be produced by an
-/// operation that raised), so the marker word is returned directly — the BEAM
-/// raises the already-pending exception on NIF return. Nothing is re-raised
-/// here, so this is sound even though the env is in the exception state.
-///
-/// To raise from a NIF, produce a `Raised` via [`Env::raise_exception`] /
-/// [`Env::make_badarg`] (e.g. `env.raise_exception(reason)?`) and let it
-/// propagate; the error type of a NIF's `Result` must be `Raised`.
-///
-/// This impl exists for the **return position only**. When the env has a
-/// pending exception the encoded `Err` is the non-value marker (the BEAM
-/// convention for "raised"), which is meaningful solely as a NIF's direct
-/// return. Encoding an `Err` anywhere else — e.g. embedding
-/// `result.encode(env)` inside a tuple, list, or map — diverts that marker
-/// into a value position and builds a term containing the non-value. Always
-/// propagate a `Result<T, Raised>` with `?` or `return`; never encode one
-/// mid-term.
-impl<'r, T: Encoder> Encoder for Result<T, Raised<'r>> {
-    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
+/// `Ok(v)` encodes `v`. `Err(raised)` carries proof that an exception is already
+/// pending on the env, so the non-value marker is returned and the BEAM raises
+/// the pending exception on NIF return. Never encode an `Err` mid-term (inside a
+/// tuple/list/map) — that diverts the marker into a value position. Always
+/// propagate a `Result<T, Raised>` with `?` or `return`.
+impl<'id, T: Encoder<'id>> Encoder<'id> for Result<T, Raised<'id>> {
+    fn encode(&self, env: impl Env<'id>) -> AnyTerm<'id> {
         match self {
-            Ok(v)       => v.encode(env),
-            Err(raised) => Term::new(env, raised.raw()),
+            Ok(v) => v.encode(env),
+            Err(_) => AnyTerm::wrap(THE_NON_VALUE, env),
         }
     }
 }
@@ -86,15 +67,19 @@ impl<'r, T: Encoder> Encoder for Result<T, Raised<'r>> {
 // Decoder
 // ---------------------------------------------------------------------------
 
-/// Extract a value from an Erlang term.
+/// Extract a value from an Erlang term of brand `'id`.
 ///
-/// Implemented by otter term types. Takes a [`Term<'a>`] — the env-bound
-/// wrapper around a raw NIF word, with no type tag attached — so each impl
-/// pays exactly the type check it needs (one `enif_term_type` /
-/// `enif_is_binary` call per decode, no eager resolve discriminator that
-/// gets discarded). Returns `Err(CodecError)` if the term is not the
-/// expected type or the value does not fit.
-pub trait Decoder<'a>: Sized {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
+/// Implemented by otter term types. Takes the raw [`AnyTerm`] plus an env (the
+/// term carries only its brand, not its env), so each impl pays exactly the type
+/// check it needs. Returns `Err(CodecError)` if the term is not the expected
+/// type or the value does not fit.
+pub trait Decoder<'id>: Sized {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError>;
 }
 
+/// The identity decode — any term decodes to itself.
+impl<'id> Decoder<'id> for AnyTerm<'id> {
+    fn decode(term: AnyTerm<'id>, _env: impl Env<'id>) -> Result<Self, CodecError> {
+        Ok(term)
+    }
+}
