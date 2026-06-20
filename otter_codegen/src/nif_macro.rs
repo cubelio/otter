@@ -79,11 +79,11 @@ fn arg_ident(arg: &FnArg) -> Result<syn::Ident> {
 fn panic_handler() -> TokenStream {
     quote! {
         match ::otter::__codegen::Atom::intern(__otter_env, "nif_panicked") {
-            Some(__atom) => ::otter::__codegen::raise(
+            Some(__atom) => ::otter::__codegen::raise_word(
                 __otter_env,
-                ::otter::__codegen::Encoder::encode(&__atom, __otter_env).as_raw(),
+                ::otter::__codegen::encode_result(&__atom, __otter_env),
             ),
-            None => ::otter::__codegen::raise_badarg(__otter_env),
+            None => ::otter::__codegen::badarg_word(__otter_env),
         }
     }
 }
@@ -130,11 +130,9 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
         .enumerate()
         .map(|(idx, name)| {
             quote! {
-                let #name = ::otter::__codegen::Decoder::decode(
-                    ::otter::__codegen::new_raw_term(
-                        __otter_env,
-                        unsafe { *__otter_argv.add(#idx) },
-                    )
+                let #name = ::otter::__codegen::decode_arg(
+                    __otter_env,
+                    unsafe { *__otter_argv.add(#idx) },
                 )?;
             }
         })
@@ -157,8 +155,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
     let panic_arm = panic_handler();
     let result_handling = quote! {
         match __otter_result {
-            Ok(Ok(__val)) => ::otter::__codegen::Encoder::encode(&__val, __otter_env).as_raw(),
-            Ok(Err(_))    => ::otter::__codegen::raise_badarg(__otter_env),
+            Ok(Ok(__val)) => ::otter::__codegen::encode_result(&__val, __otter_env),
+            Ok(Err(_))    => ::otter::__codegen::badarg_word(__otter_env),
             Err(_)        => { #panic_arm }
         }
     };
@@ -190,38 +188,32 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
             __otter_argc: ::std::ffi::c_int,
             __otter_argv: *const ::otter::enif_ffi::Term,
         ) -> ::otter::enif_ffi::Term {
-            let __otter_marker = ();
-            let __otter_env = unsafe {
-                ::otter::__codegen::new_env(
-                    &__otter_marker,
-                    __otter_nif_env,
-                    ::otter::__codegen::EnvKind::ProcessBound,
-                )
-            };
+            // `with_call_env` mints a fresh generative brand `'id` for this call
+            // via its `for<'id>` closure, and the closure's return is the raw
+            // word the C ABI hands back. The user fn, decoded args, and result
+            // all share `'id` through inference — the macro never touches the
+            // user's signature.
+            unsafe {
+                ::otter::__codegen::with_call_env(__otter_nif_env, |__otter_env| {
+                    // The unpack reads argv[0..arity) with unchecked offsets. The
+                    // BEAM always calls with argc == the registered arity, so a
+                    // mismatch is a registration/ABI bug — fail safe with badarg.
+                    if __otter_argc != #arity as ::std::ffi::c_int {
+                        return ::otter::__codegen::badarg_word(__otter_env);
+                    }
 
-            // The unpack below reads argv[0..arity) with unchecked pointer
-            // offsets. The BEAM always calls a NIF with argc equal to its
-            // registered arity, so a mismatch means a registration/ABI bug —
-            // fail safe with badarg rather than reading out of bounds.
-            if __otter_argc != #arity as ::std::ffi::c_int {
-                return ::otter::__codegen::raise_badarg(__otter_env);
-            }
+                    let __otter_result = ::std::panic::catch_unwind(
+                        ::std::panic::AssertUnwindSafe(|| {
+                            #(#unpack)*
+                            Ok::<_, ::otter::__codegen::CodecError>(
+                                #fn_name(#(#call_args),*)
+                            )
+                        })
+                    );
 
-            // Constrain the user fn's return type to `Encoder` here so the
-            // diagnostic on a missing impl points at this assertion's bound
-            // rather than at the `Encoder::encode` call deep in the wrapper.
-            fn __otter_assert_encoder<T: ::otter::__codegen::Encoder>(t: T) -> T { t }
-
-            let __otter_result = ::std::panic::catch_unwind(
-                ::std::panic::AssertUnwindSafe(|| {
-                    #(#unpack)*
-                    Ok::<_, ::otter::__codegen::CodecError>(
-                        __otter_assert_encoder(#fn_name(#(#call_args),*))
-                    )
+                    #result_handling
                 })
-            );
-
-            #result_handling
+            }
         }
 
         #[doc(hidden)]

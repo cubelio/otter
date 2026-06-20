@@ -213,8 +213,7 @@ fn lifecycle_dispatch(cb: &Callback, info: TokenStream, old: Option<TokenStream>
             ::otter::__codegen::LOAD_OK
         }},
         Callback::Plain(f) => quote! {{
-            let __otter_info_raw = ::otter::__codegen::new_raw_term(__env, #info);
-            match ::otter::__codegen::Decoder::decode(__otter_info_raw) {
+            match ::otter::__codegen::decode_arg(__env, #info) {
                 Ok(__otter_info) => if #f(__env, __otter_info) {
                     ::otter::__codegen::LOAD_OK
                 } else {
@@ -250,8 +249,7 @@ fn lifecycle_dispatch(cb: &Callback, info: TokenStream, old: Option<TokenStream>
                 },
             };
             quote! {{
-                let __otter_info_raw = ::otter::__codegen::new_raw_term(__env, #info);
-                match ::otter::__codegen::Decoder::decode(__otter_info_raw) {
+                match ::otter::__codegen::decode_arg(__env, #info) {
                     Ok(__otter_info) => if #call {
                         ::otter::__codegen::LOAD_OK
                     } else {
@@ -302,7 +300,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let register_fn = quote! {
         #[doc(hidden)]
         fn __otter_register(
-            __otter_env:   ::otter::__codegen::Env<'_>,
+            __otter_env:   ::otter::__codegen::InitEnv<'_>,
             __otter_flags: ::otter::__codegen::ResourceFlags,
         ) {
             #register_body
@@ -335,7 +333,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
 
                 #( #decls )*
 
-                pub fn init(__otter_env: ::otter::__codegen::Env<'_>) {
+                pub fn init(__otter_env: ::otter::__codegen::InitEnv<'_>) {
                     #( #inits )*
                 }
             }
@@ -369,17 +367,15 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             __otter_priv_data: *mut *mut ::std::ffi::c_void,
             __otter_load_info: ::otter::enif_ffi::Term,
         ) -> ::std::ffi::c_int {
-            let __marker = ();
-            let __env = unsafe {
-                ::otter::__codegen::new_env(
-                    &__marker, __otter_load_env, ::otter::__codegen::EnvKind::Load,
-                )
-            };
             let __pd = unsafe { ::otter::__codegen::install_priv_data(__otter_priv_data) };
             let __outcome = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
-                __otter_register(__env, ::otter::__codegen::ResourceFlags::CREATE);
-                #intern_atoms
-                #load_body
+                unsafe {
+                    ::otter::__codegen::with_init_env(__otter_load_env, |__env| {
+                        __otter_register(__env, ::otter::__codegen::ResourceFlags::CREATE);
+                        #intern_atoms
+                        #load_body
+                    })
+                }
             }));
             match __outcome {
                 Ok(::otter::__codegen::LOAD_OK) => ::otter::__codegen::LOAD_OK,
@@ -410,21 +406,19 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             __otter_upgrade_info: ::otter::enif_ffi::Term,
         ) -> ::std::ffi::c_int {
             #upgrade_old_consume
-            let __marker = ();
-            let __env = unsafe {
-                ::otter::__codegen::new_env(
-                    &__marker, __otter_upgrade_env, ::otter::__codegen::EnvKind::Upgrade,
-                )
-            };
             let __pd = unsafe { ::otter::__codegen::install_priv_data(__otter_priv_data) };
             let __outcome = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
-                __otter_register(
-                    __env,
-                    ::otter::__codegen::ResourceFlags::CREATE
-                        | ::otter::__codegen::ResourceFlags::TAKEOVER,
-                );
-                #intern_atoms
-                #upgrade_body
+                unsafe {
+                    ::otter::__codegen::with_init_env(__otter_upgrade_env, |__env| {
+                        __otter_register(
+                            __env,
+                            ::otter::__codegen::ResourceFlags::CREATE
+                                | ::otter::__codegen::ResourceFlags::TAKEOVER,
+                        );
+                        #intern_atoms
+                        #upgrade_body
+                    })
+                }
             }));
             match __outcome {
                 Ok(::otter::__codegen::LOAD_OK) => ::otter::__codegen::LOAD_OK,
@@ -448,29 +442,21 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let unload_dispatch = match &input.unload {
         Callback::None => quote! { let _ = __otter_unload_env; },
         Callback::Plain(f) => quote! {
-            let __marker = ();
-            let __env = unsafe {
-                ::otter::__codegen::new_env(
-                    &__marker, __otter_unload_env, ::otter::__codegen::EnvKind::Unload,
-                )
-            };
-            let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| #f(__env)));
+            let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+                unsafe { ::otter::__codegen::with_deinit_env(__otter_unload_env, |__env| #f(__env)) }
+            }));
         },
         Callback::Raw(f) => quote! {
-            let __marker = ();
-            let __env = unsafe {
-                ::otter::__codegen::new_env(
-                    &__marker, __otter_unload_env, ::otter::__codegen::EnvKind::Unload,
-                )
-            };
             let __otter_user = unsafe {
                 *::otter::__codegen::user_priv_field(
                     __otter_priv_data as *mut ::otter::__codegen::PrivData,
                 )
             };
-            let _ = ::std::panic::catch_unwind(
-                ::std::panic::AssertUnwindSafe(|| #f(__env, __otter_user)),
-            );
+            let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+                unsafe {
+                    ::otter::__codegen::with_deinit_env(__otter_unload_env, |__env| #f(__env, __otter_user))
+                }
+            }));
         },
     };
     let unload_wrapper = quote! {
