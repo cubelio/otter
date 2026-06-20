@@ -30,6 +30,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([codec_i8/1, codec_u8/1, codec_i64/1, codec_u64/1, codec_usize/1]).
 -export([codec_f64/1, codec_f32/1, encode_inf/0, encode_nan/0]).
 -export([codec_bool/1, negate/1]).
+-export([codec_string/1, shout/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -303,3 +304,14 @@ codec_bool(_X) -> exit(nif_not_loaded).
 
 -spec negate(boolean()) -> boolean().
 negate(_X) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — String
+%%
+%% Decodes a binary or charlist into a Rust String and re-encodes it as a binary.
+
+-spec codec_string(binary() | string()) -> binary().
+codec_string(_S) -> exit(nif_not_loaded).
+
+-spec shout(binary() | string()) -> binary().
+shout(_S) -> exit(nif_not_loaded).

@@ -687,6 +687,19 @@ fn negate(_env: CallEnv, x: bool) -> bool {
     !x
 }
 
+// --- native codec round-trips: String -----------------------------------
+// Decodes from a binary or a charlist; always encodes to a binary.
+
+#[otter::nif]
+fn codec_string(_env: CallEnv, s: String) -> String {
+    s
+}
+
+#[otter::nif]
+fn shout(_env: CallEnv, s: String) -> String {
+    s.to_uppercase()
+}
+
 fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
     // Atoms and resources are interned/registered by the `init!` scaffolding
     // before this runs; nothing to do here.
@@ -738,6 +751,8 @@ otter::init!("otter_demo__nif", [
     encode_nan,
     codec_bool,
     negate,
+    codec_string,
+    shout,
     panicking_resource_new,
     select_resource_new,
     select_register,

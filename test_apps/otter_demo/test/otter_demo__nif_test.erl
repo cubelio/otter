@@ -236,6 +236,17 @@ smoke_test_() ->
     ?_assertEqual(false, otter_demo__nif:negate(true)),
     ?_assertEqual(true,  otter_demo__nif:negate(false)),
 
+    %% Native String codec — decode binary OR charlist, always encode binary.
+    ?_assertEqual(<<"hello">>, otter_demo__nif:codec_string(<<"hello">>)),
+    ?_assertEqual(<<"hello">>, otter_demo__nif:codec_string("hello")),
+    ?_assertEqual(<<"héllo"/utf8>>, otter_demo__nif:codec_string(<<"héllo"/utf8>>)),
+    ?_assertEqual(<<>>, otter_demo__nif:codec_string(<<>>)),
+    %% Invalid UTF-8 binary, and a non-string term.
+    ?_assertError(badarg, otter_demo__nif:codec_string(<<255>>)),
+    ?_assertError(badarg, otter_demo__nif:codec_string(42)),
+    ?_assertEqual(<<"HELLO">>, otter_demo__nif:shout(<<"hello">>)),
+    ?_assertEqual(<<"HELLO">>, otter_demo__nif:shout("hello")),
+
     %% S1 regression — panicking resource destructor must not abort the VM.
     %% Create a resource whose Drop panics, drop the reference, force GC.
     %% The destructor wrapper in otter catches the panic via catch_unwind;

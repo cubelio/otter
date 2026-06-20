@@ -7,6 +7,7 @@
 mod bool;
 mod float;
 mod integer;
+mod string;
 
 use crate::types::{
     AnyTerm, Atom, Binary, Bitstring, Env, Float, Fun, Integer, List, LocalPid, LocalPort, Map, Pid,
@@ -29,6 +30,9 @@ pub enum CodecError {
     /// A finite float term fell outside the finite range of the requested Rust
     /// float type (only `f32`, on decode).
     FloatRange,
+    /// A binary's bytes were not valid UTF-8, or a list was not a valid string,
+    /// when decoding to a Rust `String`.
+    NotUtf8,
     /// The term's type code is one this otter build does not recognize — a term
     /// type added by a newer OTP than otter knows about.
     UnknownTermType,
@@ -41,6 +45,7 @@ impl std::fmt::Display for CodecError {
             CodecError::IntegerOverflow => write!(f, "integer overflow"),
             CodecError::NotFinite => write!(f, "float is not finite"),
             CodecError::FloatRange => write!(f, "float out of range"),
+            CodecError::NotUtf8 => write!(f, "not valid UTF-8"),
             CodecError::UnknownTermType => write!(f, "unknown term type"),
         }
     }
