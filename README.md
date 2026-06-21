@@ -16,7 +16,7 @@ otter is built from the ground up to give Erlang programmers an easy, efficient 
 
 *otter is inspired by rustler; see [docs/RUSTLER.md](docs/RUSTLER.md) for a detailed comparison.*
 
-**Status:** 0.1, pre-release. The full surface is implemented and exercised end-to-end by [test_apps/otter_demo](test_apps/otter_demo/), but otter has not yet been used in production. Feedback on the API shape, the Erlang-first philosophy, and the safety model is welcome — open an issue.
+**Status:** 0.2.0. The full surface is implemented and exercised end-to-end by [test_apps/otter_demo](test_apps/otter_demo/), but otter has not yet been used in production. Feedback on the API shape, the Erlang-first philosophy, and the safety model is welcome — open an issue.
 
 ## Why
 
