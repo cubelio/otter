@@ -111,13 +111,12 @@ Transforms a Rust function into a NIF. Generates the `extern "C"` wrapper, argum
 
 ```rust
 #[otter::nif]
-fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    let sum = a.to_i64(env).unwrap() + b.to_i64(env).unwrap();
-    Integer::from_i64(env, sum)
+fn add(_env: CallEnv, a: i64, b: i64) -> i64 {
+    a + b
 }
 ```
 
-**Argument types and their cost:**
+Here `a` and `b` decode straight to `i64` and the sum encodes back — the native codec path. You can also take BEAM term types (`Integer<'a>`, extracted with `.to_i64(env)`) when you want lazy, zero-copy access. Each argument form and its cost:
 
 | Type | What happens | Cost |
 |---|---|---|
@@ -664,14 +663,11 @@ Otter models this with `Raised<'id>`: a term-less typestate token that can only 
 // `division_by_zero` is declared in init!'s `atoms = [...]` list.
 
 #[otter::nif]
-fn divide<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
-    let (Some(a), Some(b)) = (a.to_i64(env), b.to_i64(env)) else {
-        return env.badarg();
-    };
+fn divide<'a>(env: CallEnv<'a>, a: i64, b: i64) -> Result<i64, Raised<'a>> {
     if b == 0 {
         return env.raise(otter::atom![division_by_zero]);
     }
-    Ok(Integer::from_i64(env, a / b))
+    Ok(a / b)
 }
 ```
 
@@ -981,9 +977,8 @@ fn hello(_env: CallEnv) -> Atom {
 }
 
 #[otter::nif]
-fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    let sum = a.to_i64(env).unwrap() + b.to_i64(env).unwrap();
-    Integer::from_i64(env, sum)
+fn add(_env: CallEnv, a: i64, b: i64) -> i64 {
+    a + b
 }
 
 #[otter::nif]
@@ -1012,6 +1007,15 @@ fn sum_list<'a>(env: CallEnv<'a>, list: List<'a>) -> Integer<'a> {
     Integer::from_i64(env, sum)
 }
 
-otter::init!("my_nifs", [hello, add, echo, reverse_binary, sum_list],
+// The same sum via the native codec: `Vec<i64>` decodes the whole list up front
+// (one pass, `badarg` if any element isn't an integer) and `i64` encodes the
+// result. Reach for the term-walking form above when the list is large or
+// heterogeneous and you'd rather not materialize it.
+#[otter::nif]
+fn sum_ints(_env: CallEnv, xs: Vec<i64>) -> i64 {
+    xs.iter().sum()
+}
+
+otter::init!("my_nifs", [hello, add, echo, reverse_binary, sum_list, sum_ints],
     atoms = [world, ok]);
 ```

@@ -28,22 +28,21 @@ One rule: **the first argument is the NIF call environment, and every remaining 
 // Atoms used below are declared in init!'s `atoms = [...]` list:
 //   atoms = [division_by_zero, integer, atom, other]
 
-// Every NIF takes the call env first, even if it doesn't use it.
+// Every NIF takes the call env first, even if it doesn't use it. Here the
+// arguments and the return value decode/encode through native Rust types.
 #[otter::nif]
-fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    Integer::from_i64(env, a.to_i64(env).unwrap() + b.to_i64(env).unwrap())
+fn add(_env: CallEnv, a: i64, b: i64) -> i64 {
+    a + b
 }
 
-// Use the env when raising custom exceptions or constructing terms.
+// Use the env when raising custom exceptions. The values stay native; only the
+// env and the `Raised` brand carry a lifetime.
 #[otter::nif]
-fn divide<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
-    let (Some(a), Some(b)) = (a.to_i64(env), b.to_i64(env)) else {
-        return env.badarg();
-    };
+fn divide<'a>(env: CallEnv<'a>, a: i64, b: i64) -> Result<i64, Raised<'a>> {
     if b == 0 {
         return env.raise(otter::atom![division_by_zero]);
     }
-    Ok(Integer::from_i64(env, a / b))
+    Ok(a / b)
 }
 
 // TypedTerm is a Decoder (resolve), so it flows through the same path.
@@ -56,6 +55,8 @@ fn inspect(_env: CallEnv, val: TypedTerm) -> Atom {
     }
 }
 ```
+
+Arguments can equally be BEAM term types (`Integer<'a>`, `Binary<'a>`, …) for lazy, zero-copy access; a term-typed argument carries the brand `'a`, so the signature needs the explicit lifetime — the generated-code walkthrough below uses that form.
 
 The macro does no name-based classification of arguments. A user type named `TypedTerm` decodes through its own `Decoder` impl (or fails to compile cleanly); an env-typed parameter renamed via `use otter::Env as E` works because the type is never inspected by name.
 
@@ -72,7 +73,7 @@ Because the dispatch is by type (not by token-stream string matching on `Result`
 
 If the user's return type does not implement `Encoder`, the trait bound on the `encode_result` helper surfaces the failure as "the trait `otter::Encoder` is not implemented for `<your type>`" rather than as a `method not found` error deep in the wrapper.
 
-**Input:**
+**Input** (term-typed, to show how the brand `'a` threads through the generated wrapper):
 ```rust
 #[otter::nif]
 fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
@@ -122,10 +123,10 @@ The `?` propagation of `CodecError` is an internal detail of the generated code.
 
 **Examples of all return type forms:**
 ```rust
-// T: Encoder — macro encodes the return value
+// T: Encoder — macro encodes the return value (a native `i64` here)
 #[otter::nif]
-fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    Integer::from_i64(env, a.to_i64(env).unwrap() + b.to_i64(env).unwrap())
+fn add(_env: CallEnv, a: i64, b: i64) -> i64 {
+    a + b
 }
 
 // AnyTerm / TypedTerm — Encoder + Decoder, passes through unchanged
@@ -135,14 +136,11 @@ fn identity(_env: CallEnv, val: TypedTerm) -> TypedTerm { val }
 // Result<T, Raised> — Ok encodes and returns, Err carries the pending raise out
 // `division_by_zero` is declared in init!'s `atoms = [...]` list.
 #[otter::nif]
-fn divide<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
-    let (Some(a), Some(b)) = (a.to_i64(env), b.to_i64(env)) else {
-        return env.badarg();
-    };
+fn divide<'a>(env: CallEnv<'a>, a: i64, b: i64) -> Result<i64, Raised<'a>> {
     if b == 0 {
         env.raise(otter::atom![division_by_zero])
     } else {
-        Ok(Integer::from_i64(env, a / b))
+        Ok(a / b)
     }
 }
 ```

@@ -18,12 +18,11 @@ rustler::init!("my_module");
 
 **Otter:**
 ```rust
-use otter::types::{CallEnv, Integer};
+use otter::types::CallEnv;
 
 #[otter::nif]
-fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    let sum = a.to_i64(env).unwrap() + b.to_i64(env).unwrap();
-    Integer::from_i64(env, sum)
+fn add(_env: CallEnv, a: i64, b: i64) -> i64 {
+    a + b
 }
 
 otter::init!("my_module", [add]);
@@ -31,7 +30,7 @@ otter::init!("my_module", [add]);
 
 Key differences:
 - The call env is required as the first argument, typed `CallEnv<'a>`. Rustler's macro detects `Env` and `TypedTerm` by matching the *unqualified identifier string* of the argument type (see `rustler_codegen/src/nif.rs`), so an alias like `use rustler::Env as MyEnv` silently changes the macro's behavior. Otter passes the first positional argument straight through and routes all other arguments through `Decoder` — no name-based dispatch.
-- Arguments are BEAM types (`Integer`), not Rust primitives. Rustler auto-converts `i64`; otter gives you the BEAM term and you extract when ready.
+- The body ports almost unchanged: otter decodes native Rust types (`i64`, `String`, `Vec<T>`, …) through the same `Decoder` the macro uses, so rustler's primitive arguments carry straight over — only the call env is added. When you want lazy, zero-copy access instead, take a BEAM term type (`Integer<'a>`) and extract when ready — see [Type Conversions](#type-conversions).
 - NIFs are listed explicitly in `init!`. Rustler collects them via linker magic (`inventory` crate).
 - Module name is the bare Erlang module name. Rustler's `init!` accepts both styles (`"Elixir.MyModule"` and `"my_module"`); otter uses bare names.
 
@@ -268,14 +267,11 @@ Rustler's `Error` enum has multiple variants that do different things — some r
 ```rust
 // `badarith` is declared in init!'s `atoms = [...]` list.
 #[otter::nif]
-fn divide<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
-    let (Some(a), Some(b)) = (a.to_i64(env), b.to_i64(env)) else {
-        return env.badarg();
-    };
+fn divide<'a>(env: CallEnv<'a>, a: i64, b: i64) -> Result<i64, Raised<'a>> {
     if b == 0 {
         env.raise(otter::atom![badarith])   // raises exception
     } else {
-        Ok(Integer::from_i64(env, a / b))
+        Ok(a / b)
     }
 }
 ```
