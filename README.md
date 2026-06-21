@@ -1,6 +1,20 @@
 # Otter
 
-Otter is a Rust library for writing Erlang NIFs. It maps the NIF C ABI directly into Rust types with compile-time lifetime safety and zero hidden magic.
+[![CI](https://github.com/cubelio/otter/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/cubelio/otter/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![MSRV](https://img.shields.io/badge/MSRV-1.82-blue.svg)](#requirements)
+
+**otter — write fast and efficient Erlang NIFs in Rust.**
+
+otter is built from the ground up to give Erlang programmers an easy, efficient way to write NIFs in Rust. Its first priority is an API surface that **faithfully captures the capabilities of the underlying `erl_nif` C API** — and where the safe surface isn't enough, the **raw API is one Cargo feature away** for the more daring. The datatypes are designed so you can target speed and efficiency through **controlled layering of `enif_*` calls**, with extensive work to enforce constraints at **compile time rather than runtime**.
+
+- **Full NIF lifecycle** — `load`, `upgrade`, and `unload`, with upgrade-safe `priv_data`, so your module stays hot-code-upgradeable.
+- **Faithful lists** — `List` is a real cons cell (`Node::Nil | Cell(head, tail)`); improper lists are first-class, and codecs reject a bad tail with a clean error.
+- **The full send matrix** — copy or move (O(1) heap-steal) × attributed or off-thread, including stealing a message heap from inside a NIF.
+- **Decoders that don't lie** — `300` into a `u8` is an `IntegerOverflow` error, never a silently-truncated `44`; floats won't quietly swallow integers.
+- **Compile-time env identity** — a generative brand makes cross-env misuse a compile error and keeps terms one machine word, with no per-operation runtime env check.
+
+*otter is inspired by rustler; see [docs/RUSTLER.md](docs/RUSTLER.md) for a detailed comparison.*
 
 **Status:** 0.1, pre-release. The full surface is implemented and exercised end-to-end by [test_apps/otter_demo](test_apps/otter_demo/), but otter has not yet been used in production. Feedback on the API shape, the Erlang-first philosophy, and the safety model is welcome — open an issue.
 
