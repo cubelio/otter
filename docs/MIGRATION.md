@@ -18,12 +18,11 @@ rustler::init!("my_module");
 
 **Otter:**
 ```rust
-use otter::env::Env;
-use otter::types::Integer;
+use otter::types::{CallEnv, Integer};
 
 #[otter::nif]
-fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    let sum = i64::try_from(a).unwrap() + i64::try_from(b).unwrap();
+fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
+    let sum = a.to_i64(env).unwrap() + b.to_i64(env).unwrap();
     Integer::from_i64(env, sum)
 }
 
@@ -31,7 +30,7 @@ otter::init!("my_module", [add]);
 ```
 
 Key differences:
-- `Env` is required. Rustler's macro detects `Env` and `TypedTerm` by matching the *unqualified identifier string* of the argument type (see `rustler_codegen/src/nif.rs`), so an alias like `use rustler::Env as MyEnv` silently changes the macro's behavior. Otter requires `Env` as the first positional argument and routes all other arguments through `Decoder` — no name-based dispatch.
+- The call env is required as the first argument, typed `CallEnv<'a>`. Rustler's macro detects `Env` and `TypedTerm` by matching the *unqualified identifier string* of the argument type (see `rustler_codegen/src/nif.rs`), so an alias like `use rustler::Env as MyEnv` silently changes the macro's behavior. Otter passes the first positional argument straight through and routes all other arguments through `Decoder` — no name-based dispatch.
 - Arguments are BEAM types (`Integer`), not Rust primitives. Rustler auto-converts `i64`; otter gives you the BEAM term and you extract when ready.
 - NIFs are listed explicitly in `init!`. Rustler collects them via linker magic (`inventory` crate).
 - Module name is the bare Erlang module name. Rustler's `init!` accepts both styles (`"Elixir.MyModule"` and `"my_module"`); otter uses bare names.
@@ -51,43 +50,45 @@ fn example(term: TypedTerm) -> TypedTerm {
 **Otter:**
 ```rust
 // Three resolution levels, each at a different cost:
-//   Term  — bare machine word, zero work
-//   TypedTerm     — typed enum (one enif_term_type call)
-//   data     — extraction methods on concrete types
+//   AnyTerm<'a>   — bare machine word, zero work
+//   TypedTerm<'a> — typed enum (one enif_term_type call)
+//   data          — extraction methods on concrete types (each takes env)
 //
-// Every #[otter::nif] takes Env as its first argument. Subsequent
-// arguments are decoded through Decoder; both TypedTerm and concrete types
+// Every #[otter::nif] takes the call env as its first argument. Subsequent
+// arguments are decoded through Decoder; both AnyTerm and concrete types
 // implement Decoder.
 
 #[otter::nif]
-fn example(_env: Env, val: TypedTerm) -> TypedTerm {  // TypedTerm = typed enum
+fn example<'a>(_env: CallEnv<'a>, val: TypedTerm<'a>) -> TypedTerm<'a> {  // typed enum
     val
 }
 ```
 
-You choose the resolution level: `TypedTerm` when you need to branch on type, concrete types when you need the data. (`Term` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `TypedTerm`.)
+You choose the resolution level: `AnyTerm` for the raw word, `TypedTerm` when you need to branch on type, concrete types when you need the data. `AnyTerm` works as both an argument and a return type — its `Decoder` impl is the identity.
 
 ---
 
 ## Type Conversions
 
-### Rustler auto-converts Rust primitives. Otter uses BEAM types.
+### Otter offers both BEAM term types and native-type codecs.
 
-| Rustler | Otter | Notes |
-|---|---|---|
-| `i64`, `i32`, etc. | `Integer<'a>` | `i64::try_from(integer)` to extract |
-| `f64` | `Float<'a>` | `f64::from(float)` to extract |
-| `String` | `Binary<'a>` | Call `.as_bytes()` or `.try_str()` |
-| `&str` | `Binary<'a>` | Same — binaries are the Erlang string type |
-| `bool` | `Atom` | `atoms = [true_ = "true", false_ = "false"]` in `init!` + `atom![true_]` / `atom![false_]` (the bare `true` / `false` identifiers are Rust keywords) |
-| `Vec<T>` | `List<'a>` | Walk with `iter()`, build with `List::from_terms()` |
-| `(A, B)` | `Tuple<'a>` | Access with `.element(i)`, build with `Tuple::from_terms()` |
-| `HashMap<K,V>` | `Map<'a>` | Use `.get()`, `.put()`, `.iter()` |
-| `rustler::Atom` | `Atom` | `atoms = [name]` in `init!` + `atom![name]` (or `Atom::intern` for runtime strings; see [Atom-table safety](USAGE.md#atom-table-safety)) |
-| `rustler::Binary` | `Binary<'a>` | `Binary::from_bytes(env, &[u8])` |
-| `rustler::TypedTerm` | `TypedTerm<'a>` | Typed enum, not opaque |
-| `rustler::Error` | *(none)* | `Result<T, Raised>`; raise via `env.raise_exception()` / `env.make_badarg()` |
-| `rustler::ResourceArc<T>` | `ResourceArc<T>` | Same concept, different registration |
+Otter's term types give you lazy, zero-copy access (extract when ready); the native codecs (since the codec suite landed) let many rustler primitive signatures port **unchanged** — pick per argument.
+
+| Rustler | Otter (term type) | Otter (native codec) | Notes |
+|---|---|---|---|
+| `i64`, `i32`, … | `Integer<'a>` | `i64`, `u8`, `usize`, … | `integer.to_i64(env)` to extract from the term type; native ints en/decode directly |
+| `f64` | `Float<'a>` | `f64`, `f32` | `float.to_f64(env)`; non-finite encode → `badret` |
+| `String` / `&str` | `Binary<'a>` | `String` | term: `bin.as_bytes(env)` / `bin.try_str(env)`; native `String` decodes binary *or* charlist, encodes binary |
+| `bool` | `Atom` | `bool` | native `bool` codec, or `atoms = [true_ = "true", false_ = "false"]` + `atom![true_]` (the bare keywords aren't identifiers) |
+| `Vec<T>` | `List<'a>` | `Vec<T>` | term: `list.iter(env)` / `List::from_terms`; native `Vec<T>` ↔ Erlang list |
+| `(A, B)` | `Tuple<'a>` | `(A, B)` (arity 1–12) | term: `tup.with_elements(env)`; native tuple codec |
+| `HashMap<K,V>` | `Map<'a>` | `HashMap<K,V>` | term: `.get(env, k)` / `.put(env, k, v)` / `.iter(env)`; native map codec |
+| *(bignum)* | `Integer<'a>` | `BigInt` (`bigint` feature) | `otter::num_bigint::BigInt`, ETF-based for the >64-bit cases |
+| `rustler::Atom` | `Atom` | — | `atoms = [name]` + `atom![name]` (or `Atom::intern` for runtime strings; see [Atom-table safety](USAGE.md#atom-table-safety)) |
+| `rustler::Binary` | `Binary<'a>` | `&[u8]`→ via `Vec<u8>` list / `String` | `Binary::from_bytes(env, &[u8])` |
+| `rustler::TypedTerm` | `TypedTerm<'a>` | — | Typed enum, not opaque |
+| `rustler::Error` | `Raised<'a>` | — | `Result<T, Raised<'a>>`; raise via `env.raise()` / `env.badarg()` |
+| `rustler::ResourceArc<T>` | `ResourceArc<T>` | — | Same concept, different registration |
 
 ---
 
@@ -153,25 +154,25 @@ for item in iter {
 ```rust
 use otter::types::List;
 
-// Iterator — yields Term heads, one enif_get_list_cell per step
-for head in list.iter() {
-    let h: TypedTerm = head.resolve();
+// Iterator — yields AnyTerm heads, one enif_get_list_cell per step
+for head in list.iter(env) {
+    let h: Option<TypedTerm> = head.resolve(env);
     // process h...
 }
 
 // Check for improper tail after iteration
-let mut iter = list.iter();
+let mut iter = list.iter(env);
 while iter.next().is_some() { /* ... */ }
 let tail = iter.tail().unwrap(); // [] for proper, other term for improper
 
-// Construct from terms
-let list = List::from_terms(env, &[t1, t2, t3]);
+// Construct from any iterable of terms
+let list = List::from_terms(env, [t1, t2, t3]);
 
 // Cons cell
 let cell = List::cons(env, head, tail);
 ```
 
-Lists are cons cells — `iter()` wraps `enif_get_list_cell` and exposes the terminal tail. For low-level decomposition, `node()` gives direct `Nil` / `Cell(Term, Term)` access.
+Lists are cons cells — `iter(env)` wraps `enif_get_list_cell` and exposes the terminal tail. For low-level decomposition, `node(env)` gives direct `Nil` / `Cell(AnyTerm, AnyTerm)` access.
 
 ---
 
@@ -185,10 +186,11 @@ let tuple = (1, "hello", atoms::ok()).encode(env);
 
 **Otter:**
 ```rust
-let TypedTerm::Tuple(tup) = term else { return env.make_badarg() };
-let a = tup.element(0);  // -> TypedTerm
-let b = tup.element(1);
-let c = tup.element(2);
+let TypedTerm::Tuple(tup) = term else { return env.badarg() };
+let view = tup.with_elements(env);   // the single enif_get_tuple
+let a = view[0];  // -> AnyTerm; resolve with a.resolve(env)
+let b = view[1];
+let c = view[2];
 
 // `ok` is declared in init!'s `atoms = [...]` list.
 let tup = Tuple::from_terms(env, [
@@ -198,7 +200,7 @@ let tup = Tuple::from_terms(env, [
 ]);
 ```
 
-Elements are `TypedTerm` values. You resolve and decode them yourself. Construction uses `Tuple::from_terms` with any iterable of `impl AsNifTerm<'a>` values — concrete types can be passed directly for homogeneous tuples, or use `.into()` to convert to `TypedTerm` for mixed types.
+Reading elements is an explicit `with_elements(env)` step yielding a `TupleView` you index/iterate; each element is an `AnyTerm` you resolve and decode yourself. Construction uses `Tuple::from_terms` with any iterable of `impl Term<'a>` values — concrete types can be passed directly for homogeneous tuples, or use `.into()` to convert to `TypedTerm` for mixed types.
 
 ---
 
@@ -212,26 +214,27 @@ let term = map.encode(env);
 
 **Otter:**
 ```rust
-let TypedTerm::Map(map) = term else { return env.make_badarg() };
+let TypedTerm::Map(map) = term else { return env.badarg() };
 
 // Lookup
-let val: Option<TypedTerm> = map.get(key_term);
+let val: Option<AnyTerm> = map.get(env, key_term);
 
 // Insert (returns new map)
-let map2 = map.put(key_term, val_term);
+let map2 = map.put(env, key_term, val_term);
 
 // Update existing key
-let map3: Option<Map> = map.update(key_term, new_val);
+let map3: Option<Map> = map.update(env, key_term, new_val);
 
 // Iterate
-for (k, v) in map.iter() {
-    // k, v are TypedTerm<'a>
+for (k, v) in map.iter(env) {
+    // k, v are AnyTerm<'a>
 }
 
 // Construct empty then build up — no .encode(env) needed.
 // `key` is declared in init!'s `atoms = [...]` list.
 let mut m = Map::new(env);
 m = m.put(
+    env,
     otter::atom![key],
     Integer::from_i64(env, 42),
 );
@@ -265,22 +268,24 @@ Rustler's `Error` enum has multiple variants that do different things — some r
 ```rust
 // `badarith` is declared in init!'s `atoms = [...]` list.
 #[otter::nif]
-fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Atom> {
-    let bv = i64::try_from(b).unwrap();
-    if bv == 0 {
-        Err(otter::atom![badarith])  // raises exception
+fn divide<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Raised<'a>> {
+    let (Some(a), Some(b)) = (a.to_i64(env), b.to_i64(env)) else {
+        return env.badarg();
+    };
+    if b == 0 {
+        env.raise(otter::atom![badarith])   // raises exception
     } else {
-        let av = i64::try_from(a).unwrap();
-        Ok(Integer::from_i64(env, av / bv))
+        Ok(Integer::from_i64(env, a / b))
     }
 }
 ```
 
-A NIF returns `Result<T, Raised>`. `Ok` returns normally; `Err(Raised)` carries an already-pending exception straight out — it is never re-raised, so there is no double-raise. Produce the `Raised` and propagate it:
+A NIF returns `Result<T, Raised<'a>>`. `Ok` returns normally; `Err(Raised)` carries an already-pending exception straight out — it is never re-raised, so there is no double-raise. Produce the `Raised` and propagate it (the only `Encoder` for a `Result` is `Result<T, Raised>` — there is no `Err(atom) → {error, term}` shape; use a value if you want to *return* one):
 ```rust
-return env.make_badarg();           // enif_make_badarg
-return env.raise_exception(reason); // enif_raise_exception — any AsNifTerm<'a>
+return env.badarg();            // enif_make_badarg
+return env.raise(reason);       // enif_raise_exception — any impl Term<'a>
 ```
+The encode side mirrors this: a failed `Encoder` (e.g. a non-finite float return) raises `badret`, symmetric to `badarg`.
 
 These are the only two exception mechanisms in the NIF C API. Otter exposes exactly those, both generic over the success type so they fit `return`, `let`-`else`, and `.or_else` positions.
 
@@ -313,34 +318,38 @@ otter::init!("my_module", [create, use_it],
     resources = [MyResource]);
 ```
 
-Listing a type in `resources = [...]` **is** the registration — one per type, not per instance — and otter registers it in the generated load and upgrade callbacks. Every `env.make_resource(MyResource { ... })` then allocates a new instance on the BEAM heap with its own refcount.
+Listing a type in `resources = [...]` **is** the registration — one per type, not per instance — and otter registers it in the generated load and upgrade callbacks. (A version tag opts into cross-build hot-upgrade takeover: `resources = [MyResource: "v1"]`.) Every `make_resource(env, MyResource { ... })` then allocates a new instance on the BEAM heap with its own refcount.
 
 Creating and receiving resources:
 ```rust
-// Create — returns opaque reference to Erlang
+// Create — returns opaque reference to Erlang (free function)
 #[otter::nif]
-fn create(env: Env) -> ResourceArc<MyResource> {
-    env.make_resource(MyResource { /* ... */ })
+fn create(env: CallEnv) -> ResourceArc<MyResource> {
+    otter::resource::make_resource(env, MyResource { /* ... */ })
 }
 
 // Receive — Decoder extracts ResourceArc from reference term
 #[otter::nif]
-fn use_it(_env: Env, res: ResourceArc<MyResource>) -> Atom {
+fn use_it(_env: CallEnv, res: ResourceArc<MyResource>) -> Atom {
     // Deref gives &MyResource
     res.do_something();
     // ...
 }
 ```
 
-Destructors and monitors:
+Callbacks (run with a `CallbackEnv`):
 ```rust
 impl Resource for MyResource {
-    fn destructor(self, _env: Env<'_>) {
+    fn destructor(self, _env: CallbackEnv<'_>) {
         // all references gone — clean up
     }
 
-    fn down<'a>(&'a self, _env: Env<'a>, _pid: LocalPid, _monitor: Monitor) {
+    fn down<'a>(&'a self, _env: CallbackEnv<'a>, _pid: LocalPid, _monitor: Monitor) {
         // monitored process exited (always a local process)
+    }
+
+    fn stop(&self, _env: CallbackEnv<'_>, _event: otter::select::Event, _is_direct_call: bool) {
+        // the BEAM stopped monitoring a selected event on this resource
     }
 }
 ```
@@ -364,24 +373,21 @@ std::thread::spawn(move || {
 
 **Otter:**
 ```rust
-use otter::codec::Encoder;
-use otter::env::OwnedTermBuilder;
+use otter::types::{LocalPid, OwnedEnvArena};
 
 let pid = LocalPid::self_(env);
 std::thread::spawn(move || {
-    let builder = OwnedTermBuilder::new();
-    let benv = builder.env();
+    let mut arena = OwnedEnvArena::new();
     // `result` is declared in init!'s `atoms = [...]` list.
-    let msg = Tuple::from_terms(benv, [
+    let msg = arena.run(|oenv| oenv.export(Tuple::from_terms(oenv, [
         otter::atom![result].into(),
-        Integer::from_i64(benv, 42).into(),
-    ]).encode(benv);
-    builder.set(msg);
-    pid.send_owned(builder.build());
+        Integer::from_i64(oenv, 42).into(),
+    ])));
+    otter::types::send(&pid, &mut arena, msg);
 });
 ```
 
-Otter splits rustler's `send_and_clear` closure into explicit steps: build terms on `builder.env()` (they borrow the builder), `set` the message, `build` into an `OwnedTerm`, then `pid.send_owned(...)`. The send *steals* the builder's heap, so the builder is single-use — rustler's `clear`-and-reuse and `SavedTerm` have no otter equivalent.
+Otter mirrors rustler's reusable `OwnedEnv` with `OwnedEnvArena`: build terms inside `arena.run(|oenv| …)` (the branded `oenv` keeps them from escaping), `export` one to a portable `OwnedEnvTerm`, then `send(&pid, &mut arena, oterm)` — which steals the arena heap into the message. `clear` resets the arena for reuse. (For an in-NIF send of a live term, use `send_from(env, &pid, msg)` — no arena.) Where rustler uses an `Arc`/`Weak` token to guard a stale `SavedTerm`, otter uses a process-global generation stamp on the `OwnedEnvTerm`.
 
 ---
 
@@ -396,7 +402,7 @@ fn heavy(a: i64) -> i64 { /* ... */ }
 **Otter:**
 ```rust
 #[otter::nif(schedule = "DirtyCpu")]
-fn heavy<'a>(env: Env<'a>, a: Integer<'a>) -> Integer<'a> { /* ... */ }
+fn heavy<'a>(env: CallEnv<'a>, a: Integer<'a>) -> Integer<'a> { /* ... */ }
 ```
 
 Same attribute, same values (`"DirtyCpu"`, `"DirtyIo"`).
@@ -460,21 +466,22 @@ otter = { git = "https://github.com/cubelio/otter.git" }
 | `atoms!` macro | `atoms = [...]` in `init!` + `atom!` — pre-declared atoms with zero-cost retrieval |
 | `ListIterator` | Lists are cons cells, not iterators |
 | Automatic NIF registration | Explicit `init!` — visible, auditable |
-| `Error` enum | `Result<T, Raised>` + `env.raise_exception()` / `env.make_badarg()` — the actual NIF API |
-| Rust primitive args (`i64`, `String`) | BEAM types — you decide when to extract |
+| `Error` enum | `Result<T, Raised>` + `env.raise()` / `env.badarg()` — the actual NIF API |
+
+Note: otter **does** accept native Rust args (`i64`, `String`, `Vec<T>`, `bool`, tuples, `HashMap`) via `Decoder`/`Encoder` — the difference from rustler is that they're opt-in per signature, and the term types stay available for when you want lazy / zero-copy access.
 
 ---
 
 ## Migration Checklist
 
 1. Replace `rustler::init!` with `otter::init!("module_name", [nif1, nif2, ...])` — list all NIFs explicitly
-2. Add `env: Env` as first argument to every NIF that needs it
-3. Replace Rust primitive arguments with BEAM types (`i64` -> `Integer`, `String` -> `Binary`, etc.)
+2. Add `env: CallEnv` as the first argument to every NIF that needs it
+3. Choose per argument: a BEAM term type (`Integer`, `Binary`, …) for lazy/zero-copy access, or a native type (`i64`, `String`, `Vec<T>`, …) for a direct codec — many rustler signatures port unchanged
 4. Add explicit lifetime `<'a>` when multiple arguments carry lifetimes
-5. Replace `rustler::Error` returns with `Result<T, Raised>`; raise via `env.raise_exception(reason)` / `env.make_badarg()`
-6. Replace `atoms! {}` blocks with `init!`'s `atoms = [...]` list + `atom!`. Reserve `Atom::intern(env, "name")` for runtime strings — and never call it on untrusted input ([Atom-table safety](USAGE.md#atom-table-safety))
-7. Replace `Vec<T>` list handling with `list.iter()` iterator
-8. Replace `resource!` macro with a `Resource` trait impl + listing the type in `init!`'s `resources = [...]`; switch `ResourceArc::from(val)` to `env.make_resource(val)`
-9. Replace `OwnedEnv::send_and_clear` (and `OwnedEnv::run`/`SavedTerm`) with `OwnedTermBuilder` + `pid.send_owned(...)`
+5. Replace `rustler::Error` returns with `Result<T, Raised<'a>>`; raise via `env.raise(reason)` / `env.badarg()`
+6. Replace `atoms! {}` blocks with `init!`'s `atoms = [...]` list + `atom!`. Reserve `Atom::intern(env, "name")` (now `-> Result<_, AtomError>`) for runtime strings — and never call it on untrusted input ([Atom-table safety](USAGE.md#atom-table-safety))
+7. Replace `Vec<T>` list handling with `list.iter(env)`, or just take a native `Vec<T>` argument
+8. Replace `resource!` macro with a `Resource` trait impl + listing the type in `init!`'s `resources = [...]`; switch construction to the free fn `otter::resource::make_resource(env, val)`
+9. Replace `OwnedEnv::send_and_clear` (and `OwnedEnv::run`/`SavedTerm`) with `OwnedEnvArena` + `otter::types::send(&pid, &mut arena, oterm)`
 10. Update `Cargo.toml`: replace `rustler` dependency with `otter`
 11. Update build config: replace Mix/rustler config with `rebar.config` + `rebar3_otter`
