@@ -12,7 +12,7 @@ keywords = ["erlang", "nif", "beam", "otp", "ffi"]
 categories = ["api-bindings", "external-ffi-bindings"]
 
 [dependencies]
-otter_codegen = { path = "../otter_codegen" }
+otter_codegen = { path = "../otter_codegen", version = "0.1.0" }
 enif-ffi = { version = "0.2.0", features = ["nif_2_17"] }
 num-bigint = { version = "0.4", optional = true }
 
