@@ -402,7 +402,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             let __pd = unsafe { ::otter::__codegen::install_priv_data(__otter_priv_data) };
             let __outcome = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
                 unsafe {
-                    ::otter::__codegen::with_init_env(__otter_load_env, |__env| {
+                    ::otter::__codegen::InitEnv::with_raw(__otter_load_env, |__env| {
                         __otter_register(__env, ::otter::__codegen::ResourceFlags::CREATE);
                         #intern_atoms
                         #load_body
@@ -441,7 +441,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             let __pd = unsafe { ::otter::__codegen::install_priv_data(__otter_priv_data) };
             let __outcome = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
                 unsafe {
-                    ::otter::__codegen::with_init_env(__otter_upgrade_env, |__env| {
+                    ::otter::__codegen::InitEnv::with_raw(__otter_upgrade_env, |__env| {
                         __otter_register(
                             __env,
                             ::otter::__codegen::ResourceFlags::CREATE
@@ -475,7 +475,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
         Callback::None => quote! { let _ = __otter_unload_env; },
         Callback::Plain(f) => quote! {
             let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
-                unsafe { ::otter::__codegen::with_deinit_env(__otter_unload_env, |__env| #f(__env)) }
+                unsafe { ::otter::__codegen::DeinitEnv::with_raw(__otter_unload_env, |__env| #f(__env)) }
             }));
         },
         Callback::Raw(f) => quote! {
@@ -486,7 +486,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             };
             let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
                 unsafe {
-                    ::otter::__codegen::with_deinit_env(__otter_unload_env, |__env| #f(__env, __otter_user))
+                    ::otter::__codegen::DeinitEnv::with_raw(__otter_unload_env, |__env| #f(__env, __otter_user))
                 }
             }));
         },

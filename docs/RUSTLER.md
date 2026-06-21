@@ -167,15 +167,15 @@ decision at runtime instead:
   that the pointers match.
 
 Otter's brand is a *compile-time proof*. There is no public `Env::new(marker)`; an env
-exists only inside a `for<'id>` closure (`with_call_env`, `with_init_env`, … — the
-GhostCell construction), so the user can neither name nor reuse a brand. Two
+exists only inside a `for<'id>` closure (`CallEnv::with_raw`, `InitEnv::with_raw`, … —
+the GhostCell construction), so the user can neither name nor reuse a brand. Two
 independently entered envs carry two brands the compiler cannot unify. Combining a
 term from one with the other is a compile error:
 
 ```rust
 // otter — cross-brand use is rejected by the compiler. No runtime check exists.
-with_call_env(raw_env_1, |env1| {
-    with_call_env(raw_env_2, |env2| {
+CallEnv::with_raw(raw_env_1, |env1| {
+    CallEnv::with_raw(raw_env_2, |env2| {
         let t = env1.error_tuple("boom");
         let _ = use_in(env2, t);   // error[E0521]: borrowed data escapes outside of closure
     });

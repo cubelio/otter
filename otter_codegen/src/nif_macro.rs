@@ -196,13 +196,13 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
             __otter_argc: ::std::ffi::c_int,
             __otter_argv: *const ::otter::__codegen::ffi::Term,
         ) -> ::otter::__codegen::ffi::Term {
-            // `with_call_env` mints a fresh generative brand `'id` for this call
-            // via its `for<'id>` closure, and the closure's return is the raw
+            // `CallEnv::with_raw` mints a fresh generative brand `'id` for this
+            // call via its `for<'id>` closure, and the closure's return is the raw
             // word the C ABI hands back. The user fn, decoded args, and result
             // all share `'id` through inference — the macro never touches the
             // user's signature.
             unsafe {
-                ::otter::__codegen::with_call_env(__otter_nif_env, |__otter_env| {
+                ::otter::__codegen::CallEnv::with_raw(__otter_nif_env, |__otter_env| {
                     // The unpack reads argv[0..arity) with unchecked offsets. The
                     // BEAM always calls with argc == the registered arity, so a
                     // mismatch is a registration/ABI bug — fail safe with badarg.

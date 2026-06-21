@@ -124,13 +124,15 @@ impl<'id> Env<'id> for CallEnv<'id> {
     }
 }
 
-/// Enter a NIF call with a freshly branded [`CallEnv`]. See the env-kind note
-/// above for the brand guarantee.
-///
-/// # Safety
-/// `raw` must be the live env pointer the VM supplied for this call.
-pub unsafe fn with_call_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(CallEnv<'id>) -> R) -> R {
-    f(CallEnv { raw_env: raw, _id: PhantomData })
+impl CallEnv<'_> {
+    /// Enter a NIF call with a freshly branded [`CallEnv`]. See the env-kind
+    /// note above for the brand guarantee.
+    ///
+    /// # Safety
+    /// `raw` must be the live env pointer the VM supplied for this call.
+    pub unsafe fn with_raw<R>(raw: RawEnv, f: impl for<'id> FnOnce(CallEnv<'id>) -> R) -> R {
+        f(CallEnv { raw_env: raw, _id: PhantomData })
+    }
 }
 
 /// The environment handed to the `load` and `upgrade` callbacks.
@@ -148,12 +150,14 @@ impl<'id> Env<'id> for InitEnv<'id> {
     }
 }
 
-/// Enter a `load`/`upgrade` callback with a freshly branded [`InitEnv`].
-///
-/// # Safety
-/// `raw` must be the live env pointer the VM supplied for this callback.
-pub unsafe fn with_init_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(InitEnv<'id>) -> R) -> R {
-    f(InitEnv { raw_env: raw, _id: PhantomData })
+impl InitEnv<'_> {
+    /// Enter a `load`/`upgrade` callback with a freshly branded [`InitEnv`].
+    ///
+    /// # Safety
+    /// `raw` must be the live env pointer the VM supplied for this callback.
+    pub unsafe fn with_raw<R>(raw: RawEnv, f: impl for<'id> FnOnce(InitEnv<'id>) -> R) -> R {
+        f(InitEnv { raw_env: raw, _id: PhantomData })
+    }
 }
 
 /// The environment handed to resource callbacks (destructor, monitor-down, …).
@@ -171,12 +175,14 @@ impl<'id> Env<'id> for CallbackEnv<'id> {
     }
 }
 
-/// Enter a resource callback with a freshly branded [`CallbackEnv`].
-///
-/// # Safety
-/// `raw` must be the live env pointer the VM supplied for this callback.
-pub unsafe fn with_callback_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(CallbackEnv<'id>) -> R) -> R {
-    f(CallbackEnv { raw_env: raw, _id: PhantomData })
+impl CallbackEnv<'_> {
+    /// Enter a resource callback with a freshly branded [`CallbackEnv`].
+    ///
+    /// # Safety
+    /// `raw` must be the live env pointer the VM supplied for this callback.
+    pub unsafe fn with_raw<R>(raw: RawEnv, f: impl for<'id> FnOnce(CallbackEnv<'id>) -> R) -> R {
+        f(CallbackEnv { raw_env: raw, _id: PhantomData })
+    }
 }
 
 /// The environment handed to the `unload` callback.
@@ -194,12 +200,14 @@ impl<'id> Env<'id> for DeinitEnv<'id> {
     }
 }
 
-/// Enter the `unload` callback with a freshly branded [`DeinitEnv`].
-///
-/// # Safety
-/// `raw` must be the live env pointer the VM supplied for this callback.
-pub unsafe fn with_deinit_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(DeinitEnv<'id>) -> R) -> R {
-    f(DeinitEnv { raw_env: raw, _id: PhantomData })
+impl DeinitEnv<'_> {
+    /// Enter the `unload` callback with a freshly branded [`DeinitEnv`].
+    ///
+    /// # Safety
+    /// `raw` must be the live env pointer the VM supplied for this callback.
+    pub unsafe fn with_raw<R>(raw: RawEnv, f: impl for<'id> FnOnce(DeinitEnv<'id>) -> R) -> R {
+        f(DeinitEnv { raw_env: raw, _id: PhantomData })
+    }
 }
 
 fn send_move_(env: RawEnv, pid: &LocalPid, msg_env: &mut OwnedEnvArena, msg: OwnedEnvTerm) -> bool {
@@ -518,8 +526,8 @@ mod brand_tests {
     #[allow(dead_code)]
     fn brands_are_distinct() {
         unsafe {
-            with_call_env(std::ptr::null_mut(), |e1| {
-                with_call_env(std::ptr::null_mut(), |e2| {
+            CallEnv::with_raw(std::ptr::null_mut(), |e1| {
+                CallEnv::with_raw(std::ptr::null_mut(), |e2| {
                     let t1 = AnyTerm::wrap(0, e1);
                     let _ = use_in(e1, t1); // same brand: compiles
                     let _ = e2;

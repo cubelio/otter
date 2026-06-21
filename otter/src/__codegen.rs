@@ -10,10 +10,7 @@ pub use crate::priv_data::{discard_priv_data, free_priv_data, install_priv_data,
 #[cfg(feature = "raw")]
 pub use crate::priv_data::{old_user_priv_field, user_priv_field};
 pub use crate::resource::{register, register_tagged, ResourceFlags};
-pub use crate::types::{
-    with_call_env, with_callback_env, with_deinit_env, with_init_env, Atom, CallEnv, CallbackEnv,
-    DeinitEnv, InitEnv, TypedTerm,
-};
+pub use crate::types::{Atom, CallEnv, CallbackEnv, DeinitEnv, InitEnv, TypedTerm};
 
 use crate::types::{AnyTerm, Env, Term, THE_NON_VALUE};
 

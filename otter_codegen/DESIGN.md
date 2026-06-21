@@ -87,12 +87,12 @@ pub unsafe extern "C" fn __otter_nif_add(
     argc: c_int,
     argv: *const __codegen::ffi::Term,
 ) -> __codegen::ffi::Term {
-    // `with_call_env` mints a fresh generative brand `'id` for this call through
-    // its `for<'id>` closure; the closure's return is the raw word handed back to
-    // the C ABI. The user fn, decoded args, and result all share `'id` by
+    // `CallEnv::with_raw` mints a fresh generative brand `'id` for this call
+    // through its `for<'id>` closure; the closure's return is the raw word handed
+    // back to the C ABI. The user fn, decoded args, and result all share `'id` by
     // inference — the macro never names the user's lifetime.
     unsafe {
-        __codegen::with_call_env(nif_env, |env| {
+        __codegen::CallEnv::with_raw(nif_env, |env| {
             // The BEAM always calls with argc == the registered arity; a mismatch
             // is a registration/ABI bug — fail safe with badarg.
             if argc != 2 { return __codegen::badarg_word(env); }

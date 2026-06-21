@@ -10,7 +10,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::priv_data::{PrivData, ResourceRegistry};
-use crate::types::{with_callback_env, AnyTerm, CallbackEnv, Env, InitEnv, LocalPid, Term};
+use crate::types::{AnyTerm, CallbackEnv, Env, InitEnv, LocalPid, Term};
 
 // ---------------------------------------------------------------------------
 // ResourceTypeHandle
@@ -153,7 +153,7 @@ unsafe extern "C" fn destructor_callback<T: Resource>(env: *mut enif_ffi::Env, o
         // SAFETY: obj was written by ResourceTypeHandle::make and is not yet dropped.
         let val = unsafe { std::ptr::read(inner) };
         // SAFETY: env is valid for the duration of this callback.
-        unsafe { with_callback_env(env, |cenv| val.destructor(cenv)) };
+        unsafe { CallbackEnv::with_raw(env, |cenv| val.destructor(cenv)) };
     }));
     absorb_callback_panic("destructor", result);
 }
@@ -169,7 +169,7 @@ unsafe extern "C" fn down_callback<T: Resource>(
         let pid = LocalPid { pid: unsafe { *pid } };
         let monitor = Monitor(unsafe { *mon });
         // SAFETY: env is valid for the callback; inner points at a live T.
-        unsafe { with_callback_env(env, |cenv| (*inner).down(cenv, pid, monitor)) };
+        unsafe { CallbackEnv::with_raw(env, |cenv| (*inner).down(cenv, pid, monitor)) };
     }));
     absorb_callback_panic("down", result);
 }
@@ -184,7 +184,7 @@ unsafe extern "C" fn stop_callback<T: Resource>(
     let result = catch_unwind(AssertUnwindSafe(|| {
         // SAFETY: env is valid for the callback; stop runs before the destructor,
         // so the value is live.
-        unsafe { with_callback_env(env, |cenv| (*inner).stop(cenv, event, is_direct_call != 0)) };
+        unsafe { CallbackEnv::with_raw(env, |cenv| (*inner).stop(cenv, event, is_direct_call != 0)) };
     }));
     absorb_callback_panic("stop", result);
 }

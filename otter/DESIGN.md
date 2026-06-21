@@ -143,7 +143,7 @@ The VM hands a call or callback a raw env pointer; codegen wraps it in the match
 - `OwnedEnv<'a, 'id>` — the process-independent arena env (below).
 
 Each is entered through an `unsafe` `with_*_env` function that mints the brand:
-`with_call_env`, `with_init_env`, `with_callback_env`, `with_deinit_env` — each takes `raw` + a `for<'id> FnOnce(KindEnv<'id>) -> R` closure. The grouping trait **`CallingEnv<'id>: Env<'id>`** (a marker, implemented by `CallEnv` and `CallbackEnv`) marks the envs that carry a live process/scheduler context — the ones you can send or `port_command` *from*, with caller attribution. The `send_*_from` verbs and `port_command` take an `impl CallingEnv` for exactly that (the caller-attributed half of the send 2×2 in Layer 3). Context verbs sit inherent on the kind that has the context: `CallEnv::{raise, badarg, check_raised, cpu_time, schedule_nif}`, `InitEnv::set_option_*`.
+`CallEnv::with_raw`, `InitEnv::with_raw`, `CallbackEnv::with_raw`, `DeinitEnv::with_raw` — each takes `raw` + a `for<'id> FnOnce(KindEnv<'id>) -> R` closure. The grouping trait **`CallingEnv<'id>: Env<'id>`** (a marker, implemented by `CallEnv` and `CallbackEnv`) marks the envs that carry a live process/scheduler context — the ones you can send or `port_command` *from*, with caller attribution. The `send_*_from` verbs and `port_command` take an `impl CallingEnv` for exactly that (the caller-attributed half of the send 2×2 in Layer 3). Context verbs sit inherent on the kind that has the context: `CallEnv::{raise, badarg, check_raised, cpu_time, schedule_nif}`, `InitEnv::set_option_*`.
 
 ### The owned-env arena: `OwnedEnvArena` / `OwnedEnv` / `OwnedEnvTerm`
 
