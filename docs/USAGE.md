@@ -28,7 +28,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-otter-nif = { git = "https://github.com/cubelio/otter.git" }
+otter-nif = "0.2"
 ```
 
 The crate must be `cdylib` — this produces a shared library the BEAM can load. otter is edition 2021 with MSRV 1.82; the optional `bigint` / `raw` / `nif_2_18` features are off by default.

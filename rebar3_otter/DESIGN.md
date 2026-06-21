@@ -131,7 +131,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-otter-nif = { git = "https://github.com/cubelio/otter.git" }
+otter-nif = "0.2"
 ```
 
 **`native/my_nif/src/lib.rs`:**
