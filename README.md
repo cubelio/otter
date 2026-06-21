@@ -129,7 +129,7 @@ You only depend on `otter`. The codegen macros are re-exported through it.
 - **Pre-declared atoms** — `init!`'s `atoms = [...]` + `atom!` for zero-cost atom retrieval, interned at load and re-interned on upgrade; `Atom::intern` returns `Result<_, AtomError>`
 - **Resource types** — BEAM-managed Rust objects with destructors, monitors, and `select` stop callbacks, registered via `init!`'s `resources = [...]`
 - **Hot code upgrade** — every otter module is hot-upgradeable; a per-build ABI tag on resource type names keeps a different build from unsafely taking over, with an opt-in stable tag (and `raw` callbacks) for state you carry across by hand
-- **Message passing** — `OwnedEnvArena` + `send` to build and send terms from background threads; `send_from` for caller-attributed in-NIF sends
+- **Message passing** — four free verbs in a 2×2: `send_copy`/`send_move` (copy a live term vs. steal an `OwnedEnvArena` heap) × plain (NULL caller, off-thread) and `_from` (caller-attributed, in-NIF)
 - **Dirty schedulers** — `#[otter::nif(schedule = "DirtyCpu")]` / `"DirtyIo"`
 - **Result returns** — `Result<T, Raised>` where `Ok` encodes normally and `Err(Raised)` carries an already-pending exception out (raise via `env.raise` / `env.badarg`); an encode failure raises `badret`
 - **BinaryBuf** — growable binary buffer with `io::Write` support

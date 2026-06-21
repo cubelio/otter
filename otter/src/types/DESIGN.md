@@ -572,15 +572,25 @@ struct LocalPid { pid: enif_ffi::Pid }                       // validated local 
 | `LocalPid::whereis(env, name: impl Term) → Option<LocalPid>` | Look up by registered name | `enif_whereis_pid` |
 | `LocalPid::is_alive(self, env) → bool` | Check if process is alive | `enif_is_process_alive` |
 
-Sending is **free verbs**, not pid methods (the pid is an ingredient, not the
-owner of the operation):
+Sending is **four free verbs** in `types`, a 2×2 of **copy vs. move** ×
+**caller-attributed (`_from`, in-NIF) vs. not (plain, off-thread)**. `copy` copies
+a live term into the recipient's mailbox (`enif_send`, NULL `msg_env`); `move`
+transplants (steals) an `OwnedEnvArena`'s whole heap into the message
+(`enif_send`, non-NULL `msg_env`), O(1), leaving the arena dirty until cleared.
+The `_from` verbs take an `impl CallingEnv` and pass it as the caller env, so the
+BEAM attributes the message to the calling process; the plain verbs pass a NULL
+caller (use them from a non-scheduler thread).
 
-| Function | Does | Calls |
-|---|---|---|
-| `send_from(env: impl CallingEnv, &LocalPid, msg: impl Term)` | In-NIF copy send, caller-attributed | `enif_send` (NULL msg_env) |
-| `send(&LocalPid, &mut OwnedEnvArena, OwnedEnvTerm) → bool` | Off-thread steal send (transplants the arena heap) | `enif_send` (non-NULL msg_env) |
+| Verb | Caller | Payload | Calls |
+|---|---|---|---|
+| `send_copy(&LocalPid, msg: impl Term) → bool` | off-thread, NULL caller | copy | `enif_send` (NULL caller + NULL msg_env) |
+| `send_move(&LocalPid, &mut OwnedEnvArena, OwnedEnvTerm) → bool` | off-thread, NULL caller | steal | `enif_send` (NULL caller, non-NULL msg_env) |
+| `send_copy_from(impl CallingEnv, &LocalPid, msg: impl Term) → bool` | in-NIF, attributed | copy | `enif_send` (caller, NULL msg_env) |
+| `send_move_from(impl CallingEnv, &LocalPid, &mut OwnedEnvArena, OwnedEnvTerm) → bool` | in-NIF, attributed | steal | `enif_send` (caller, non-NULL msg_env) |
 
-`is_current_process_alive` is a default method on `Env`.
+All four route through one pair of private helpers (`send_move_`/`send_copy_`)
+differing only in the caller-env pointer. `is_current_process_alive` is a default
+method on `Env`.
 
 ### Internals
 
@@ -726,7 +736,8 @@ per design.
 | Reference | `new` | — | — | — | yes |
 
 > Bignum methods (`to_bigint`/`from_bigint`) require the `bigint` feature.
-> Sends (`send`/`send_from`) and `serialize`/`deserialize` are free verbs, not
-> shown here. The owned-env messaging tier (`OwnedEnvArena`/`OwnedEnv`/
-> `OwnedEnvTerm`) and the env spine (`Env`/`Term` traits, env kinds, `Raised`,
-> `CallingEnv`) live in `mod.rs` and `ops.rs` — see `otter/DESIGN.md` Layers 3–4.
+> Sends (the four free verbs `send_copy`/`send_move` ± `_from` for caller
+> attribution) and `serialize`/`deserialize` are not shown here. The
+> owned-env messaging tier (`OwnedEnvArena`/`OwnedEnv`/`OwnedEnvTerm`) and the env
+> spine (`Env`/`Term` traits, env kinds, `Raised`, `CallingEnv`) live in `mod.rs`
+> and `ops.rs` — see `otter/DESIGN.md` Layers 3–4.

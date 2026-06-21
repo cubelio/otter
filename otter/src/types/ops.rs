@@ -3,7 +3,7 @@
 use std::ffi::{c_int, c_void, CStr};
 
 use crate::types::{
-    AnyTerm, BinaryBuf, CallEnv, CallingEnv, Env, InitEnv, LocalPid, LocalPort, RawTerm, Raised,
+    AnyTerm, BinaryBuf, CallEnv, CallingEnv, Env, InitEnv, LocalPort, RawTerm, Raised,
     Term, Tuple,
 };
 
@@ -27,13 +27,6 @@ pub fn deserialize<'id>(env: impl Env<'id>, data: &[u8], safe: bool) -> Option<A
     let consumed =
         unsafe { enif_ffi::binary_to_term(env.raw_env(), data.as_ptr(), data.len(), &mut term, opts) };
     (consumed != 0).then(|| AnyTerm::wrap(term, env))
-}
-
-/// Send `msg` to `pid` from inside a NIF, attributing it to the calling process
-/// (`enif_send` with a NULL msg_env — the term is copied from the caller env).
-/// `true` if the process was alive. Only a [`CallingEnv`] carries a caller.
-pub fn send_from<'id>(env: impl CallingEnv<'id>, pid: &LocalPid, msg: impl Term<'id>) -> bool {
-    unsafe { enif_ffi::send(env.raw_env(), &pid.pid, std::ptr::null_mut(), msg.raw_term()) != 0 }
 }
 
 /// Send a command to local `port` (`enif_port_command`, NULL msg_env — copied

@@ -105,7 +105,7 @@ The organising principle is **a branded term carries only its env's brand, never
 - **Accessors** take an env: `bin.as_bytes(env)`, `i.to_i64(env)`, `map.get(env, key)`, `term.resolve(env)`.
 - **Generic verbs** that work on any term are default methods on the `Env` trait: `env.term_type(t)`, `env.hash(…)`, `env.make_unique_integer(…)`.
 - **Context verbs** are inherent on the env *kind* that has the context: `CallEnv::{raise, badarg, cpu_time, schedule_nif}`, `InitEnv::set_option_*`.
-- **Verbs owned by no single term** are free functions in `ops.rs`: `serialize`/`deserialize`, `send_from`, `port_command` (re-exported from `types`).
+- **Verbs owned by no single term** are free functions in `types`: `serialize`/`deserialize`, `port_command`, and the four sends — `send_copy`/`send_move` (NULL caller) and `send_copy_from`/`send_move_from` (caller-attributed; take an `impl CallingEnv`).
 - **Env-less value ops** stay value-type methods: a term's `Ord`/`Eq` (via `enif_compare`/`enif_is_identical`), the `BinaryBuf` buffer ops.
 
 Term inputs are taken as `impl Term<'id>` (Layer 4), so a term from another env's brand is rejected at compile time. Each verb lives next to its subject — per-type methods on that type's file in `types/terms/`, the shared verbs in `types/mod.rs` and `types/ops.rs`.
@@ -143,7 +143,7 @@ The VM hands a call or callback a raw env pointer; codegen wraps it in the match
 - `OwnedEnv<'a, 'id>` — the process-independent arena env (below).
 
 Each is entered through an `unsafe` `with_*_env` function that mints the brand:
-`with_call_env`, `with_init_env`, `with_callback_env`, `with_deinit_env` — each takes `raw` + a `for<'id> FnOnce(KindEnv<'id>) -> R` closure. The grouping trait **`CallingEnv<'id>: Env<'id>`** (implemented by `CallEnv` and `CallbackEnv`) marks the envs that carry a live process/scheduler context — the ones you can `send_from` / `port_command` *from*, with caller attribution. Context verbs sit inherent on the kind that has the context: `CallEnv::{raise, badarg, check_raised, cpu_time, schedule_nif}`, `InitEnv::set_option_*`.
+`with_call_env`, `with_init_env`, `with_callback_env`, `with_deinit_env` — each takes `raw` + a `for<'id> FnOnce(KindEnv<'id>) -> R` closure. The grouping trait **`CallingEnv<'id>: Env<'id>`** (a marker, implemented by `CallEnv` and `CallbackEnv`) marks the envs that carry a live process/scheduler context — the ones you can send or `port_command` *from*, with caller attribution. The `send_*_from` verbs and `port_command` take an `impl CallingEnv` for exactly that (the caller-attributed half of the send 2×2 in Layer 3). Context verbs sit inherent on the kind that has the context: `CallEnv::{raise, badarg, check_raised, cpu_time, schedule_nif}`, `InitEnv::set_option_*`.
 
 ### The owned-env arena: `OwnedEnvArena` / `OwnedEnv` / `OwnedEnvTerm`
 
@@ -165,13 +165,18 @@ impl OwnedEnvArena {
 //   import(oterm) -> AnyTerm<'id>.
 // OwnedEnvTerm — Copy, unbranded, portable handle to a term stored in the arena.
 
-// the message is sent with a free verb that steals the arena's heap (O(1)):
-pub fn send(pid: &LocalPid, env: &mut OwnedEnvArena, term: OwnedEnvTerm) -> bool;
+// the four send verbs in `types` (2×2 — see below):
+pub fn send_move(pid: &LocalPid, msg_env: &mut OwnedEnvArena, msg: OwnedEnvTerm) -> bool;  // off-thread steal
+pub fn send_copy(pid: &LocalPid, msg: impl Term<'_>) -> bool;                               // off-thread copy
+pub fn send_move_from(env: impl CallingEnv<'_>, pid: &LocalPid, msg_env: &mut OwnedEnvArena, msg: OwnedEnvTerm) -> bool; // in-NIF steal
+pub fn send_copy_from(env: impl CallingEnv<'_>, pid: &LocalPid, msg: impl Term<'_>) -> bool;                            // in-NIF copy
 ```
 
-You build terms inside `arena.run(|oenv| …)` — the closure's branded `OwnedEnv` keeps them from escaping — and `export` the one you want to an unbranded `OwnedEnvTerm`. `send(&pid, &mut arena, oterm)` transplants the arena's heap into the message (`enif_send` with a non-NULL `msg_env`) and marks the arena dirty; `clear` resets it for reuse.
+You build terms inside `arena.run(|oenv| …)` — the closure's branded `OwnedEnv` keeps them from escaping — and `export` the one you want to an unbranded `OwnedEnvTerm`. `send_move(&pid, &mut arena, oterm)` transplants the arena's heap into the message (`enif_send` with a non-NULL `msg_env`) and marks the arena dirty; `clear` resets it for reuse.
 
-`OwnedEnvTerm` is `Copy` and unbranded so it can cross the closure boundary / be carried to a worker thread, so it cannot use the brand to prove validity. Instead it records a **process-global monotonic `AtomicU64` generation stamp** taken at `new`/`clear`; a use against the wrong arena-generation fails a single `u64` compare (the UAF fix — the prior env-pointer-plus-version guard could alias a freed-then-reused env). For an in-NIF live send with caller attribution, use the free verb `send_from(env, &pid, msg)` instead (no arena needed).
+`OwnedEnvTerm` is `Copy` and unbranded so it can cross the closure boundary / be carried to a worker thread, so it cannot use the brand to prove validity. Instead it records a **process-global monotonic `AtomicU64` generation stamp** taken at `new`/`clear`; a use against the wrong arena-generation fails a single `u64` compare (the UAF fix — the prior env-pointer-plus-version guard could alias a freed-then-reused env).
+
+**The send surface is a 2×2** of copy vs. move × caller-attributed (`_from`) vs. not. The plain forms above send with a NULL caller (off-thread, no process context); the `_from` forms take an `impl CallingEnv` and pass it as the caller env, so the message is attributed to the calling process — `send_copy_from(env, &pid, msg)` (copy a live term) and `send_move_from(env, &pid, &mut arena, oterm)` (steal an arena heap). All four route through one pair of private helpers differing only in the caller-env pointer.
 
 ---
 
@@ -300,9 +305,11 @@ fn Pid::to_local(self, env) -> Option<LocalPid> / Pid::is_pid(env, term) -> bool
 fn LocalPid::self_(env: CallEnv) -> LocalPid           // CallEnv only
 fn LocalPid::whereis(env, name: impl Term) -> Option<LocalPid>
 fn LocalPid::is_alive(self, env) -> bool
-// sends are FREE verbs (see ops.rs), not pid methods:
-//   send_from(env: impl CallingEnv, &LocalPid, msg)   (copy, caller-attributed, in-NIF)
-//   send(&LocalPid, &mut OwnedEnvArena, OwnedEnvTerm)  (heap steal, off-thread)
+// sends are four free verbs (copy/move × plain/`_from`), NOT pid methods:
+//   send_copy(&LocalPid, msg)                                  (off-thread copy, NULL caller)
+//   send_move(&LocalPid, &mut OwnedEnvArena, OwnedEnvTerm)      (off-thread steal)
+//   send_copy_from(env, &LocalPid, msg)                        (in-NIF copy, attributed)
+//   send_move_from(env, &LocalPid, &mut OwnedEnvArena, OwnedEnvTerm)  (in-NIF steal)
 
 // Port / LocalPort
 fn Port::to_local(self, env) -> Option<LocalPort> / Port::is_port(env, term) -> bool
@@ -465,6 +472,6 @@ otter always binds NIF 2.17 (OTP 26) through `enif-ffi`'s `nif_2_17`. Three opt-
 - **Automatic NIF registration** — registration is explicit via `init!`.
 - **`NifUntaggedEnum`** — structural dispatch belongs in user code.
 - **Convenience wrappers** — no built-in `IoData`, no pre-assembled type hierarchies.
-- **Thread spawning** — not a core NIF concept. Use `OwnedEnvArena` + `send` for messaging from OS threads spawned via standard Rust threading.
+- **Thread spawning** — not a core NIF concept. Use `OwnedEnvArena` + `send_move`/`send_copy` for messaging from OS threads spawned via standard Rust threading.
 - **Raw memory allocation** (`enif_alloc`/`enif_free`) — use Rust's allocator for ordinary per-call work. Opting *all* allocations onto the BEAM allocator is available via `otter::enif_global_allocator!()` (the `EnifAlloc` `#[global_allocator]`, `src/alloc.rs`), so cross-build state is freeable through the one shared path; a per-state *scoped* allocator and the ABI fingerprint that complete the safe sandbox remain planned — see the core safety invariant and `docs/UPGRADE.md`.
 - **NIF threading primitives** (`enif_mutex_*`, `enif_cond_*`, etc.) — use `std::sync`.
