@@ -18,6 +18,7 @@ function `make_resource(env, val)`, not an env method).
 - `bigint` feature: arbitrary-precision integers via `otter::num_bigint::BigInt`, with `Encoder`/`Decoder` and `Integer::{to_bigint, from_bigint}` (ETF-based for the >64-bit cases)
 - Strict-term hardening: `Tuple` split into a lean `Tuple` + a `TupleView` (`with_elements`); `Map::remove` returns `Map` (absent key → unchanged), not `Option`; `Integer::to_i128` removed; `BinaryBuf` moved to its own module
 - Editions lowered to 2021; MSRVs declared (otter 1.82, otter_codegen 1.56)
+- Native collection codecs build through raw `enif_*` array constructors: `Vec<T>`/`[T]` and tuple encoders use `enif_make_{list,tuple}_from_array` directly (dropping an intermediate `Vec` for lists and the heap allocation for tuples), `HashMap` encode uses `enif_make_map_from_arrays` (one call instead of N `enif_make_map_put`s), and `Vec<T>` decode is a single list traversal (was two)
 
 ### otter_codegen (proc macros)
 

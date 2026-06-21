@@ -5,8 +5,10 @@
 //! from the encoded elements; decoding requires an Erlang tuple of exactly N
 //! elements ([`CodecError::WrongArity`] otherwise) and decodes each in turn.
 
+use std::ffi::c_uint;
+
 use crate::codec::{CodecError, Decoder, Encoder};
-use crate::types::{AnyTerm, Env, Tuple};
+use crate::types::{AnyTerm, Env, Term, Tuple};
 
 macro_rules! tuple_codec {
     ($($T:ident),+) => {
@@ -14,8 +16,17 @@ macro_rules! tuple_codec {
             fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
                 #[allow(non_snake_case)]
                 let ($($T,)+) = self;
-                let elements = [$( $T.encode(env)? ),+];
-                Tuple::from_terms(env, elements).encode(env)
+                // Build the tuple from a fixed-size stack array of element words
+                // and one `enif_make_tuple_from_array` — no heap allocation
+                // (`Tuple::from_terms` would `collect` a `Vec`). The array
+                // literal infers `[RawTerm; N]` from `raw_term()`.
+                let raw = [$( $T.encode(env)?.raw_term() ),+];
+                // SAFETY: `env` is live and `raw` holds `raw.len()` contiguous
+                // terms of this brand.
+                let term = unsafe {
+                    enif_ffi::make_tuple_from_array(env.raw_env(), raw.as_ptr(), raw.len() as c_uint)
+                };
+                Ok(AnyTerm::wrap(term, env))
             }
         }
 
