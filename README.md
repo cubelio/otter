@@ -173,8 +173,6 @@ You only depend on `otter`. The codegen macros are re-exported through it.
 
 ## License
 
-Copyright © 2026 Lynn Gabbay.
-
 Licensed under either of
 
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
