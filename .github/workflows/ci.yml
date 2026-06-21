@@ -21,7 +21,7 @@ jobs:
   #
   # NOTE: the trybuild `.stderr` fixtures (otter/tests/ui) are sensitive to the
   # exact rustc diagnostic wording, so a new stable compiler can require
-  # re-blessing them (`TRYBUILD=overwrite cargo test -p otter --test codegen_ui`
+  # re-blessing them (`TRYBUILD=overwrite cargo test -p otter-nif --test codegen_ui`
   # and the same with `--features raw`). A red codegen_ui job after a toolchain
   # bump usually means exactly that.
   test:
@@ -39,7 +39,7 @@ jobs:
         run: |
           FEAT=""
           [ -n "${{ matrix.features }}" ] && FEAT="--features ${{ matrix.features }}"
-          cargo test -p otter $FEAT
+          cargo test -p otter-nif $FEAT
       - name: cargo test --workspace (default row only)
         if: matrix.features == ''
         run: cargo test --workspace
