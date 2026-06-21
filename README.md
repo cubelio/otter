@@ -14,9 +14,9 @@ otter is built from the ground up to give Erlang programmers an easy, efficient 
 - **Decoders that don't lie** — `300` into a `u8` is an `IntegerOverflow` error, never a silently-truncated `44`; floats won't quietly swallow integers.
 - **Compile-time env identity** — a generative brand makes cross-env misuse a compile error and keeps terms one machine word, with no per-operation runtime env check.
 
-*otter is inspired by rustler; see [docs/RUSTLER.md](docs/RUSTLER.md) for a detailed comparison.*
+*otter is inspired by rustler; see [docs/RUSTLER.md](https://github.com/cubelio/otter/blob/master/docs/RUSTLER.md) for a detailed comparison.*
 
-**Status:** 0.2.0. The full surface is implemented and exercised end-to-end by [test_apps/otter_demo](test_apps/otter_demo/), but otter has not yet been used in production. Feedback on the API shape, the Erlang-first philosophy, and the safety model is welcome — open an issue.
+**Status:** 0.2.0. The full surface is implemented and exercised end-to-end by [test_apps/otter_demo](https://github.com/cubelio/otter/tree/master/test_apps/otter_demo), but otter has not yet been used in production. Feedback on the API shape, the Erlang-first philosophy, and the safety model is welcome — open an issue.
 
 ## Why
 
@@ -24,7 +24,7 @@ There is already an established library that builds Erlang NIFs from Rust, `rust
 
 I built `otter` to be on the opposite end of the spectrum. Everything is explicit and as close to the original NIF C API as possible. The design philosophy was to expose the full capabilities of the NIF API in the most idiomatic Rust way without any opinionated decisions hidden in the scaffolding. If a NIF programmer wouldn't recognize a concept, it doesn't belong.
 
-See [docs/RUSTLER.md](docs/RUSTLER.md) for a detailed comparison.
+See [docs/RUSTLER.md](https://github.com/cubelio/otter/blob/master/docs/RUSTLER.md) for a detailed comparison.
 
 *Note on Elixir.* For now, `otter` ships no Elixir-specific tooling. Getting the Erlang-facing library right is the current priority; once the surface stabilizes, we will revisit building Elixir tooling on top of the `otter` framework or as an opt-in feature.
 
@@ -57,7 +57,7 @@ the otter repo, so it must be referenced with `git_subdir`:
 $ rebar3 otter new --name my_nifs
 ```
 
-This creates `native/my_nifs/Cargo.toml` (already depending on otter from git)
+This creates `native/my_nifs/Cargo.toml` (already depending on otter-nif from git)
 and `native/my_nifs/src/lib.rs` with a minimal NIF:
 
 ```rust
@@ -122,17 +122,17 @@ world
 ```
 
 To grow from here — more types, pre-declared atoms, an `on_load` callback,
-resources, scheduling — see [docs/USAGE.md](docs/USAGE.md).
+resources, scheduling — see [docs/USAGE.md](https://github.com/cubelio/otter/blob/master/docs/USAGE.md).
 
 ## Components
 
 | Crate / App | What it does |
 |---|---|
-| `otter` | Core Rust library — types, codecs, environment, resources |
-| `otter_codegen` | Proc macros (`#[otter::nif]`, `otter::init!`) — re-exported through `otter` |
+| `otter-nif` | Core Rust library — types, codecs, environment, resources (imported as `otter`) |
+| `otter-nif-macros` | Proc macros (`#[otter::nif]`, `otter::init!`) — re-exported through `otter-nif` |
 | `rebar3_otter` | rebar3 plugin — drives `cargo build` and `cargo clean` |
 
-You only depend on `otter`. The codegen macros are re-exported through it.
+You only depend on `otter-nif` (imported as `otter`). The codegen macros are re-exported through it.
 
 ## Features
 
@@ -155,28 +155,28 @@ You only depend on `otter`. The codegen macros are re-exported through it.
 ## Requirements
 
 - **OTP 27+** to build through the rebar3 plugin (it uses OTP-27 doc syntax); the NIF runtime floor is 2.17 / OTP 26. Optional `nif_2_18` feature for OTP 29.
-- **Rust** edition 2021, MSRV 1.82 (`otter_codegen` 1.56).
+- **Rust** edition 2021, MSRV 1.82 (`otter-nif-macros` 1.56).
 - `cargo` on `PATH`.
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [docs/USAGE.md](docs/USAGE.md) | User-facing guide — setup, all types, atoms, resources, message passing, scheduling, select |
-| [docs/RESOURCES.md](docs/RESOURCES.md) | Deep dive on the resource lifecycle |
-| [docs/UPGRADE.md](docs/UPGRADE.md) | Hot-upgrade safety model and the no-cross-build-ABI invariant |
-| [docs/RUSTLER.md](docs/RUSTLER.md) | Design comparison with rustler |
-| [docs/MIGRATION.md](docs/MIGRATION.md) | Side-by-side rustler-to-otter migration guide |
-| [otter/DESIGN.md](otter/DESIGN.md) | Core library architecture and internals |
-| [otter_codegen/DESIGN.md](otter_codegen/DESIGN.md) | What the macros generate, argument/return type rules |
-| [rebar3_otter/DESIGN.md](rebar3_otter/DESIGN.md) | Plugin providers, cargo integration, NIF loading path |
+| [docs/USAGE.md](https://github.com/cubelio/otter/blob/master/docs/USAGE.md) | User-facing guide — setup, all types, atoms, resources, message passing, scheduling, select |
+| [docs/RESOURCES.md](https://github.com/cubelio/otter/blob/master/docs/RESOURCES.md) | Deep dive on the resource lifecycle |
+| [docs/UPGRADE.md](https://github.com/cubelio/otter/blob/master/docs/UPGRADE.md) | Hot-upgrade safety model and the no-cross-build-ABI invariant |
+| [docs/RUSTLER.md](https://github.com/cubelio/otter/blob/master/docs/RUSTLER.md) | Design comparison with rustler |
+| [docs/MIGRATION.md](https://github.com/cubelio/otter/blob/master/docs/MIGRATION.md) | Side-by-side rustler-to-otter migration guide |
+| [otter/DESIGN.md](https://github.com/cubelio/otter/blob/master/otter/DESIGN.md) | Core library architecture and internals |
+| [otter_codegen/DESIGN.md](https://github.com/cubelio/otter/blob/master/otter_codegen/DESIGN.md) | What the macros generate, argument/return type rules |
+| [rebar3_otter/DESIGN.md](https://github.com/cubelio/otter/blob/master/rebar3_otter/DESIGN.md) | Plugin providers, cargo integration, NIF loading path |
 
 ## License
 
 Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](https://github.com/cubelio/otter/blob/master/LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](https://github.com/cubelio/otter/blob/master/LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
 

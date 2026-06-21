@@ -98,12 +98,12 @@ dependencies = [
  "enif-ffi",
  "libc",
  "num-bigint",
- "otter_codegen",
+ "otter-nif-macros",
  "trybuild",
 ]
 
 [[package]]
-name = "otter_codegen"
+name = "otter-nif-macros"
 version = "0.2.0"
 dependencies = [
  "proc-macro2",
