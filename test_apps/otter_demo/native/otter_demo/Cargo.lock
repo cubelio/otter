@@ -52,7 +52,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "otter"
+name = "otter-nif"
 version = "0.1.0"
 dependencies = [
  "enif-ffi",
@@ -74,7 +74,7 @@ dependencies = [
 name = "otter_demo"
 version = "0.1.0"
 dependencies = [
- "otter",
+ "otter-nif",
 ]
 
 [[package]]

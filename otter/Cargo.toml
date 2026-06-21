@@ -1,5 +1,5 @@
 [package]
-name = "otter"
+name = "otter-nif"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.82"
@@ -10,6 +10,12 @@ repository = "https://github.com/cubelio/otter"
 readme = "../README.md"
 keywords = ["erlang", "nif", "beam", "otp", "ffi"]
 categories = ["api-bindings", "external-ffi-bindings"]
+
+# Published as `otter-nif` (the bare `otter` is taken on crates.io), but the
+# library — and therefore the `use otter::` path and every `::otter::*` path the
+# codegen emits — stays `otter`.
+[lib]
+name = "otter"
 
 [dependencies]
 otter_codegen = { path = "../otter_codegen", version = "0.1.0" }

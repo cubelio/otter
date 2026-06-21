@@ -448,7 +448,7 @@ rustler = "0.37"
 crate-type = ["cdylib"]
 
 [dependencies]
-otter = { git = "https://github.com/cubelio/otter.git" }
+otter-nif = { git = "https://github.com/cubelio/otter.git" }
 ```
 
 ---

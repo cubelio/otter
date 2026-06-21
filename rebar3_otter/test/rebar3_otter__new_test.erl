@@ -82,7 +82,7 @@ write_path_cargo_toml(CrateDir, OtterPath) ->
     "crate-type = [\"cdylib\"]\n"
     "\n"
     "[dependencies]\n"
-    "otter = { path = \"~s\" }\n",
+    "otter-nif = { path = \"~s\" }\n",
     [OtterPath]),
   file:write_file(filename:join(CrateDir, "Cargo.toml"), Toml).
 

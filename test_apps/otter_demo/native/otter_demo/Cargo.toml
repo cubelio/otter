@@ -13,4 +13,4 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-otter = { path = "../../../../otter", features = ["bigint"] }
+otter-nif = { path = "../../../../otter", features = ["bigint"] }
