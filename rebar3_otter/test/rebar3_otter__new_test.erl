@@ -74,7 +74,7 @@ write_path_cargo_toml(CrateDir, OtterPath) ->
     "[package]\n"
     "name = \"my_nif\"\n"
     "version = \"0.1.0\"\n"
-    "edition = \"2024\"\n"
+    "edition = \"2021\"\n"
     "\n"
     "[workspace]\n"
     "\n"

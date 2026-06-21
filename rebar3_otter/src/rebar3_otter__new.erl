@@ -96,7 +96,7 @@ cargo_toml(Name) ->
     "[package]\n"
     "name = \"~s\"\n"
     "version = \"0.1.0\"\n"
-    "edition = \"2024\"\n"
+    "edition = \"2021\"\n"
     "\n"
     "[lib]\n"
     "crate-type = [\"cdylib\"]\n"

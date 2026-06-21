@@ -3,7 +3,7 @@
 Provider that cleans Rust NIF build artifacts.
 
 Removes the installed shared libraries from `priv/native/` and
-runs `cargo clean` for each configured crate.
+removes each configured crate's pinned `target/` directory.
 """.
 
 -behaviour(provider).
@@ -28,7 +28,7 @@ init(State) ->
     {bare, true},
     {deps, ?DEPS},
     {short_desc, "Clean Rust NIF build artifacts"},
-    {desc, "Removes compiled NIF shared libraries and runs cargo clean"}
+    {desc, "Removes compiled NIF shared libraries and each crate's pinned target/ directory"}
   ]),
   {ok, rebar_state:add_provider(State, Provider)}.
 

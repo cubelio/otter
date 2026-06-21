@@ -17,7 +17,8 @@ See [docs/RUSTLER.md](docs/RUSTLER.md) for a detailed comparison.
 ## Quick start
 
 This walks through a working NIF from an empty directory. It assumes `rebar3`,
-`cargo`, and an OTP 26+ install are on your `PATH`. The example uses an
+`cargo`, and an OTP 27+ install are on your `PATH` (the rebar3 plugin uses OTP-27
+doc syntax; the NIF runtime floor itself is OTP 26). The example uses an
 application called `my_app` with a NIF crate called `my_nifs`.
 
 **1. Create the Erlang application.**
@@ -46,15 +47,20 @@ This creates `native/my_nifs/Cargo.toml` (already depending on otter from git)
 and `native/my_nifs/src/lib.rs` with a minimal NIF:
 
 ```rust
-use otter::env::Env;
-use otter::types::Atom;
+use otter::types::{AnyTerm, Atom, CallEnv, InitEnv};
+
+// Optional load hook. Atoms listed in `init!` are interned by the
+// scaffolding before this runs, so a fresh crate has nothing to do here.
+fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
+    true
+}
 
 #[otter::nif]
-fn hello(_env: Env) -> Atom {
+fn hello(_env: CallEnv) -> Atom {
     otter::atom![world]
 }
 
-otter::init!("my_nifs", [hello], atoms = [world]);
+otter::init!("my_nifs", [hello], atoms = [world], load = on_load);
 ```
 
 **4. Register the crate and build hooks in `rebar.config`** (the scaffolder
@@ -117,31 +123,34 @@ You only depend on `otter`. The codegen macros are re-exported through it.
 ## Features
 
 - **All 12 Erlang term types** — Atom, Integer, Float, Binary, Bitstring, List, Tuple, Map, Pid, Port, Reference, Fun
-- **Two-level term resolution** — `Term` (zero cost) → `TypedTerm` (one NIF call) → data extraction. Pay only for what you use.
-- **Compile-time lifetime safety** — `Env<'a>` ties every term to its NIF call. Terms cannot escape. No runtime checks.
-- **Pre-declared atoms** — `init!`'s `atoms = [...]` + `atom!` for zero-cost atom retrieval (single atomic load), interned at load and re-interned on upgrade
-- **Resource types** — BEAM-managed Rust objects with destructors and process monitors, registered via `init!`'s `resources = [...]`
+- **Three-level term resolution** — `AnyTerm` (zero cost) → `TypedTerm` (one NIF call) → data extraction. Pay only for what you use.
+- **Compile-time lifetime safety** — `Env`/`Term` are traits with an invariant brand `'id` that ties every term to its NIF call. Terms cannot escape. No runtime checks.
+- **Native codecs** — `Encoder`/`Decoder` for Rust primitives, `String`, tuples, `Vec<T>`, `HashMap<K,V>` (take and return them directly), plus optional arbitrary-precision integers via the `bigint` feature
+- **Pre-declared atoms** — `init!`'s `atoms = [...]` + `atom!` for zero-cost atom retrieval, interned at load and re-interned on upgrade; `Atom::intern` returns `Result<_, AtomError>`
+- **Resource types** — BEAM-managed Rust objects with destructors, monitors, and `select` stop callbacks, registered via `init!`'s `resources = [...]`
 - **Hot code upgrade** — every otter module is hot-upgradeable; a per-build ABI tag on resource type names keeps a different build from unsafely taking over, with an opt-in stable tag (and `raw` callbacks) for state you carry across by hand
-- **OwnedEnv** — build and send terms from background threads
+- **Message passing** — `OwnedEnvArena` + `send` to build and send terms from background threads; `send_from` for caller-attributed in-NIF sends
 - **Dirty schedulers** — `#[otter::nif(schedule = "DirtyCpu")]` / `"DirtyIo"`
-- **Result returns** — `Result<T, Raised>` where `Ok` encodes normally and `Err(Raised)` carries an already-pending exception out (raise via `env.raise_exception` / `env.make_badarg`)
+- **Result returns** — `Result<T, Raised>` where `Ok` encodes normally and `Err(Raised)` carries an already-pending exception out (raise via `env.raise` / `env.badarg`); an encode failure raises `badret`
 - **BinaryBuf** — growable binary buffer with `io::Write` support
 - **I/O select** — `enif_select` / `enif_select_x` for async I/O integration
 - **enif-backed global allocator** — opt-in `enif_global_allocator!()` routes Rust allocations through the BEAM allocator (`enif_alloc`/`enif_free`)
-- **Panic safety** — panics in NIF bodies are caught and converted to exceptions
+- **Panic safety** — panics in NIF bodies, encoders, and callbacks are caught and converted to exceptions (with a `panic = "abort"` build guard)
+- **Feature flags** — `bigint` (arbitrary-precision integers), `raw` (the raw `enif_ffi` escape hatch + `_raw` lifecycle callbacks), `nif_2_18` (OTP 29 additions); all off by default
 
 ## Requirements
 
-- **OTP 26+** (NIF version 2.17). Optional `nif_2_18` feature for OTP 29.
-- **Rust** edition 2024.
+- **OTP 27+** to build through the rebar3 plugin (it uses OTP-27 doc syntax); the NIF runtime floor is 2.17 / OTP 26. Optional `nif_2_18` feature for OTP 29.
+- **Rust** edition 2021, MSRV 1.82 (`otter_codegen` 1.56).
 - `cargo` on `PATH`.
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [docs/USAGE.md](docs/USAGE.md) | User-facing guide — setup, all types, atoms, resources, OwnedEnv, scheduling, select |
+| [docs/USAGE.md](docs/USAGE.md) | User-facing guide — setup, all types, atoms, resources, message passing, scheduling, select |
 | [docs/RESOURCES.md](docs/RESOURCES.md) | Deep dive on the resource lifecycle |
+| [docs/UPGRADE.md](docs/UPGRADE.md) | Hot-upgrade safety model and the no-cross-build-ABI invariant |
 | [docs/RUSTLER.md](docs/RUSTLER.md) | Design comparison with rustler |
 | [docs/MIGRATION.md](docs/MIGRATION.md) | Side-by-side rustler-to-otter migration guide |
 | [otter/DESIGN.md](otter/DESIGN.md) | Core library architecture and internals |

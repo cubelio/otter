@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+Branded env/term spine, native codecs, and the enif-ffi extraction. Supersedes
+parts of the hot-upgrade entry further down (notably: the runtime `EnvKind` enum
+is removed — env kinds are now distinct types; resource creation is the free
+function `make_resource(env, val)`, not an env method).
+
+### otter (core library)
+
+- **Breaking.** Branded generative-brand spine: `Env` and `Term` are now sealed *traits* with an invariant brand `'id`. Concrete env kinds — `CallEnv`/`InitEnv`/`CallbackEnv`/`DeinitEnv`/`AnyEnv`/`OwnedEnv` — replace the runtime `EnvKind` enum, so context legality is enforced by type at compile time. `AnyTerm<'id>` is the bare-word handle; terms carry only the brand and accessors take the env explicitly. Brands are minted through `for<'id>` closures (`with_*_env` / `OwnedEnvArena::run`)
+- **Breaking.** The raw FFI floor is extracted to the external **`enif-ffi`** crate (0.2.0); `sys.rs`/`enif.rs` are deleted and otter is a pure safe layer over it. The `otter::enif_ffi` re-export is gated behind the `raw` feature; enif types used in the safe API are re-homed onto their modules (`select::{Event, SelectFlags, SELECT_*}`, `types::{TermType, Hash, UniqueInteger}`)
+- **Breaking.** `Encoder::encode` is now fallible (`Result<AnyTerm<'id>, CodecError>`); an encode failure raises `error:badret`, the encode-side mirror of the `error:badarg` a failed decode raises. Native `Encoder`/`Decoder` impls added for Rust primitives, `String`, tuples (arity 1–12), `Vec<T>`, and `HashMap<K, V>`. `CodecError` gains `NotFinite`, `FloatRange`, `NotUtf8`, `WrongArity`
+- **Breaking.** Message passing reworked: the single-use `OwnedTermBuilder`/`OwnedTerm` give way to a reusable `OwnedEnvArena` plus `OwnedEnv` (the branded `run`-closure env) and `OwnedEnvTerm` (a portable handle). Sends are free verbs — `send(&pid, &mut arena, oterm)` (heap steal) and `send_from(env, &pid, msg)` (copy, caller-attributed) — not pid methods. `OwnedEnvTerm` is guarded by a process-global generation stamp (UAF fix)
+- **Breaking.** Exception API renamed onto `CallEnv`: `raise` / `badarg` / `check_raised` (were `raise_exception` / `make_badarg`); `Raised<'id>` is branded. The `AsNifTerm` input trait is removed — term inputs are `impl Term<'id>` (env-portable types implement `FreeTerm`). `Float::from_f64` now returns `Option` (finiteness checked in Rust, no raise)
+- **Breaking.** `Atom::intern` returns `Result<Atom, AtomError>` (`NameTooLong`); `StaticAtom` stores a `OnceLock<Atom>` (no term-representation assumption, drops the `unsafe impl Sync`)
+- `bigint` feature: arbitrary-precision integers via `otter::num_bigint::BigInt`, with `Encoder`/`Decoder` and `Integer::{to_bigint, from_bigint}` (ETF-based for the >64-bit cases)
+- Strict-term hardening: `Tuple` split into a lean `Tuple` + a `TupleView` (`with_elements`); `Map::remove` returns `Map` (absent key → unchanged), not `Option`; `Integer::to_i128` removed; `BinaryBuf` moved to its own module
+- Editions lowered to 2021; MSRVs declared (otter 1.82, otter_codegen 1.56)
+
+### otter_codegen (proc macros)
+
+- Codegen retargeted to the spine: wrappers enter via `with_call_env` (minting the brand), decode args with the env, and encode the return through a fallible `encode_result`. Return-value encoding now runs **inside** the `catch_unwind` — an `Encoder::encode` panic was unwinding across the C ABI (UB)
+- `init!` emits a `#[cfg(panic = "abort")] compile_error!` guard (`catch_unwind` only intercepts *unwinding* panics), with a bare `allow_panic_abort` flag to opt out
+- New `#[raw]` attribute macro: emits two `cfg`-gated copies of an item to widen its visibility to `pub` under the `raw` feature without duplication
+- `init!`'s `atoms = [...]` length-checks each name at macro expansion (so `StaticAtom::init` is infallible for declared atoms) and accepts the `ident = "name"` alias form
+
+### rebar3_otter (rebar3 plugin)
+
+- `otter new` scaffold rewritten to emit compilable code (current spine API)
+- cdylib artifact discovery now pins `--target-dir` and computes the output path by convention, dropping the cargo JSON-message scrape (which needed the OTP-27-only stdlib `json` module); `clean` removes the pinned `target/` directory directly
+- OTP build floor raised to 27 (the plugin and demo use OTP-27 triple-quoted `-doc` strings)
+
+### Tooling
+
+- GitHub Actions CI: feature-matrix tests, clippy (`-D warnings`), docs, MSRV (1.82), 32-bit cross-compile, and BEAM eunit on OTP {27, 29}
+
+---
+
 Hot code upgrade: every otter module is now a hot-upgradeable NIF library, and resource type registration moves into `init!`.
 
 ### otter (core library)

@@ -44,8 +44,8 @@ The BEAM-side resource type identifier is derived from `std::any::type_name::<T>
 
 ```rust
 #[otter::nif]
-fn new(env: Env) -> ResourceArc<MyMap> {
-    env.make_resource(MyMap {
+fn new(env: CallEnv) -> ResourceArc<MyMap> {
+    otter::resource::make_resource(env, MyMap {
         data: Mutex::new(HashMap::new()),
     })
 }
@@ -53,7 +53,7 @@ fn new(env: Env) -> ResourceArc<MyMap> {
 
 What happens here:
 
-1. `env.make_resource(val)` looks `MyMap` up in the registry and calls `enif_alloc_resource` — the BEAM allocates a block of memory and sets its reference count to 1.
+1. `otter::resource::make_resource(env, val)` looks `MyMap` up in the registry and calls `enif_alloc_resource` — the BEAM allocates a block of memory and sets its reference count to 1. (It is a free function, not an env method; `resource_handle::<MyMap>(env).make(val)` is the two-step form, useful when you want to capture the `Send` handle and create off-thread.)
 2. Rust writes `val` into that block via `ptr::write`.
 3. The NIF returns a `ResourceArc`, which the `#[otter::nif]` macro encodes by calling `enif_make_resource` — this creates an Erlang term (an opaque reference) that holds a second reference to the same block.
 4. The `ResourceArc` is then dropped at the end of the NIF call, decrementing the count back to 1. Now only the Erlang term keeps the allocation alive.
@@ -72,17 +72,17 @@ This reference is the BEAM's handle to your Rust struct. You cannot inspect it f
 ```rust
 // `ok` and `error` are declared in init!'s `atoms = [...]` list.
 #[otter::nif]
-fn put<'a>(_env: Env<'a>, key: Binary<'a>, val: Binary<'a>, map: ResourceArc<MyMap>) -> Atom {
+fn put<'a>(env: CallEnv<'a>, key: Binary<'a>, val: Binary<'a>, map: ResourceArc<MyMap>) -> Atom {
     map.data.lock().unwrap().insert(
-        key.as_bytes().to_vec(),
-        val.as_bytes().to_vec(),
+        key.as_bytes(env).to_vec(),
+        val.as_bytes(env).to_vec(),
     );
     otter::atom![ok]
 }
 
 #[otter::nif]
-fn get<'a>(env: Env<'a>, key: Binary<'a>, map: ResourceArc<MyMap>) -> TypedTerm<'a> {
-    match map.data.lock().unwrap().get(key.as_bytes()) {
+fn get<'a>(env: CallEnv<'a>, key: Binary<'a>, map: ResourceArc<MyMap>) -> TypedTerm<'a> {
+    match map.data.lock().unwrap().get(key.as_bytes(env)) {
         Some(val) => {
             let ok: TypedTerm = otter::atom![ok].into();
             let bin: TypedTerm = Binary::from_bytes(env, val).into();
@@ -109,13 +109,36 @@ When the last Erlang reference to the resource is garbage collected, the BEAM ca
 
 ```rust
 impl Resource for MyMap {
-    fn destructor(self, _env: Env<'_>) {
+    fn destructor(self, _env: CallbackEnv<'_>) {
         // self is moved here — Rust drops it when this function returns
     }
 }
 ```
 
 The destructor callback is always registered at the C level — it calls `ptr::read` to move the value out and drop it. If you override `destructor`, your code runs before the drop. If you don't, the default no-op runs and the value drops normally. Either way, Rust `Drop` semantics are preserved.
+
+Resource callbacks run with a `CallbackEnv<'_>`, not the `CallEnv` a NIF receives — they fire on a scheduler thread outside any process context (no caller to attribute a send to, no `enif_self`). A panic that escapes a callback is caught and logged (it cannot unwind across the C boundary), never raised.
+
+### Optional callbacks: `down` and `stop`
+
+Two more optional callbacks complete the lifecycle:
+
+```rust
+use otter::resource::Monitor;
+use otter::select::Event;
+
+impl Resource for MyMap {
+    // A process monitored via `arc.monitor(Some(env), &pid)` exited.
+    fn down<'a>(&'a self, _env: CallbackEnv<'a>, _pid: LocalPid, _monitor: Monitor) {}
+
+    // The BEAM stopped monitoring an event selected on this resource
+    // (see `enif_select`). `is_direct_call` is true when run synchronously
+    // inside the `select` call.
+    fn stop(&self, _env: CallbackEnv<'_>, _event: Event, _is_direct_call: bool) {}
+}
+```
+
+`arc.monitor(env, &pid)` returns `Some(Monitor)` (or `None` if the process is already dead); `arc.demonitor(env, &mon)` cancels it. `env` is an `Option` so both can be called from a non-NIF thread (`None`). `Monitor` is `Copy`, compares by `enif_compare_monitors`, and converts to a term with `mon.to_term(env)`.
 
 ---
 
@@ -139,9 +162,9 @@ Pick the narrowest lock scope either way. A NIF that holds a lock across a long 
 
 ## Lifetime model
 
-Resources live outside the `Env<'a>` lifetime system. A resource outlives any single NIF call — that's the point. The `ResourceArc<T>` does not carry a lifetime parameter.
+Resources live outside the env-brand lifetime system. A resource outlives any single NIF call — that's the point. The `ResourceArc<T>` does not carry a brand parameter.
 
-This means you cannot store `TypedTerm<'a>` or `Binary<'a>` inside a resource — those are borrowed from the NIF call's environment and become invalid when the NIF returns. To store term data in a resource, copy it into an owned Rust type first (e.g. `Vec<u8>`, `String`, `i64`).
+This means you cannot store `TypedTerm<'id>` or `Binary<'id>` inside a resource — those are branded to the NIF call's environment and become invalid when the NIF returns (the brand `'id` cannot escape the call). To store term data in a resource, copy it into an owned Rust type first (e.g. `Vec<u8>`, `String`, `i64`).
 
 **Across a hot code upgrade**, that owned payload is *not* assumed to survive: a second build taking over the resource type must not assume it can interpret or free data the previous build allocated (different compiler, allocator, or layout). Outside the `raw` feature this is a core safety invariant — see `docs/UPGRADE.md`. The module and the resource *type* survive reload; the Rust-typed *payload* is the part under the ABI constraint.
 

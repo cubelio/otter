@@ -160,7 +160,7 @@ new_ref() -> exit(nif_not_loaded).
 -doc """
 Integer division. Raises `error:division_by_zero` when `B` is `0`. The Rust
 side returns `Result<Integer, Raised>`; the `Raised` is produced by
-`env.raise_exception(division_by_zero)` and propagated out with `?`.
+`env.raise(division_by_zero)` and propagated out with `?`.
 """.
 -spec divide(integer(), integer()) -> integer().
 divide(_A, _B) -> exit(nif_not_loaded).
