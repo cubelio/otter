@@ -271,7 +271,7 @@ let three = Integer::from_i64(env, 3);
 let big = Integer::from_u64(env, u64::MAX);
 
 // Arbitrary precision (bignums beyond i64/u64) — requires the `bigint` feature:
-let big = i.to_bigint(env);                       // otter::num_bigint::BigInt
+let big = i.to_bigint(env);                       // otter::types::BigInt
 let term = Integer::from_bigint(env, &big);
 ```
 
@@ -620,7 +620,7 @@ A few rules follow from what the macro expands to:
 
 All otter term types implement `Encoder` and `Decoder`, and so do the common native Rust types — integers, floats, `bool`, `str`/`String`, tuples (arity 1–12), `Vec<T>`, and `HashMap<K, V>` — so a NIF can take and return them directly. These traits are what the `#[otter::nif]` macro uses for automatic argument decoding and return encoding. Both directions are fallible: a failed decode on an argument raises `badarg`, a failed encode on a return raises `badret` (e.g. returning a non-finite `f64`). otter term types never fail to encode; only the native conversions can.
 
-The native integer codecs cover `i8`…`i64`/`isize` and `u8`…`u64`/`usize`; an integer outside the target type's range fails to decode (`badarg`). To read or write **arbitrary-precision integers** — Erlang bignums beyond `i64`/`u64` — enable the off-by-default `bigint` feature and use `otter::num_bigint::BigInt`, which then implements `Encoder`/`Decoder`. `BigInt` round-trips every Erlang integer (it goes through the external term format for the >64-bit cases, since the NIF API has no bignum accessor); the same conversions are available directly as `Integer::to_bigint(env)` and `Integer::from_bigint(env, &big)`. Name `BigInt` through otter's re-export (`otter::num_bigint`) so your NIF shares otter's exact `num-bigint` version — the trait impls are tied to it.
+The native integer codecs cover `i8`…`i64`/`isize` and `u8`…`u64`/`usize`; an integer outside the target type's range fails to decode (`badarg`). To read or write **arbitrary-precision integers** — Erlang bignums beyond `i64`/`u64` — enable the off-by-default `bigint` feature and use `otter::types::BigInt`, which then implements `Encoder`/`Decoder`. `BigInt` round-trips every Erlang integer (it goes through the external term format for the >64-bit cases, since the NIF API has no bignum accessor); the same conversions are available directly as `Integer::to_bigint(env)` and `Integer::from_bigint(env, &big)`. Name `BigInt` through otter's re-export (`otter::types::BigInt`) so your NIF shares otter's exact `num-bigint` version — the trait impls are tied to it.
 
 ```rust
 pub trait Encoder<'id> {

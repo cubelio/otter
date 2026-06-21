@@ -83,7 +83,7 @@ Otter's term types give you lazy, zero-copy access (extract when ready); the nat
 | `Vec<T>` | `List<'a>` | `Vec<T>` | term: `list.iter(env)` / `List::from_terms`; native `Vec<T>` ↔ Erlang list |
 | `(A, B)` | `Tuple<'a>` | `(A, B)` (arity 1–12) | term: `tup.with_elements(env)`; native tuple codec |
 | `HashMap<K,V>` | `Map<'a>` | `HashMap<K,V>` | term: `.get(env, k)` / `.put(env, k, v)` / `.iter(env)`; native map codec |
-| *(bignum)* | `Integer<'a>` | `BigInt` (`bigint` feature) | `otter::num_bigint::BigInt`, ETF-based for the >64-bit cases |
+| *(bignum)* | `Integer<'a>` | `BigInt` (`bigint` feature) | `otter::types::BigInt`, ETF-based for the >64-bit cases |
 | `rustler::Atom` | `Atom` | — | `atoms = [name]` + `atom![name]` (or `Atom::intern` for runtime strings; see [Atom-table safety](USAGE.md#atom-table-safety)) |
 | `rustler::Binary` | `Binary<'a>` | `&[u8]`→ via `Vec<u8>` list / `String` | `Binary::from_bytes(env, &[u8])` |
 | `rustler::TypedTerm` | `TypedTerm<'a>` | — | Typed enum, not opaque |

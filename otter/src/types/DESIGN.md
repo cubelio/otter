@@ -304,7 +304,7 @@ Erlang integers are arbitrary precision, and the NIF API has no accessor beyond
 external term format and parses the ETF integer tag (total over every integer
 term); `from_bigint` fast-paths the i64/u64 range and otherwise emits an ETF
 bignum parsed back with `enif_binary_to_term`. `BigInt` is `num_bigint::BigInt`,
-re-exported as `otter::num_bigint`. (The old `to_i128` convenience was removed —
+re-exported as `otter::types::BigInt`. (The old `to_i128` convenience was removed —
 it only spanned `i64::MIN..=u64::MAX`; use `to_bigint` for the unbounded case.)
 
 ### Not Exposed

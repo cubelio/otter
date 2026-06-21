@@ -13,6 +13,13 @@ pub use typed::TypedTerm;
 // Re-exported here so callers can name them without the `raw` feature.
 pub use enif_ffi::{Hash, TermType, UniqueInteger};
 
+// `BigInt` (the `bigint` feature) re-exported as `otter::types::BigInt` so NIF
+// authors share otter's exact `num-bigint` version — the `Encoder`/`Decoder`
+// impls are tied to this crate's `BigInt`, so a semver-incompatible copy would
+// not satisfy them. Only the type is exposed, not the whole `num_bigint` crate.
+#[cfg(feature = "bigint")]
+pub use num_bigint::BigInt;
+
 
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicU64, Ordering};

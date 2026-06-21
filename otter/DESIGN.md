@@ -460,7 +460,7 @@ otter always binds NIF 2.17 (OTP 26) through `enif-ffi`'s `nif_2_17`. Three opt-
 | Feature | Effect |
 |---|---|
 | `nif_2_18` | Enable the NIF 2.18 (OTP 29) additions (forwards to `enif-ffi/nif_2_18`). |
-| `bigint` | Pull in `num-bigint` (re-exported as `otter::num_bigint`) and add `Integer::{to_bigint, from_bigint}` plus `Encoder`/`Decoder for BigInt` — arbitrary-precision integers beyond `i64`/`u64`. Off by default. |
+| `bigint` | Pull in `num-bigint` (its `BigInt` re-exported as `otter::types::BigInt`) and add `Integer::{to_bigint, from_bigint}` plus `Encoder`/`Decoder for BigInt` — arbitrary-precision integers beyond `i64`/`u64`. Off by default. |
 | `raw` | Expose the raw, 1:1, all-`unsafe` `enif_ffi` crate as `otter::enif_ffi`, widen the `#[crate::raw]`-gated bridge constructors to `pub`, and accept the tier-2 `_raw` lifecycle callbacks in `init!`. The escape hatch — see `docs/UPGRADE.md`. |
 
 ---

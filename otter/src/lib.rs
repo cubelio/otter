@@ -28,13 +28,6 @@ pub use enif_ffi;
 #[doc(hidden)]
 pub use enif_ffi::nif_init;
 
-// Re-export `num-bigint` (the `bigint` feature) so NIF authors name
-// `otter::num_bigint::BigInt` and thereby share otter's exact version — the
-// `Encoder`/`Decoder` impls are tied to this crate's `BigInt`, so a user
-// pulling a semver-incompatible copy would not satisfy them.
-#[cfg(feature = "bigint")]
-pub use num_bigint;
-
 pub use otter_codegen::nif;
 pub use otter_codegen::init;
 pub use otter_codegen::resource_impl;
