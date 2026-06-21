@@ -486,7 +486,8 @@ let alive: bool = local.is_alive(env);
 let pid = LocalPid::whereis(env, name_atom);
 
 // Send (in-NIF): a free verb, caller-attributed via the call env
-otter::types::send_from(env, &local, msg_term);
+otter::types::send_copy_from(env, &local, msg_term);   // copy a live term
+// or send_move_from(env, &local, &mut arena, oterm) to steal an owned-env heap
 ```
 
 ### Port
@@ -819,7 +820,16 @@ let success: bool = resource_arc.demonitor(Some(env), &monitor);
 
 ## Message Passing
 
-To build a term and send it to a process from outside a NIF call — typically a spawned OS thread — use an `OwnedEnvArena`: a reusable, process-independent env. Build terms inside `arena.run(|oenv| …)`, `export` the one you want to an `OwnedEnvTerm`, then deliver it with the free verb `send`, which steals the arena's heap into the message.
+Sending a message is **four free verbs** in `otter::types`, a **2×2** of *copy vs. move* (how the payload reaches the recipient) × *caller-attributed vs. not* (whether the message is attributed to a calling process):
+
+| | copy a live term | move (steal) an `OwnedEnvArena` heap |
+|---|---|---|
+| **in a NIF** (caller env, attributed) | `send_copy_from(env, &pid, msg)` | `send_move_from(env, &pid, &mut arena, oterm)` |
+| **off-thread** (NULL caller) | `send_copy(&pid, msg)` | `send_move(&pid, &mut arena, oterm)` |
+
+The `_from` verbs take the calling env (an `impl CallingEnv`) and pass it as the caller, so the message is attributed to the calling process; the plain verbs send with a NULL caller, for use from a non-scheduler thread. `copy` copies the message from the caller env (`enif_send`, NULL `msg_env`); `move` transplants the arena's whole heap into the message (`enif_send`, non-NULL `msg_env`), O(1), leaving the arena dirty until `clear`ed.
+
+To build a term and send it from a spawned OS thread, use an `OwnedEnvArena` (a reusable, process-independent env): build inside `arena.run(|oenv| …)`, `export` the term you want to an `OwnedEnvTerm`, then `send_move` it:
 
 ```rust
 use std::thread;
@@ -832,32 +842,25 @@ fn start_worker(env: CallEnv) -> Atom {
         let result = do_heavy_work();
         let mut arena = OwnedEnvArena::new();
         let msg = arena.run(|oenv| oenv.export(Integer::from_i64(oenv, result)));
-        otter::types::send(&pid, &mut arena, msg);   // off-thread: no caller env
+        otter::types::send_move(&pid, &mut arena, msg);   // off-thread steal
     });
     otter::atom![ok]  // assuming `ok` is pre-declared
 }
 ```
 
-The two send paths:
+`arena.run` mints a branded `OwnedEnv` (`oenv`); terms built on it cannot escape the closure, and `export` records one as a portable `OwnedEnvTerm`. `send_move` transplants the arena's heap, so the arena is then dirty until `clear`ed for reuse. `OwnedEnvTerm` is generation-guarded — using it against a cleared or different arena fails an assertion (a globally-unique stamp). There is no off-thread `port_command` (`enif_port_command` aborts the VM when its caller env is NULL, and a non-scheduler thread has no process env to supply).
 
-| | what |
-|---|---|
-| off-thread (no caller env) | `send(&pid, &mut arena, oterm)` — steals the arena heap into the message (O(1)) |
-| in a NIF (caller env) | `send_from(env, &pid, msg)` — copies a live term, caller-attributed |
-
-`arena.run` mints a branded `OwnedEnv` (`oenv`); terms built on it cannot escape the closure, and `export` records one as a portable `OwnedEnvTerm`. `send` transplants the arena's heap, so the arena is then dirty until `clear`ed for reuse. `OwnedEnvTerm` is generation-guarded — using it against a cleared or different arena fails an assertion (a globally-unique stamp). There is no off-thread `port_command` (`enif_port_command` aborts the VM when its caller env is NULL, and a non-scheduler thread has no process env to supply).
-
-**From inside a NIF**, you already hold the process env, so copy a live term directly — no arena needed:
+**From inside a NIF**, you already hold the process env, so copy a live term directly with the caller-attributed `_from` verb — no arena needed:
 
 ```rust
 #[otter::nif]
 fn notify<'a>(env: CallEnv<'a>, to: LocalPid, msg: TypedTerm<'a>) -> Atom {
-    otter::types::send_from(env, &to, msg);   // msg is copied into to's mailbox
+    otter::types::send_copy_from(env, &to, msg);   // copied into to's mailbox, attributed to the caller
     otter::atom![ok]
 }
 ```
 
-`send_from` returns `true` if the target was alive. The matching port operation is the free verb `otter::types::port_command(env, &port, msg)`.
+`send_copy_from` returns `true` if the target was alive. The matching port operation is the free verb `otter::types::port_command(env, &port, msg)`.
 
 ---
 

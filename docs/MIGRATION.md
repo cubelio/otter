@@ -383,11 +383,13 @@ std::thread::spawn(move || {
         otter::atom![result].into(),
         Integer::from_i64(oenv, 42).into(),
     ])));
-    otter::types::send(&pid, &mut arena, msg);
+    otter::types::send_move(&pid, &mut arena, msg);
 });
 ```
 
-Otter mirrors rustler's reusable `OwnedEnv` with `OwnedEnvArena`: build terms inside `arena.run(|oenv| …)` (the branded `oenv` keeps them from escaping), `export` one to a portable `OwnedEnvTerm`, then `send(&pid, &mut arena, oterm)` — which steals the arena heap into the message. `clear` resets the arena for reuse. (For an in-NIF send of a live term, use `send_from(env, &pid, msg)` — no arena.) Where rustler uses an `Arc`/`Weak` token to guard a stale `SavedTerm`, otter uses a process-global generation stamp on the `OwnedEnvTerm`.
+Otter mirrors rustler's reusable `OwnedEnv` with `OwnedEnvArena`: build terms inside `arena.run(|oenv| …)` (the branded `oenv` keeps them from escaping), `export` one to a portable `OwnedEnvTerm`, then `send_move(&pid, &mut arena, oterm)` — which steals the arena heap into the message. `clear` resets the arena for reuse. Where rustler uses an `Arc`/`Weak` token to guard a stale `SavedTerm`, otter uses a process-global generation stamp on the `OwnedEnvTerm`.
+
+Sends are four free verbs in `otter::types` — a 2×2 of copy vs. move × caller-attributed (`_from`, in-NIF) vs. not (plain, off-thread). The plain `send_move`/`send_copy` send with a NULL caller; `send_copy_from(env, &pid, msg)` (copy a live term) and `send_move_from(env, &pid, &mut arena, oterm)` (steal an arena heap) take the calling env and attribute the message to the calling process.
 
 ---
 
@@ -482,6 +484,6 @@ Note: otter **does** accept native Rust args (`i64`, `String`, `Vec<T>`, `bool`,
 6. Replace `atoms! {}` blocks with `init!`'s `atoms = [...]` list + `atom!`. Reserve `Atom::intern(env, "name")` (now `-> Result<_, AtomError>`) for runtime strings — and never call it on untrusted input ([Atom-table safety](USAGE.md#atom-table-safety))
 7. Replace `Vec<T>` list handling with `list.iter(env)`, or just take a native `Vec<T>` argument
 8. Replace `resource!` macro with a `Resource` trait impl + listing the type in `init!`'s `resources = [...]`; switch construction to the free fn `otter::resource::make_resource(env, val)`
-9. Replace `OwnedEnv::send_and_clear` (and `OwnedEnv::run`/`SavedTerm`) with `OwnedEnvArena` + `otter::types::send(&pid, &mut arena, oterm)`
+9. Replace `OwnedEnv::send_and_clear` (and `OwnedEnv::run`/`SavedTerm`) with `OwnedEnvArena` + `otter::types::send_move(&pid, &mut arena, oterm)` off-thread, or `send_copy_from(env, &pid, msg)` / `send_move_from(env, ...)` in a NIF
 10. Update `Cargo.toml`: replace `rustler` dependency with `otter`
 11. Update build config: replace Mix/rustler config with `rebar.config` + `rebar3_otter`

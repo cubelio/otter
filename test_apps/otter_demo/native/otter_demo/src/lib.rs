@@ -8,8 +8,8 @@ use otter::num_bigint::BigInt;
 use otter::select::SelectFlags;
 use otter::resource::{Resource, ResourceArc};
 use otter::types::{
-    AnyTerm, Atom, AtomError, Binary, BinaryBuf, CallEnv, CallbackEnv, Env, Float, InitEnv, Integer,
-    List, LocalPid, LocalPort, Map, OwnedEnvArena, Raised, Reference, Tuple, TypedTerm,
+    AnyTerm, Atom, AtomError, Binary, BinaryBuf, CallEnv, CallbackEnv, Env, Float, InitEnv,
+    Integer, List, LocalPid, LocalPort, Map, OwnedEnvArena, Raised, Reference, Tuple, TypedTerm,
 };
 
 fn atomize_bool(value: bool) -> Atom {
@@ -425,7 +425,7 @@ fn send_from_thread(env: CallEnv) -> Atom {
     std::thread::spawn(move || {
         let mut arena = OwnedEnvArena::new();
         let msg = arena.run(|oenv| oenv.export(otter::atom![from_thread]));
-        otter::types::send(&pid, &mut arena, msg);
+        otter::types::send_move(&pid, &mut arena, msg);
     });
     otter::atom![ok]
 }
@@ -434,7 +434,7 @@ fn send_from_thread(env: CallEnv) -> Atom {
 
 #[otter::nif]
 fn send_to<'a>(env: CallEnv<'a>, to: LocalPid, msg: AnyTerm<'a>) -> Atom {
-    otter::types::send_from(env, &to, msg);
+    otter::types::send_copy_from(env, &to, msg);
     otter::atom![ok]
 }
 

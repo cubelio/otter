@@ -4,7 +4,7 @@ pub mod terms;
 mod typed;
 
 pub use binarybuf::BinaryBuf;
-pub use ops::{deserialize, port_command, send_from, serialize};
+pub use ops::{deserialize, port_command, serialize};
 pub use terms::*;
 pub use typed::TypedTerm;
 
@@ -193,6 +193,83 @@ impl<'id> Env<'id> for DeinitEnv<'id> {
 /// `raw` must be the live env pointer the VM supplied for this callback.
 pub unsafe fn with_deinit_env<R>(raw: RawEnv, f: impl for<'id> FnOnce(DeinitEnv<'id>) -> R) -> R {
     f(DeinitEnv { raw_env: raw, _id: PhantomData })
+}
+
+fn send_move_(env: RawEnv, pid: &LocalPid, msg_env: &mut OwnedEnvArena, msg: OwnedEnvTerm) -> bool {
+    assert!(!msg_env.is_dirty);
+    let msg = msg_env.unwrap_term(msg);
+    let ok = unsafe { enif_ffi::send(env, &pid.pid, msg_env.env, msg) != 0 };
+    msg_env.is_dirty = ok;
+    ok
+}
+
+fn send_copy_<'a>(env: RawEnv, pid: &LocalPid, msg: impl Term<'a>) -> bool {
+    unsafe { enif_ffi::send(env, &pid.pid, std::ptr::null_mut(), msg.raw_term()) != 0 }
+}
+
+// Sending (`enif_send`) is a 2×2 of independent choices, exposed as four free
+// verbs. They are verbs, not methods: the env and pid are ingredients of the
+// operation, not its owner.
+//
+// * **`_copy` vs `_move`** — how the payload reaches the recipient. `_copy`
+//   copies a live term into the recipient's mailbox (`enif_send` with a NULL
+//   `msg_env`). `_move` transplants (steals) an entire [`OwnedEnvArena`] heap
+//   into the message (`enif_send` with the arena as `msg_env`) — O(1), no copy;
+//   the arena is left dirty and must be [`clear`](OwnedEnvArena::clear)ed before
+//   reuse.
+// * **plain vs `_from`** — who the message is attributed to. The plain verbs
+//   send with a NULL `caller_env`, for use from a non-scheduler thread that has
+//   no process context. The `_from` verbs take a [`CallingEnv`] (a live NIF call
+//   or callback) as the `caller_env`, so the BEAM attributes the message to the
+//   calling process (send-trace, seq-trace, reductions, process-aware enqueue).
+//
+// All four return `true` if the message was delivered (the target was alive),
+// `false` otherwise, mirroring `enif_send`.
+
+/// Steal-send `msg` to `pid` from a non-scheduler thread (NULL caller).
+///
+/// Transplants `msg_env`'s entire heap into the message in O(1) — no copy — then
+/// leaves the arena dirty; [`clear`](OwnedEnvArena::clear) it before reusing it.
+/// `msg` must have been [`export`](OwnedEnv::export)ed from *this* arena.
+///
+/// The off-thread counterpart to [`send_move_from`]. Use that instead from
+/// inside a NIF to attribute the message to the calling process.
+pub fn send_move(pid: &LocalPid, msg_env: &mut OwnedEnvArena, msg: OwnedEnvTerm) -> bool {
+    send_move_(std::ptr::null_mut(), pid, msg_env, msg)
+}
+
+/// Copy-send a live term `msg` to `pid` from a non-scheduler thread (NULL
+/// caller).
+///
+/// Copies `msg` into the recipient's mailbox (`enif_send`, NULL `msg_env`). The
+/// off-thread counterpart to [`send_copy_from`]; use that from inside a NIF to
+/// attribute the message to the calling process. To steal an owned-env heap
+/// instead of copying, use [`send_move`].
+pub fn send_copy<'a>(pid: &LocalPid, msg: impl Term<'a>) -> bool {
+    send_copy_(std::ptr::null_mut(), pid, msg)
+}
+
+/// Steal-send `msg` to `pid` from inside a NIF, attributed to the calling
+/// process.
+///
+/// Like [`send_move`] (transplants `msg_env`'s heap in O(1), leaving the arena
+/// dirty), but passes `calling_env` as the `caller_env`, so the BEAM attributes
+/// the message to the calling process. `calling_env` must be a live
+/// [`CallEnv`]/[`CallbackEnv`]; `msg` must have been
+/// [`export`](OwnedEnv::export)ed from *this* arena.
+pub fn send_move_from<'id>(calling_env: impl CallingEnv<'id>, pid: &LocalPid, msg_env: &mut OwnedEnvArena, msg: OwnedEnvTerm) -> bool {
+    send_move_(calling_env.raw_env(), pid, msg_env, msg)
+}
+
+/// Copy-send a live term `msg` to `pid` from inside a NIF, attributed to the
+/// calling process.
+///
+/// Like [`send_copy`] (copies `msg` into the recipient's mailbox), but passes
+/// `calling_env` as the `caller_env`, so the BEAM attributes the message to the
+/// calling process. `calling_env` must be a live [`CallEnv`]/[`CallbackEnv`];
+/// `msg` is a term of any brand. This is the common in-NIF send.
+pub fn send_copy_from<'id, 'a>(calling_env: impl CallingEnv<'id>, pid: &LocalPid, msg: impl Term<'a>) -> bool {
+    send_copy_(calling_env.raw_env(), pid, msg)
 }
 
 /// The env kinds that carry a live process/scheduler context — those you can
@@ -415,18 +492,6 @@ impl<'a, 'id> Env<'id> for OwnedEnv<'a, 'id> {
     fn raw_env(&self) -> RawEnv {
         self.owner.env
     }
-}
-
-
-/// Send the stored term at `index` to `pid`, stealing this env's heap (O(1)),
-/// then clearing it for reuse. A free verb: the env and pid are ingredients,
-/// not owners of the operation.
-pub fn send(pid: &LocalPid, env: &mut OwnedEnvArena, term: OwnedEnvTerm) -> bool {
-    assert!(!env.is_dirty);
-    let msg = env.unwrap_term(term);
-    let ok = unsafe { enif_ffi::send(std::ptr::null_mut(), &pid.pid, env.env, msg) != 0 };
-    env.is_dirty = ok;
-    ok
 }
 
 #[cfg(test)]
