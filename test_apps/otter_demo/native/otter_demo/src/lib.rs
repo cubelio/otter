@@ -4,7 +4,7 @@ use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use otter::num_bigint::BigInt;
+use otter::types::BigInt;
 use otter::select::SelectFlags;
 use otter::resource::{Resource, ResourceArc};
 use otter::types::{
