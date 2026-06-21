@@ -150,7 +150,7 @@ You only depend on `otter`. The codegen macros are re-exported through it.
 - **I/O select** — `enif_select` / `enif_select_x` for async I/O integration
 - **enif-backed global allocator** — opt-in `enif_global_allocator!()` routes Rust allocations through the BEAM allocator (`enif_alloc`/`enif_free`)
 - **Panic safety** — panics in NIF bodies, encoders, and callbacks are caught and converted to exceptions (with a `panic = "abort"` build guard)
-- **Feature flags** — `bigint` (arbitrary-precision integers), `raw` (the raw `enif_ffi` escape hatch + `_raw` lifecycle callbacks), `nif_2_18` (OTP 29 additions); all off by default
+- **Feature flags** — `bigint` (arbitrary-precision integers), `raw` (the raw `enif_*` FFI escape hatch + `_raw` lifecycle callbacks), `nif_2_18` (OTP 29 additions); all off by default
 
 ## Requirements
 
