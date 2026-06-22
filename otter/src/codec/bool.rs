@@ -8,6 +8,7 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::types::{AnyTerm, Atom, Env};
 
+/// Yields the atom `true` or `false`. Infallible — both are always interned.
 impl<'id> Encoder<'id> for bool {
     fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
         let name = if *self { "true" } else { "false" };
@@ -17,6 +18,8 @@ impl<'id> Encoder<'id> for bool {
     }
 }
 
+/// Accepts exactly the atoms `true`/`false`; every other term — including any
+/// other atom — is [`WrongType`](CodecError::WrongType).
 impl<'id> Decoder<'id> for bool {
     fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
         let atom = Atom::decode(term, env)?;

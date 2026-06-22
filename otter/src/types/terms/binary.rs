@@ -1,3 +1,7 @@
+//! [`Binary`] (byte-aligned) and [`Bitstring`] (possibly sub-byte) — Erlang
+//! binary data, viewed zero-copy into the BEAM heap. Also the binary side of
+//! external-term-format (de)serialization.
+
 use core::marker::PhantomData;
 use std::str::Utf8Error;
 

@@ -5,13 +5,36 @@ mod nif_macro;
 mod raw_macro;
 mod resource_impl_macro;
 
-/// Attribute macro that transforms a Rust function into a NIF.
+/// Mark a Rust function as a NIF.
+///
+/// The annotated function takes an env as its first parameter (a `CallEnv<'_>`)
+/// followed by one parameter per Erlang argument, each a type implementing
+/// `Decoder`; it returns any type implementing `Encoder`. The macro generates the
+/// `extern "C"` trampoline the BEAM calls: it decodes each argument (a failed
+/// decode becomes `badarg`), invokes your function inside a `catch_unwind` (a
+/// panic is turned into a raised exception rather than crossing the C-ABI
+/// boundary), and encodes the result (a failed encode becomes `badret`). List the
+/// function in [`init!`](macro@init)'s NIF table to export it.
+///
+/// To raise on purpose, return `Result<T, Raised<'_>>` and use `CallEnv::raise` /
+/// `CallEnv::badarg`.
 ///
 /// # Options
 ///
-/// - `schedule = "DirtyCpu"` — run on a dirty CPU scheduler
-/// - `schedule = "DirtyIo"` — run on a dirty I/O scheduler
-/// - `name = "erlang_name"` — override the exported NIF name
+/// - `schedule = "DirtyCpu"` — run on a dirty CPU scheduler (long, CPU-bound work).
+/// - `schedule = "DirtyIo"` — run on a dirty I/O scheduler (work that blocks).
+/// - `name = "erlang_name"` — export under a different Erlang name than the Rust
+///   function name.
+///
+/// ```ignore
+/// #[otter::nif]
+/// fn add(env: CallEnv<'_>, a: Integer<'_>, b: Integer<'_>) -> Integer<'_> {
+///     Integer::from_i64(env, a.to_i64(env).unwrap() + b.to_i64(env).unwrap())
+/// }
+///
+/// #[otter::nif(schedule = "DirtyCpu", name = "heavy")]
+/// fn heavy_impl(env: CallEnv<'_>, n: Integer<'_>) -> Integer<'_> { /* … */ }
+/// ```
 #[proc_macro_attribute]
 pub fn nif(attr: TokenStream, item: TokenStream) -> TokenStream {
     nif_macro::expand(attr.into(), item.into())
@@ -19,11 +42,48 @@ pub fn nif(attr: TokenStream, item: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Generates the NIF library entry point (`nif_init`).
+/// Declare the NIF library: its module name, exported NIFs, pre-interned atoms,
+/// resource types, and lifecycle callbacks. Invoke it exactly once per library.
+///
+/// It generates the `nif_init` entry point, the `load`/`upgrade`/`unload`
+/// scaffolding (which installs the private-data slot, registers resource types,
+/// and interns the declared atoms — all under a `catch_unwind`), and the
+/// `__otter_atoms` table that the `atom!` macro reads.
+///
+/// # Syntax
 ///
 /// ```ignore
-/// otter::init!("my_module", [add, subtract], load = on_load);
+/// otter::init!(
+///     "my_module",            // the Erlang module name (required, first)
+///     [add, subtract],        // the NIF table — functions marked #[otter::nif]
+///     atoms = [ok, error, not_found = "not found"],
+///     resources = [MyResource, Conn: "conn-v1"],
+///     load = on_load,         // optional lifecycle callbacks
+///     upgrade = on_upgrade,
+///     unload = on_unload,
+/// );
 /// ```
+///
+/// The first two arguments are positional; everything after is an
+/// order-independent keyword entry:
+///
+/// - **`atoms = [name, alias = "beam name", …]`** — atoms interned once at load
+///   (and re-interned on upgrade). Use `alias = "…"` when the BEAM atom text is
+///   not a valid Rust identifier. Names are length-checked (≤255 chars) at
+///   compile time. Retrieve with the `atom!` macro.
+/// - **`resources = [Type, Type: "tag", …]`** — resource types to register. A
+///   bare `Type` is registered under an ABI-fingerprinted name (no cross-build
+///   takeover); `Type: "tag"` registers under a stable tagged name that opts into
+///   hot-upgrade takeover.
+/// - **`load = f` / `upgrade = f` / `unload = f`** — lifecycle callbacks. `load`
+///   and `upgrade` receive the env and the decoded `load_info` term and return
+///   `bool` (return `false` to veto the load); `unload` receives the env and
+///   cannot veto. Their `load_raw` / `upgrade_raw` / `unload_raw` variants
+///   (require the `raw` feature) additionally hand you the library's
+///   `user_priv_data` `void*` to manage yourself.
+/// - **`allow_panic_abort`** — a bare flag that opts out of the compile-time
+///   guard which otherwise rejects building this crate with `panic = "abort"`
+///   (abort would bypass otter's panic interception and crash the VM).
 #[proc_macro]
 pub fn init(input: TokenStream) -> TokenStream {
     init_macro::expand(input.into())
@@ -31,9 +91,13 @@ pub fn init(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Attribute macro for `impl Resource for T` blocks.
+/// Optional marker attribute for an `impl Resource for T` block.
 ///
-/// Optional attribute for `impl Resource for T` blocks.
+/// Currently it re-emits the impl block unchanged — writing `impl Resource for T`
+/// directly is equivalent. It exists as the designated annotation point for
+/// resource impls so that future codegen (or tooling) has a stable hook, and to
+/// document intent at the impl site. Registration still happens via
+/// [`init!`](macro@init)'s `resources = [...]` list.
 #[proc_macro_attribute]
 pub fn resource_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
     resource_impl_macro::expand(item.into())

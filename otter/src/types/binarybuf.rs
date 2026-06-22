@@ -1,4 +1,10 @@
 //! `BinaryBuf` — owned, growable binary buffer (`Vec<u8>` model).
+//!
+//! Unlike a [`Binary`](crate::types::Binary) term, a [`BinaryBuf`] carries no env
+//! and no brand: it owns its allocation outright, so you can build it on a worker
+//! thread with no env in hand, then hand the finished allocation to the BEAM as a
+//! `Binary` in one move with [`into_binary`](BinaryBuf::into_binary) — no copy.
+//! It is also what [`serialize`](crate::types::serialize) returns.
 
 use crate::types::{Binary, Env};
 
@@ -129,6 +135,8 @@ impl Default for BinaryBuf {
     }
 }
 
+/// Appends written bytes (infallible — `write` always consumes all of `buf` and
+/// `flush` is a no-op), so a `BinaryBuf` is a `write!`/`serde`-style sink.
 impl std::io::Write for BinaryBuf {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.extend_from_slice(buf);
@@ -148,6 +156,8 @@ impl Drop for BinaryBuf {
     }
 }
 
+/// Derefs to the written bytes (`&self[..]` is the `len`-prefix, not the full
+/// capacity), so slice methods and `&[u8]` coercions work directly.
 impl std::ops::Deref for BinaryBuf {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
@@ -173,6 +183,8 @@ impl AsMut<[u8]> for BinaryBuf {
     }
 }
 
+/// Appends the bytes of an iterator, reserving the iterator's lower size hint up
+/// front. Enables `buf.extend(iter)` and `.collect::<BinaryBuf>()`-style use.
 impl Extend<u8> for BinaryBuf {
     fn extend<I: IntoIterator<Item = u8>>(&mut self, iter: I) {
         let iter = iter.into_iter();
@@ -184,6 +196,8 @@ impl Extend<u8> for BinaryBuf {
     }
 }
 
+/// Copying variant of the `Extend<u8>` impl — appends from an iterator of `&u8`
+/// (e.g. `&[u8]`).
 impl<'a> Extend<&'a u8> for BinaryBuf {
     fn extend<I: IntoIterator<Item = &'a u8>>(&mut self, iter: I) {
         self.extend(iter.into_iter().copied());

@@ -1,4 +1,12 @@
 //! `TypedTerm` and `resolve` — the typed view of a received term.
+//!
+//! [`AnyTerm`] is the bare branded word, type unknown. [`AnyTerm::resolve`]
+//! makes one `enif_term_type` call and returns a [`TypedTerm`] — a tagged enum
+//! whose 11 variants mirror BEAM's 11 type tags — so you can `match` on the
+//! shape of a received term. Resolution only learns the tag; the data stays on
+//! the BEAM heap until an accessor pulls it out. `TypedTerm` carries Erlang's
+//! own equality (`=:=`) and term order, and every concrete type converts into it
+//! via `From`.
 
 use crate::types::sealed::Sealed;
 use crate::types::{
@@ -14,16 +22,29 @@ use crate::types::{
 /// every binary as a bitstring). Refine with [`Bitstring::to_binary`].
 #[derive(Clone, Copy)]
 pub enum TypedTerm<'id> {
+    /// An atom.
     Atom(Atom),
+    /// A binary or sub-byte bitstring (`enif_term_type` reports both as
+    /// `Bitstring`). Refine to a byte-aligned [`Binary`] with
+    /// [`Bitstring::to_binary`].
     Bitstring(Bitstring<'id>),
+    /// A float.
     Float(Float<'id>),
+    /// A fun (closure or `&module:function/arity`).
     Fun(Fun<'id>),
+    /// An integer (fixnum or bignum).
     Integer(Integer<'id>),
+    /// A list (proper or improper; the empty list `[]` is also a list).
     List(List<'id>),
+    /// A map.
     Map(Map<'id>),
+    /// A pid (local or external).
     Pid(Pid<'id>),
+    /// A port (local or external).
     Port(Port<'id>),
+    /// A reference.
     Reference(Reference<'id>),
+    /// A tuple.
     Tuple(Tuple<'id>),
 }
 
@@ -31,6 +52,10 @@ impl<'id> AnyTerm<'id> {
     /// Resolve to a typed [`TypedTerm`] (`enif_term_type`). Exactly one NIF call.
     /// `None` for a type code this otter build does not recognize (a newer-OTP
     /// type); the original `AnyTerm` is still usable.
+    ///
+    /// The fallible counterpart is the [`Decoder`](crate::codec::Decoder) impl
+    /// for `TypedTerm`, which maps the `None` case to
+    /// [`CodecError::UnknownTermType`](crate::codec::CodecError::UnknownTermType).
     pub fn resolve(self, env: impl Env<'id>) -> Option<TypedTerm<'id>> {
         let raw = self.raw_term();
         Some(match env.term_type(self)? {
@@ -132,6 +157,8 @@ impl<'id> From<Tuple<'id>> for TypedTerm<'id> {
     }
 }
 
+/// Term identity (`enif_is_identical`) — the BEAM's `=:=`, not Rust structural
+/// equality. Ignores the variant tag and compares the underlying terms.
 impl PartialEq for TypedTerm<'_> {
     fn eq(&self, other: &Self) -> bool {
         unsafe { enif_ffi::is_identical(Term::raw_term(*self), Term::raw_term(*other)) != 0 }
@@ -146,6 +173,9 @@ impl PartialOrd for TypedTerm<'_> {
     }
 }
 
+/// Erlang term order (`enif_compare`) — the standard cross-type ordering
+/// `number < atom < reference < fun < port < pid < tuple < map < nil < list <
+/// bitstring`, not a Rust-derived ordering.
 impl Ord for TypedTerm<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let c = unsafe { enif_ffi::compare(Term::raw_term(*self), Term::raw_term(*other)) };

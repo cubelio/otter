@@ -1,3 +1,6 @@
+//! [`Map`] — immutable Erlang maps: lookup, functional update (each mutation
+//! returns a new map), and key-value [iteration](MapIterator).
+
 use core::marker::PhantomData;
 
 use crate::types::sealed::Sealed;

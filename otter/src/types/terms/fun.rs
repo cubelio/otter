@@ -1,3 +1,6 @@
+//! [`Fun`] — an opaque handle to an Erlang fun (closure or function reference).
+//! The NIF API exposes no inspection; a fun can only be held and passed back.
+
 use core::marker::PhantomData;
 
 use crate::types::sealed::Sealed;

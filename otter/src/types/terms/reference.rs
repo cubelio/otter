@@ -1,9 +1,13 @@
+//! [`Reference`] — unique Erlang references (`make_ref`), the canonical
+//! one-shot token for tagging messages and replies.
+
 use core::marker::PhantomData;
 
 use crate::types::sealed::Sealed;
 use crate::types::{Env, Invariant, RawTerm, Term};
 
-/// An Erlang reference.
+/// An Erlang reference — a VM-unique token (`enif_make_ref`), commonly used to
+/// tag a request so its reply can be matched.
 #[derive(Clone, Copy)]
 pub struct Reference<'id> {
     raw_term: RawTerm,

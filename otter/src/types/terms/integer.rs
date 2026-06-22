@@ -1,3 +1,7 @@
+//! [`Integer`] — arbitrary-precision Erlang integers, with `i64`/`u64`
+//! accessors and, under the `bigint` feature, full `BigInt` conversion for
+//! magnitudes the fixed-width accessors cannot reach.
+
 use core::marker::PhantomData;
 
 #[cfg(feature = "bigint")]

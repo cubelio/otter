@@ -1,3 +1,5 @@
+//! [`Float`] — IEEE 754 double-precision Erlang floats.
+
 use core::marker::PhantomData;
 
 use crate::types::sealed::Sealed;
