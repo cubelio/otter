@@ -4,9 +4,9 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![MSRV](https://img.shields.io/badge/MSRV-1.82-blue.svg)](#requirements)
 
-**otter — write fast and efficient Erlang NIFs in Rust.**
+**`otter` — write fast and efficient Erlang NIFs in Rust**
 
-otter is built from the ground up to give Erlang programmers an easy, efficient way to write NIFs in Rust. Its first priority is an API surface that **faithfully captures the capabilities of the underlying `erl_nif` C API** — and where the safe surface isn't enough, the **raw API is one Cargo feature away** for the more daring. The datatypes are designed so you can target speed and efficiency through **controlled layering of `enif_*` calls**, with extensive work to enforce constraints at **compile time rather than runtime**.
+`otter` is built from the ground up to give Erlang and Elixir programmers an easy, efficient way to write NIFs in Rust. Its first priority is an API surface that **faithfully captures the capabilities of the underlying `erl_nif` C API** — and where the safe surface isn't enough, the **raw API** can be exposed by enabling the `raw` feature. The datatypes are designed so you can target speed and efficiency through **controlled layering of `enif_*` calls**, with extensive work to enforce constraints at **compile time rather than runtime**.
 
 - **Full NIF lifecycle** — `load`, `upgrade`, and `unload`, with upgrade-safe `priv_data`, so your module stays hot-code-upgradeable.
 - **Faithful lists** — `List` is a real cons cell (`Node::Nil | Cell(head, tail)`); improper lists are first-class, and codecs reject a bad tail with a clean error.
@@ -14,17 +14,9 @@ otter is built from the ground up to give Erlang programmers an easy, efficient 
 - **Decoders that don't lie** — `300` into a `u8` is an `IntegerOverflow` error, never a silently-truncated `44`; floats won't quietly swallow integers.
 - **Compile-time env identity** — a generative brand makes cross-env misuse a compile error and keeps terms one machine word, with no per-operation runtime env check.
 
-*otter is inspired by rustler; see [docs/RUSTLER.md](../docs/RUSTLER.md) for a detailed comparison.*
+*`otter` is inspired by rustler; see [docs/RUSTLER.md](../docs/RUSTLER.md) for a detailed comparison.*
 
 **Status:** 0.2.0. The full surface is implemented and exercised end-to-end by [test_apps/otter_demo](../test_apps/otter_demo), but otter has not yet been used in production. Feedback on the API shape, the Erlang-first philosophy, and the safety model is welcome — open an issue.
-
-## Why
-
-There is already an established library that builds Erlang NIFs from Rust, `rustler`. As a regular user of `rustler`, I ran up against many points of friction. The design and documentation lean toward Elixir over Erlang. The API surface made several opinionated decisions, like how to convert terms and when to raise an exception. It prefers syntactic sugar to explicitness.
-
-I built `otter` to be on the opposite end of the spectrum. Everything is explicit and as close to the original NIF C API as possible. The design philosophy was to expose the full capabilities of the NIF API in the most idiomatic Rust way without any opinionated decisions hidden in the scaffolding. If a NIF programmer wouldn't recognize a concept, it doesn't belong.
-
-See [docs/RUSTLER.md](../docs/RUSTLER.md) for a detailed comparison.
 
 *Note on Elixir.* For now, `otter` ships no Elixir-specific tooling. Getting the Erlang-facing library right is the current priority; once the surface stabilizes, we will revisit building Elixir tooling on top of the `otter` framework or as an opt-in feature.
 
@@ -43,7 +35,7 @@ $ cd my_app
 ```
 
 **2. Add the plugin to `rebar.config`.** The plugin lives in a subdirectory of
-the otter repo, so it must be referenced with `git_subdir`:
+the `otter` repo, so it must be referenced with `git_subdir`:
 
 ```erlang
 {plugins, [
@@ -57,7 +49,7 @@ the otter repo, so it must be referenced with `git_subdir`:
 $ rebar3 otter new --name my_nifs
 ```
 
-This creates `native/my_nifs/Cargo.toml` (already depending on otter-nif from crates.io)
+This creates `native/my_nifs/Cargo.toml` (already depending on `otter-nif` from crates.io)
 and `native/my_nifs/src/lib.rs` with a minimal NIF:
 
 ```rust
@@ -105,7 +97,7 @@ init() ->
 hello() -> exit(nif_not_loaded).
 ```
 
-**6. Build.** The `pre_compile` hook invokes `cargo` (pulling otter-nif from
+**6. Build.** The `pre_compile` hook invokes `cargo` (pulling `otter-nif` from
 crates.io on the first build), locates the `.so`, and installs it into `priv/native/`.
 
 ```console
@@ -136,13 +128,13 @@ You only depend on `otter-nif` (imported as `otter`). The codegen macros are re-
 
 ## Features
 
-- **All 12 Erlang term types** — Atom, Integer, Float, Binary, Bitstring, List, Tuple, Map, Pid, Port, Reference, Fun
+- **All 11 Erlang term types** — Atom, Integer, Float, Binary/Bitstring, List, Tuple, Map, Pid, Port, Reference, Fun
 - **Four-level term resolution** — `AnyTerm` (zero cost) → `TypedTerm` (one NIF call) → concrete term type → native Rust value (`i64`, `String`, `Vec<T>`, … decoded directly). Pay only for what you use.
 - **Compile-time lifetime safety** — `Env`/`Term` are traits with an invariant brand `'id` that ties every term to its NIF call. Terms cannot escape. No runtime checks.
 - **Native codecs** — `Encoder`/`Decoder` for Rust primitives, `String`, tuples, `Vec<T>`, `HashMap<K,V>` (take and return them directly), plus optional arbitrary-precision integers via the `bigint` feature
 - **Pre-declared atoms** — `init!`'s `atoms = [...]` + `atom!` for zero-cost atom retrieval, interned at load and re-interned on upgrade; `Atom::intern` returns `Result<_, AtomError>`
 - **Resource types** — BEAM-managed Rust objects with destructors, monitors, and `select` stop callbacks, registered via `init!`'s `resources = [...]`
-- **Hot code upgrade** — every otter module is hot-upgradeable; a per-build ABI tag on resource type names keeps a different build from unsafely taking over, with an opt-in stable tag (and `raw` callbacks) for state you carry across by hand
+- **Hot code upgrade** — every `otter` module is hot-upgradeable; a per-build ABI tag on resource type names keeps a different build from unsafely taking over, with an opt-in stable tag (and `raw` callbacks) for state you carry across by hand
 - **Message passing** — four free verbs in a 2×2: `send_copy`/`send_move` (copy a live term vs. steal an `OwnedEnvArena` heap) × plain (NULL caller, off-thread) and `_from` (caller-attributed, in-NIF)
 - **Dirty schedulers** — `#[otter::nif(schedule = "DirtyCpu")]` / `"DirtyIo"`
 - **Result returns** — `Result<T, Raised>` where `Ok` encodes normally and `Err(Raised)` carries an already-pending exception out (raise via `env.raise` / `env.badarg`); an encode failure raises `badret`
@@ -166,7 +158,7 @@ You only depend on `otter-nif` (imported as `otter`). The codegen macros are re-
 | [docs/RESOURCES.md](../docs/RESOURCES.md) | Deep dive on the resource lifecycle |
 | [docs/UPGRADE.md](../docs/UPGRADE.md) | Hot-upgrade safety model and the no-cross-build-ABI invariant |
 | [docs/RUSTLER.md](../docs/RUSTLER.md) | Design comparison with rustler |
-| [docs/MIGRATION.md](../docs/MIGRATION.md) | Side-by-side rustler-to-otter migration guide |
+| [docs/MIGRATION.md](../docs/MIGRATION.md) | Side-by-side rustler-to-`otter` migration guide |
 | [otter/DESIGN.md](../otter/DESIGN.md) | Core library architecture and internals |
 | [otter_codegen/DESIGN.md](../otter_codegen/DESIGN.md) | What the macros generate, argument/return type rules |
 | [rebar3_otter/DESIGN.md](../rebar3_otter/DESIGN.md) | Plugin providers, cargo integration, NIF loading path |

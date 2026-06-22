@@ -1,8 +1,20 @@
 # Otter vs Rustler
 
-Otter was designed after studying rustler closely. This document is the long-form
-comparison: where the two libraries genuinely differ, with the mechanism named on
-each side so every claim is checkable against source.
+There is already an established library that builds Erlang NIFs from Rust,
+`rustler`. As a regular user of `rustler`, I ran up against many points of
+friction. The design and documentation lean toward Elixir over Erlang. The API
+surface made several opinionated decisions, like how to convert terms and when
+to raise an exception. It prefers syntactic sugar to explicitness.
+
+I built `otter` to be on the opposite end of the spectrum. Everything is
+explicit and as close to the original NIF C API as possible. The design
+philosophy was to expose the full capabilities of the NIF API in the most
+idiomatic Rust way without any opinionated decisions hidden in the scaffolding.
+If a NIF programmer wouldn't recognize a concept, it doesn't belong.
+
+This document is a long-form comparison of `rustler` and `otter`: where the two
+libraries genuinely differ, with the mechanism named on each side so every claim
+is checkable against source.
 
 Two kinds of difference run through it. First, **capabilities otter has that rustler's
 current public surface does not** — things you cannot do in a rustler NIF at all.

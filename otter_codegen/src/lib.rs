@@ -26,7 +26,7 @@ mod resource_impl_macro;
 /// - `name = "erlang_name"` — export under a different Erlang name than the Rust
 ///   function name.
 ///
-/// ```ignore
+/// ```text
 /// #[otter::nif]
 /// fn add(env: CallEnv<'_>, a: Integer<'_>, b: Integer<'_>) -> Integer<'_> {
 ///     Integer::from_i64(env, a.to_i64(env).unwrap() + b.to_i64(env).unwrap())
@@ -52,7 +52,7 @@ pub fn nif(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// # Syntax
 ///
-/// ```ignore
+/// ```text
 /// otter::init!(
 ///     "my_module",            // the Erlang module name (required, first)
 ///     [add, subtract],        // the NIF table — functions marked #[otter::nif]
@@ -114,7 +114,7 @@ pub fn resource_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// item (fn, method, struct, enum, type, const, static, mod, use), including
 /// items written with no visibility at all.
 ///
-/// ```ignore
+/// ```text
 /// #[raw] pub(crate) fn internal() {}   // pub under `raw`, else pub(crate)
 /// #[raw] use crate::Thing;             // pub use under `raw`, else private
 /// ```
