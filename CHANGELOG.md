@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — 2026-06-21
+## 0.3.0 — 2026-06-22
 
 Branded env/term spine, native codecs, and the enif-ffi extraction. Supersedes
 parts of the hot-upgrade entry further down (notably: the runtime `EnvKind` enum

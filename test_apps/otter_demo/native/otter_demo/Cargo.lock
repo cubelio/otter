@@ -53,7 +53,7 @@ dependencies = [
 
 [[package]]
 name = "otter-nif"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "enif-ffi",
  "libc",
@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "otter-nif-macros"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "quote",

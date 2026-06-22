@@ -1,6 +1,6 @@
 [package]
 name = "otter-nif"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.82"
 authors = ["Lynn Gabbay <lynn@cubelio.com>"]
@@ -24,7 +24,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 name = "otter"
 
 [dependencies]
-otter-nif-macros = { path = "../otter_codegen", version = "0.2.0" }
+otter-nif-macros = { path = "../otter_codegen", version = "0.3.0" }
 enif-ffi = { version = "0.2.0", features = ["nif_2_17"] }
 num-bigint = { version = "0.4", optional = true }
 
