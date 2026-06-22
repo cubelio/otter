@@ -1,4 +1,12 @@
 //! Environment operation verbs not owned by a single term type.
+//!
+//! Two kinds of verb live here. The free functions [`serialize`]/[`deserialize`]
+//! (term ↔ external term format) and [`port_command`] act on *any* term, so they
+//! are functions taking an env rather than methods on one type. The rest are
+//! inherent methods on the env *kind* that has the context for them: the
+//! [`CallEnv`] verbs ([`cpu_time`](CallEnv::cpu_time),
+//! [`schedule_nif`](CallEnv::schedule_nif)) need a live NIF call, and the
+//! [`InitEnv`] `set_option_*` verbs are only valid from `load`/`upgrade`.
 
 use std::ffi::{c_int, c_void, CStr};
 

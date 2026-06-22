@@ -1,3 +1,7 @@
+//! [`List`] — Erlang lists as cons cells: decomposition via [`Node`],
+//! head [iteration](ListIterator), proper/improper handling, and conversions to
+//! and from Rust strings.
+
 use core::marker::PhantomData;
 use std::ffi::{c_char, c_uint};
 

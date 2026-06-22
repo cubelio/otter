@@ -1,3 +1,7 @@
+//! [`Atom`] — Erlang atoms, immediates indexing the BEAM's global atom table —
+//! together with [`AtomError`] and [`StaticAtom`], the load-time pre-interned
+//! form retrieved by [`atom!`](crate::atom).
+
 use std::ffi::{c_char, c_uint};
 use std::sync::OnceLock;
 

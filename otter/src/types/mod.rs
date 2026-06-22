@@ -18,6 +18,7 @@ pub use enif_ffi::{Hash, TermType, UniqueInteger};
 // impls are tied to this crate's `BigInt`, so a semver-incompatible copy would
 // not satisfy them. Only the type is exposed, not the whole `num_bigint` crate.
 #[cfg(feature = "bigint")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bigint")))]
 pub use num_bigint::BigInt;
 
 
@@ -28,13 +29,30 @@ mod sealed {
     pub trait Sealed {}
 }
 
+/// The brand marker carried by every env and term: a zero-sized type that is
+/// *invariant* over the lifetime `'id`. Invariance is what makes a brand
+/// generative — two brands minted by different `for<'id>` entry points can never
+/// be unified, so a term cannot leak from the env that produced it.
 pub type Invariant<'id> = PhantomData<*mut &'id ()>;
 
 // --- Env ---
 
 pub(crate) type RawEnv = *mut enif_ffi::Env;
 
+/// A handle to a BEAM environment, tagged with the generative brand `'id`.
+///
+/// `Env` is the central lifetime-safety mechanism. It is a sealed, `Copy` trait
+/// implemented by each env *kind* ([`CallEnv`], [`InitEnv`], [`CallbackEnv`],
+/// [`DeinitEnv`], [`OwnedEnv`], and the kind-erased [`AnyEnv`]). The brand `'id`
+/// is minted fresh and non-escaping for each entry point, so terms branded by
+/// one env are rejected at compile time when used with another — see the
+/// [crate-level overview](crate#the-mental-model-branded-envs-and-lazy-terms).
+///
+/// The methods here are the *generic verbs* valid on any env kind. Context-
+/// specific verbs live inherent on the kind that carries the context
+/// ([`CallEnv::raise`], [`InitEnv::set_option_delay_halt`], …).
 pub trait Env<'id>: Copy + sealed::Sealed {
+    /// The raw `*mut enif_ffi::Env` pointer this handle wraps.
     fn raw_env(&self) -> RawEnv;
 
     /// The kind-erased handle terms are built against. Every env kind downcasts
@@ -351,7 +369,19 @@ pub(crate) type RawTerm = enif_ffi::Term;
 /// BEAM raises the pending exception on return.
 pub(crate) const THE_NON_VALUE: RawTerm = 0;
 
+/// A BEAM term branded to the env `'id` that produced it.
+///
+/// `Term` is the universal term-input trait: every otter term type implements it,
+/// and functions that accept a term take `impl Term<'id>`, so you pass concrete
+/// types directly (no `.encode()`) and a term of the wrong brand fails to
+/// compile. Sealed — it cannot be implemented outside the crate.
+///
+/// Env-portable types ([`Atom`], [`LocalPid`], [`LocalPort`]) implement
+/// [`FreeTerm`] and so satisfy an `impl Term<'id>` slot for *every* brand;
+/// env-bound types carry only their own brand. The brand constraint is
+/// load-bearing: the BEAM treats a cross-env term as undefined behavior.
 pub trait Term<'id>: sealed::Sealed {
+    /// The raw machine word backing this term.
     fn raw_term(self) -> RawTerm;
 
     /// Copy this term into another environment (`enif_make_copy`), producing a
@@ -367,10 +397,21 @@ pub trait Term<'id>: sealed::Sealed {
     }
 }
 
+/// Marker for env-portable terms: those valid in *any* env, hence branded for
+/// every `'id` at once. Implemented by [`Atom`], [`LocalPid`], and [`LocalPort`]
+/// — tagged immediates and locality-validated handles with no heap data to
+/// outlive an env. A `FreeTerm` satisfies an `impl Term<'id>` argument for any
+/// brand.
 pub trait FreeTerm: for<'id> Term<'id> {}
 
-// repr(transparent) over RawTerm (the brand marker is a ZST): lets a
-// `&[RawTerm]` be viewed in place as `&[AnyTerm<'id>]` — see `TupleView`.
+/// The bare term word, carrying only the brand `'id` — the env is *not* stored.
+///
+/// The fastest term representation: no `enif_term_type` call has been made and no
+/// data has been read off the BEAM heap. Resolve it to a known type with
+/// `resolve(env)` (yielding a [`TypedTerm`]), or decode it directly.
+/// `#[repr(transparent)]` over the raw word (the brand is a ZST), so a
+/// `&[RawTerm]` can be viewed in place as `&[AnyTerm<'id>]` (used by
+/// [`TupleView`]).
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct AnyTerm<'id> {
@@ -413,6 +454,16 @@ pub struct OwnedEnvTerm {
     term: RawTerm,
 }
 
+/// A reusable, process-independent environment for building messages outside a
+/// NIF call (e.g. on a spawned OS thread).
+///
+/// Wraps an `enif_alloc_env` heap. Build terms inside [`run`](Self::run) — the
+/// closure's branded [`OwnedEnv`] keeps them from escaping — and
+/// [`export`](OwnedEnv::export) the one you want to a portable [`OwnedEnvTerm`].
+/// Then either copy-send it ([`send_copy`]) or steal-send the whole arena heap in
+/// O(1) ([`send_move`], which leaves the arena dirty until you [`clear`](Self::clear)
+/// it). The arena is reusable: `clear` wipes the heap and bumps the generation
+/// stamp, invalidating every term exported before it.
 pub struct OwnedEnvArena {
     env: RawEnv,
     version: u64,
@@ -426,6 +477,8 @@ impl Default for OwnedEnvArena {
 }
 
 impl OwnedEnvArena {
+    /// Allocate a fresh arena (`enif_alloc_env`). Panics if the VM returns null.
+    /// Also available as [`Default`].
     pub fn new() -> Self {
         let env = unsafe { enif_ffi::alloc_env() };
         assert!(!env.is_null(), "enif_alloc_env returned null");
@@ -441,11 +494,17 @@ impl OwnedEnvArena {
         self.is_dirty = false;
     }
 
+    /// Copy a term from any env into this arena (`enif_make_copy`), returning a
+    /// portable [`OwnedEnvTerm`]. The standalone counterpart to
+    /// [`OwnedEnv::export`] when you are not inside [`run`](Self::run).
     pub fn copy_in<'a>(&mut self, term: impl Term<'a>) -> OwnedEnvTerm {
         assert!(!self.is_dirty);
         self.wrap_term(unsafe { enif_ffi::make_copy(self.env, term.raw_term()) })
     }
 
+    /// Copy a stored [`OwnedEnvTerm`] out into `env` (`enif_make_copy`),
+    /// re-branding it to `env`'s `'id`. Panics if `oterm` does not belong to this
+    /// arena-generation.
     pub fn copy_out<'a>(&self, oterm: OwnedEnvTerm, env: impl Env<'a>) -> AnyTerm<'a> {
         assert!(!self.is_dirty);
         let remote_term = unsafe { enif_ffi::make_copy(env.raw_env(), self.unwrap_term(oterm)) };
@@ -468,6 +527,10 @@ impl OwnedEnvArena {
         oterm.term
     }
 
+    /// Run `f` with a freshly branded [`OwnedEnv`] over this arena. Build terms
+    /// inside the closure and [`export`](OwnedEnv::export) any you need to keep;
+    /// the brand prevents a live term from escaping in `R`. Panics if the arena
+    /// is dirty (steal-sent but not yet [`clear`](Self::clear)ed).
     pub fn run<R>(&mut self, f: impl for<'id> FnOnce(OwnedEnv<'_, 'id>) -> R) -> R {
         assert!(!self.is_dirty);
         f(OwnedEnv { owner: self, _id: PhantomData })
@@ -492,10 +555,16 @@ pub struct OwnedEnv<'a, 'id> {
 }
 
 impl<'a, 'id> OwnedEnv<'a, 'id> {
+    /// Save a term built in this env to a portable [`OwnedEnvTerm`] that can
+    /// outlive the [`run`](OwnedEnvArena::run) closure (e.g. to steal-send later).
+    /// The term must already live in this arena's heap.
     pub fn export(self, term: impl Term<'id>) -> OwnedEnvTerm {
         self.owner.wrap_term(term.raw_term())
     }
 
+    /// Recover a branded [`AnyTerm`] from an [`OwnedEnvTerm`] previously
+    /// [`export`](Self::export)ed from this same arena-generation. Panics if it
+    /// belongs to a different arena or a pre-[`clear`](OwnedEnvArena::clear) state.
     pub fn import(self, oterm: OwnedEnvTerm) -> AnyTerm<'id> {
         AnyTerm { raw_term: self.owner.unwrap_term(oterm), _id: PhantomData }
     }

@@ -2,6 +2,8 @@
 
 use std::ffi::c_int;
 
+/// BEAM system information, filled by [`system_info`] (`ErlNifSysInfo`).
+/// Re-exported from `enif_ffi`.
 pub use enif_ffi::SysInfo;
 
 /// The type of thread the current code is running on.
@@ -32,9 +34,10 @@ pub fn thread_type() -> ThreadType {
     }
 }
 
-/// Fill a `SysInfo` struct with BEAM system information.
+/// Fill a [`SysInfo`] struct with BEAM system information (`enif_system_info`).
 ///
-/// Wraps `enif_system_info`.
+/// Pass a `&mut SysInfo` to be populated; otter forwards `size_of::<SysInfo>()`
+/// as the struct-size argument the C API requires for version negotiation.
 pub fn system_info(info: &mut SysInfo) {
     unsafe { enif_ffi::system_info(info, std::mem::size_of::<SysInfo>()) };
 }

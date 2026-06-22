@@ -13,6 +13,10 @@ use std::hash::{BuildHasher, Hash};
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::types::{AnyTerm, Env, Map, RawTerm, Term};
 
+/// Builds an Erlang map from the encoded keys and values in one
+/// `enif_make_map_from_arrays`, falling back to incremental insertion only if
+/// the encoded keys collide (a non-injective key `Encoder`). Fails if any
+/// key/value fails to encode.
 impl<'id, K: Encoder<'id>, V: Encoder<'id>, S> Encoder<'id> for HashMap<K, V, S> {
     fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
         // Encode keys and values into parallel arrays and build the map in one
@@ -45,6 +49,8 @@ impl<'id, K: Encoder<'id>, V: Encoder<'id>, S> Encoder<'id> for HashMap<K, V, S>
     }
 }
 
+/// Requires an Erlang map, decoding each pair into the `HashMap`. Generic over
+/// the hasher `S`. A key/value's own error propagates.
 impl<'id, K, V, S> Decoder<'id> for HashMap<K, V, S>
 where
     K: Decoder<'id> + Eq + Hash,

@@ -1,3 +1,7 @@
+//! [`Port`] — an Erlang port identifier of not-yet-established locality — and
+//! [`LocalPort`], the node-local immediate. Refine a `Port` to a `LocalPort`
+//! with [`to_local`](Port::to_local).
+
 use core::marker::PhantomData;
 
 use crate::types::sealed::Sealed;

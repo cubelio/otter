@@ -10,6 +10,8 @@ use std::ffi::c_uint;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::types::{AnyTerm, Env, List, RawTerm, Term};
 
+/// Builds a proper Erlang list from the element-wise encodings in one
+/// `enif_make_list_from_array`. Fails if any element fails to encode.
 impl<'id, T: Encoder<'id>> Encoder<'id> for [T] {
     fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
         // Collect the encoded element words directly and build the list in one
@@ -28,12 +30,16 @@ impl<'id, T: Encoder<'id>> Encoder<'id> for [T] {
     }
 }
 
+/// Encodes as a proper list, via the `[T]` impl.
 impl<'id, T: Encoder<'id>> Encoder<'id> for Vec<T> {
     fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
         self.as_slice().encode(env)
     }
 }
 
+/// Requires a *proper* list, decoding each element into the `Vec`. An improper
+/// tail is [`WrongType`](CodecError::WrongType); an element's own error
+/// propagates.
 impl<'id, T: Decoder<'id>> Decoder<'id> for Vec<T> {
     fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
         let list = List::decode(term, env)?;

@@ -1,3 +1,7 @@
+//! [`Tuple`] — fixed-arity Erlang tuples — and [`TupleView`], the resolved form
+//! whose elements can be indexed and iterated. The split keeps a pass-through
+//! tuple from paying for the element fetch.
+
 use core::marker::PhantomData;
 use std::ffi::{c_int, c_uint};
 

@@ -10,18 +10,24 @@
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::types::{AnyTerm, Binary, Env, List};
 
+/// Encodes the UTF-8 bytes as a binary (`enif_make_new_binary`), the modern
+/// convention. Infallible.
 impl<'id> Encoder<'id> for str {
     fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
         Binary::from_bytes(env, self.as_bytes()).encode(env)
     }
 }
 
+/// Encodes as a binary, via [`str`]'s impl. Infallible.
 impl<'id> Encoder<'id> for String {
     fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
         self.as_str().encode(env)
     }
 }
 
+/// Accepts a binary (read as UTF-8) or a charlist (list of codepoints). Invalid
+/// UTF-8 / a non-string list is [`NotUtf8`](CodecError::NotUtf8); a term that is
+/// neither binary nor list is [`WrongType`](CodecError::WrongType).
 impl<'id> Decoder<'id> for String {
     fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
         if let Ok(bin) = Binary::decode(term, env) {

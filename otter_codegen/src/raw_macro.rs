@@ -46,7 +46,11 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
         #(#attrs)*
         #vis #rest
 
+        // The widened copy is the one that shows up in the docs (built with the
+        // `raw` feature on); label it so rustdoc renders the feature pill. The
+        // `doc(cfg)` fires only under `--cfg docsrs`, so it is inert on stable.
         #[cfg(feature = "raw")]
+        #[cfg_attr(docsrs, doc(cfg(feature = "raw")))]
         #(#attrs)*
         pub #rest
     })

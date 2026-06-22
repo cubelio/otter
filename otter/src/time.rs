@@ -3,7 +3,11 @@
 //! Wraps `enif_monotonic_time`, `enif_time_offset`, and
 //! `enif_convert_time_unit`.
 
+/// A BEAM time value, in the [`TimeUnit`] it was produced with. Re-exported from
+/// `enif_ffi`.
 pub use enif_ffi::Time;
+/// The unit a [`Time`] value is expressed in (`ErlNifTimeUnit` — seconds,
+/// milliseconds, microseconds, nanoseconds). Re-exported from `enif_ffi`.
 pub use enif_ffi::TimeUnit;
 
 /// Return the current BEAM monotonic time in the given unit.

@@ -12,12 +12,16 @@ use num_bigint::BigInt;
 use crate::codec::{CodecError, Decoder, Encoder};
 use crate::types::{AnyTerm, Env, Integer};
 
+/// Encodes any magnitude via [`Integer::from_bigint`] (an `i64`/`u64` fast path,
+/// else ETF). Infallible.
 impl<'id> Encoder<'id> for BigInt {
     fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
         Integer::from_bigint(env, self).encode(env)
     }
 }
 
+/// Reads any integer term, however wide, via [`Integer::to_bigint`]. A
+/// non-integer term is [`WrongType`](CodecError::WrongType).
 impl<'id> Decoder<'id> for BigInt {
     fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
         Ok(Integer::decode(term, env)?.to_bigint(env))

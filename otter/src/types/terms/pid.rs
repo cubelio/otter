@@ -1,3 +1,7 @@
+//! [`Pid`] — an Erlang process identifier of not-yet-established locality — and
+//! [`LocalPid`], the node-local immediate every process-acting NIF operation
+//! requires. Refine a `Pid` to a `LocalPid` with [`to_local`](Pid::to_local).
+
 use core::marker::PhantomData;
 
 use crate::types::sealed::Sealed;

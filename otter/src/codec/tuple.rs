@@ -12,6 +12,9 @@ use crate::types::{AnyTerm, Env, Term, Tuple};
 
 macro_rules! tuple_codec {
     ($($T:ident),+) => {
+        /// Builds an Erlang N-tuple from the encoded elements
+        /// (`enif_make_tuple_from_array`, no heap allocation). Fails if any
+        /// element fails to encode.
         impl<'id, $($T: Encoder<'id>),+> Encoder<'id> for ($($T,)+) {
             fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError> {
                 #[allow(non_snake_case)]
@@ -30,6 +33,9 @@ macro_rules! tuple_codec {
             }
         }
 
+        /// Requires an Erlang tuple of exactly N elements
+        /// ([`WrongArity`](CodecError::WrongArity) otherwise), then decodes each
+        /// element in turn; an element's own error propagates.
         impl<'id, $($T: Decoder<'id>),+> Decoder<'id> for ($($T,)+) {
             fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError> {
                 const ARITY: usize = [$(stringify!($T)),+].len();
