@@ -1,8 +1,11 @@
 {application, rebar3_otter, [
-  {description, "rebar3 plugin for building Rust NIF crates"},
-  {vsn, "0.1.0"},
+  {description, "rebar3 plugin for building Rust NIF crates with otter"},
+  {vsn, "0.3.0"},
   {registered, []},
   {applications, [kernel, stdlib]},
   {env, []},
-  {modules, []}
+  {modules, []},
+  {licenses, ["Apache-2.0", "MIT"]},
+  {links, [{"GitHub", "https://github.com/cubelio/otter"}]},
+  {files, ["src", "rebar.config", "README.md", "LICENSE-APACHE", "LICENSE-MIT", "DESIGN.md"]}
 ]}.
