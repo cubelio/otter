@@ -13,13 +13,29 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -on_load(on_load/0).
 
 -export([hello/0, add/2, echo/1, type_of/1, reverse_binary/1, sum_list/1]).
+-export([etf_encode/1, etf_roundtrip/1]).
 -export([test_eq/2, test_ord/2, test_debug/1, test_try_from/1,
          test_binary_traits/0, test_from_str/1, reverse_list/1, list_tail/1]).
 -export([atom_name/1]).
 -export([hm_new/0, hm_put/3, hm_get/2]).
--export([test_map/0, test_tuple/0, double_float/1, test_pid/0, new_ref/0]).
+-export([test_map/0, test_tuple/0, double_float/1, nan_float/0, test_pid/0, new_ref/0]).
 -export([divide/2, dirty_cpu_thread_type/0, send_from_thread/0]).
--export([panicking_resource_new/0]).
+-export([send_to/2, cpu_time/0]).
+-export([panicking_resource_new/0, panic_in_encoder/0]).
+-export([select_resource_new/0, select_register/1, select_stop/1, select_stop_count/1]).
+-export([select_x_register/2]).
+-export([monitor_resource_new/0, monitor_pid/2, monitor_down_count/1]).
+-export([test_time/0, test_consume_timeslice/0]).
+-export([port_send/2]).
+-export([codec_i8/1, codec_u8/1, codec_i64/1, codec_u64/1, codec_usize/1]).
+-export([codec_f64/1, codec_f32/1, encode_inf/0, encode_nan/0]).
+-export([codec_bool/1, negate/1]).
+-export([codec_string/1, shout/1]).
+-export([codec_pair/1, codec_triple/1, swap/1]).
+-export([codec_int_list/1, sum_i64/1, codec_str_list/1]).
+-export([codec_map/1, map_sum_values/1]).
+-export([codec_bigint/1, bigint_add/2, bigint_pow2/1]).
+-export([intern_atom/1]).
 
 %%------------------------------------------------------------------------------
 
@@ -65,6 +81,12 @@ type_of(_Term) -> exit(nif_not_loaded).
 
 -spec reverse_binary(binary()) -> binary().
 reverse_binary(_B) -> exit(nif_not_loaded).
+
+-spec etf_encode(term()) -> binary().
+etf_encode(_T) -> exit(nif_not_loaded).
+
+-spec etf_roundtrip(term()) -> term().
+etf_roundtrip(_T) -> exit(nif_not_loaded).
 
 -spec sum_list([integer()]) -> integer().
 sum_list(_L) -> exit(nif_not_loaded).
@@ -123,6 +145,9 @@ test_tuple() -> exit(nif_not_loaded).
 -spec double_float(float()) -> float().
 double_float(_V) -> exit(nif_not_loaded).
 
+-spec nan_float() -> no_return().
+nan_float() -> exit(nif_not_loaded).
+
 -spec test_pid() -> pid().
 test_pid() -> exit(nif_not_loaded).
 
@@ -134,8 +159,8 @@ new_ref() -> exit(nif_not_loaded).
 
 -doc """
 Integer division. Raises `error:division_by_zero` when `B` is `0`. The Rust
-side returns `Result<Integer, Atom>` and the otter macro maps the `Err`
-arm to an `enif_raise_exception` of the encoded atom.
+side returns `Result<Integer, Raised>`; the `Raised` is produced by
+`env.raise(division_by_zero)` and propagated out with `?`.
 """.
 -spec divide(integer(), integer()) -> integer().
 divide(_A, _B) -> exit(nif_not_loaded).
@@ -145,6 +170,12 @@ dirty_cpu_thread_type() -> exit(nif_not_loaded).
 
 -spec send_from_thread() -> ok.
 send_from_thread() -> exit(nif_not_loaded).
+
+-spec send_to(pid(), term()) -> ok.
+send_to(_To, _Msg) -> exit(nif_not_loaded).
+
+-spec cpu_time() -> erlang:timestamp().
+cpu_time() -> exit(nif_not_loaded).
 
 %%------------------------------------------------------------------------------
 %% S1 regression — panicking resource destructor
@@ -156,3 +187,216 @@ test in `otter_demo__nif_test`.
 """.
 -spec panicking_resource_new() -> reference().
 panicking_resource_new() -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% audit-16 regression — panicking return-value encoder
+
+-doc """
+Calls a NIF whose return type's `Encoder::encode` panics. The generated NIF
+wrapper must run return-value encoding inside `catch_unwind` so the panic
+surfaces as a `nif_panicked` error rather than unwinding across the FFI
+boundary — see the audit-16 regression test in `otter_demo__nif_test`.
+""".
+-spec panic_in_encoder() -> no_return().
+panic_in_encoder() -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% audit-01 regression — select stop callback
+
+-doc """
+Returns a resource owning a connected socket pair, for exercising the
+`enif_select` stop path. See the `select_stop` test in
+`otter_demo__nif_test`.
+""".
+-spec select_resource_new() -> reference().
+select_resource_new() -> exit(nif_not_loaded).
+
+-doc "Registers READ interest on the resource's fd. Returns the select flags.".
+-spec select_register(reference()) -> integer().
+select_register(_R) -> exit(nif_not_loaded).
+
+-doc """
+Drives the select-stop path (`ERL_NIF_SELECT_STOP`), invoking the
+resource's `stop` callback. Returns the select flags.
+""".
+-spec select_stop(reference()) -> integer().
+select_stop(_R) -> exit(nif_not_loaded).
+
+-doc "Number of times the resource's `stop` callback has run.".
+-spec select_stop_count(reference()) -> non_neg_integer().
+select_stop_count(_R) -> exit(nif_not_loaded).
+
+-doc """
+Selects READ on the resource's fd with `Msg` as the custom notification,
+then makes the fd readable so the BEAM delivers `Msg` to the caller.
+Returns the select flags.
+""".
+-spec select_x_register(reference(), term()) -> integer().
+select_x_register(_R, _Msg) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Resource monitor — down callback
+
+-doc """
+Returns a resource for exercising `enif_monitor_process`. See the
+`monitor_down` test in `otter_demo__nif_test`.
+""".
+-spec monitor_resource_new() -> reference().
+monitor_resource_new() -> exit(nif_not_loaded).
+
+-doc """
+Monitors `Pid` via the resource. When `Pid` exits, the resource's `down`
+callback runs. Returns `ok` if the monitor was established, `error`
+otherwise.
+""".
+-spec monitor_pid(reference(), pid()) -> ok | error.
+monitor_pid(_R, _Pid) -> exit(nif_not_loaded).
+
+-doc "Number of times the resource's `down` callback has run.".
+-spec monitor_down_count(reference()) -> non_neg_integer().
+monitor_down_count(_R) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Time and scheduling helpers
+
+-doc "Exercises the time module (monotonic_time, time_offset, convert_time_unit).".
+-spec test_time() -> ok.
+test_time() -> exit(nif_not_loaded).
+
+-doc "Drives enif_consume_timeslice to exhaustion. Returns ok if reported used up.".
+-spec test_consume_timeslice() -> ok | error.
+test_consume_timeslice() -> exit(nif_not_loaded).
+
+-doc """
+Sends `Data` to `Port` via `enif_port_command`. The calling process must
+own the port. Returns `ok` if the command was accepted, `error` otherwise.
+""".
+-spec port_send(port(), binary()) -> ok | error.
+port_send(_Port, _Data) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — integers
+%%
+%% Each decodes its argument into a Rust integer type and re-encodes it. An
+%% out-of-range argument fails to decode and raises badarg.
+
+-spec codec_i8(integer()) -> integer().
+codec_i8(_X) -> exit(nif_not_loaded).
+
+-spec codec_u8(integer()) -> integer().
+codec_u8(_X) -> exit(nif_not_loaded).
+
+-spec codec_i64(integer()) -> integer().
+codec_i64(_X) -> exit(nif_not_loaded).
+
+-spec codec_u64(integer()) -> integer().
+codec_u64(_X) -> exit(nif_not_loaded).
+
+-spec codec_usize(integer()) -> integer().
+codec_usize(_X) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — floats
+%%
+%% encode_inf/encode_nan return a non-finite f64 whose encoding fails, raising
+%% badret (the encode-side mirror of badarg).
+
+-spec codec_f64(float()) -> float().
+codec_f64(_X) -> exit(nif_not_loaded).
+
+-spec codec_f32(float()) -> float().
+codec_f32(_X) -> exit(nif_not_loaded).
+
+-spec encode_inf() -> no_return().
+encode_inf() -> exit(nif_not_loaded).
+
+-spec encode_nan() -> no_return().
+encode_nan() -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — bool <-> true/false
+
+-spec codec_bool(boolean()) -> boolean().
+codec_bool(_X) -> exit(nif_not_loaded).
+
+-spec negate(boolean()) -> boolean().
+negate(_X) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — String
+%%
+%% Decodes a binary or charlist into a Rust String and re-encodes it as a binary.
+
+-spec codec_string(binary() | string()) -> binary().
+codec_string(_S) -> exit(nif_not_loaded).
+
+-spec shout(binary() | string()) -> binary().
+shout(_S) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — tuples
+%%
+%% Fixed-arity, element-wise. A tuple of the wrong arity, a non-tuple, or an
+%% element that fails to decode all raise badarg.
+
+-spec codec_pair({integer(), boolean()}) -> {integer(), boolean()}.
+codec_pair(_T) -> exit(nif_not_loaded).
+
+-spec codec_triple({integer(), binary() | string(), float()}) ->
+        {integer(), binary(), float()}.
+codec_triple(_T) -> exit(nif_not_loaded).
+
+-spec swap({integer(), integer()}) -> {integer(), integer()}.
+swap(_T) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — Vec / lists
+%%
+%% Requires a proper list; an improper tail, a non-list, or an element that
+%% fails to decode raises badarg.
+
+-spec codec_int_list([integer()]) -> [integer()].
+codec_int_list(_V) -> exit(nif_not_loaded).
+
+-spec sum_i64([integer()]) -> integer().
+sum_i64(_V) -> exit(nif_not_loaded).
+
+-spec codec_str_list([binary() | string()]) -> [binary()].
+codec_str_list(_V) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — HashMap
+%%
+%% Decodes an Erlang map into HashMap<String, i64>. A key or value that fails to
+%% decode, or a non-map term, raises badarg.
+
+-spec codec_map(#{binary() | string() => integer()}) -> #{binary() => integer()}.
+codec_map(_M) -> exit(nif_not_loaded).
+
+-spec map_sum_values(#{binary() | string() => integer()}) -> integer().
+map_sum_values(_M) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Native codec round-trips — bignums (num-bigint BigInt)
+%%
+%% Reads/writes arbitrary-precision integers, including bignums beyond i64/u64
+%% that the native integer codecs reject. A non-integer term raises badarg.
+
+-spec codec_bigint(integer()) -> integer().
+codec_bigint(_X) -> exit(nif_not_loaded).
+
+-spec bigint_add(integer(), integer()) -> integer().
+bigint_add(_A, _B) -> exit(nif_not_loaded).
+
+-spec bigint_pow2(non_neg_integer()) -> integer().
+bigint_pow2(_N) -> exit(nif_not_loaded).
+
+%%------------------------------------------------------------------------------
+%% Atom interning with a named, recoverable error
+%%
+%% Interns `Name` and returns `{ok, Atom}`, or `{error, name_too_long}` when the
+%% name exceeds 255 characters (AtomError::NameTooLong). The error is a plain
+%% Rust value mapped to an error atom, not a raised exception.
+
+-spec intern_atom(binary() | string()) -> {ok, atom()} | {error, name_too_long}.
+intern_atom(_Name) -> exit(nif_not_loaded).

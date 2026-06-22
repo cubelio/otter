@@ -2,9 +2,15 @@
 -moduledoc """
 Validation and normalization of the `otter_crates` rebar3 config key.
 
-Both the compile and clean providers go through `validate/1` so they
-agree on the schema. Errors are tagged tuples that `format_error/1`
-renders into human-readable strings.
+`otter_crates` is read per application: declare it in each app's own
+`rebar.config`, and `path` is interpreted relative to that app's
+directory. The compiled artifact is installed into the declaring app's
+`priv/native/`, so umbrella projects place each NIF where
+`code:priv_dir/1` for that app will find it.
+
+Both the compile and clean providers go through `validate/1` (passing the
+app's raw `otter_crates` value) so they agree on the schema. Errors are
+tagged tuples that `format_error/1` renders into human-readable strings.
 
 Schema:
 
@@ -12,7 +18,7 @@ Schema:
 {otter_crates, [
     #{
         name     := atom() | string() | binary(),  % required
-        path     := string() | binary(),           % required
+        path     := string() | binary(),           % required, app-relative
         mode     => release | debug,               % default release
         features => [atom() | string() | binary()],% default []
         target   => atom() | string() | binary()   % default undefined
@@ -42,9 +48,8 @@ Unknown map keys are rejected.
 %%%=============================================================================
 %%% Public
 
--spec validate(rebar_state:t()) -> {ok, [crate()]} | {error, term()}.
-validate(State) ->
-  Raw = rebar_state:get(State, otter_crates, []),
+-spec validate(term()) -> {ok, [crate()]} | {error, term()}.
+validate(Raw) ->
   case is_list(Raw) of
     false ->
       {error, {otter_crates_not_a_list, Raw}};

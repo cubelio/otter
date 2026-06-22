@@ -34,24 +34,11 @@ init(State) ->
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, {module(), term()}}.
 do(State) ->
-  case rebar3_otter__config:validate(State) of
-    {ok, Crates} ->
-      BaseDir = rebar_state:dir(State),
-      case compile_crates(Crates, BaseDir, State) of
-        {ok, _} = Ok ->
-          Ok;
-        {error, {?MODULE, Reason}} ->
-          %% Same pre-hook quirk as the config-error branch below.
-          rebar_api:abort("~s", [format_error(Reason)])
-      end;
-    {error, Reason} ->
-      %% rebar3's pre-hook machinery rewrites any {error, _} from our do/1
-      %% into a misleading "command not found in namespace" message
-      %% (rebar_hooks.erl:70-73), so config errors have to halt the build
-      %% directly with the formatted message instead of riding the
-      %% format_error/1 path that top-level providers use.
-      rebar_api:abort("~s", [rebar3_otter__config:format_error(Reason)])
-  end.
+  %% Each project app declares its own otter_crates and owns the priv/native/
+  %% directory the artifact is installed into, so the NIF lands where
+  %% code:priv_dir/1 for that app resolves (correct in umbrella layouts too).
+  Apps = rebar_state:project_apps(State),
+  compile_apps(Apps, State).
 
 -spec format_error(term()) -> string() | iolist().
 format_error(cargo_not_found) ->
@@ -70,21 +57,48 @@ format_error(Other) ->
 %%%=============================================================================
 %%% Private
 
+-spec compile_apps([rebar_app_info:t()], rebar_state:t()) ->
+  {ok, rebar_state:t()}.
+compile_apps([], State) ->
+  {ok, State};
+compile_apps([App | Rest], State) ->
+  Raw = rebar_app_info:get(App, otter_crates, []),
+  case rebar3_otter__config:validate(Raw) of
+    {ok, []} ->
+      compile_apps(Rest, State);
+    {ok, Crates} ->
+      AppDir = rebar_app_info:dir(App),
+      case compile_crates(Crates, AppDir, State) of
+        {ok, State1} ->
+          compile_apps(Rest, State1);
+        {error, {?MODULE, Reason}} ->
+          %% Same pre-hook quirk as the config-error branch below.
+          rebar_api:abort("~s", [format_error(Reason)])
+      end;
+    {error, Reason} ->
+      %% rebar3's pre-hook machinery rewrites any {error, _} from our do/1
+      %% into a misleading "command not found in namespace" message
+      %% (rebar_hooks.erl:70-73), so config errors have to halt the build
+      %% directly with the formatted message instead of riding the
+      %% format_error/1 path that top-level providers use.
+      rebar_api:abort("~s", [rebar3_otter__config:format_error(Reason)])
+  end.
+
 -spec compile_crates([rebar3_otter__config:crate()], string(), rebar_state:t()) ->
   {ok, rebar_state:t()} | {error, {module(), term()}}.
-compile_crates([], _BaseDir, State) ->
+compile_crates([], _AppDir, State) ->
   {ok, State};
-compile_crates([Crate | Rest], BaseDir, State) ->
-  case compile_crate(Crate, BaseDir) of
-    ok              -> compile_crates(Rest, BaseDir, State);
+compile_crates([Crate | Rest], AppDir, State) ->
+  case compile_crate(Crate, AppDir) of
+    ok              -> compile_crates(Rest, AppDir, State);
     {error, Reason} -> {error, {?MODULE, Reason}}
   end.
 
 -spec compile_crate(rebar3_otter__config:crate(), string()) -> ok | {error, term()}.
 compile_crate(#{name := Name, path := Path, mode := Mode,
-                features := Features, target := Target}, BaseDir) ->
-  CratePath = filename:join(BaseDir, Path),
-  OutDir = filename:join([BaseDir, "priv", "native"]),
+                features := Features, target := Target}, AppDir) ->
+  CratePath = filename:join(AppDir, Path),
+  OutDir = filename:join([AppDir, "priv", "native"]),
   OutFile = filename:join(OutDir, rebar3_otter__cargo:nif_filename(Name)),
   rebar_api:info("Compiling Rust crate ~s", [Name]),
   case rebar3_otter__cargo:build(CratePath, Name, Mode, Features, Target) of

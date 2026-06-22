@@ -3,74 +3,70 @@
 //! Wraps `enif_select` and `enif_select_x` for asynchronous I/O on file
 //! descriptors (Unix) or event handles (Windows).
 
-use crate::env::Env;
 use crate::resource::{Resource, ResourceArc};
-use crate::sys::{NifEvent, NifPid, NifSelectFlags};
-use crate::term::Term;
-use crate::types::Pid;
+use crate::types::{Env, LocalPid, Term};
 
-pub use crate::sys::{
-    NIF_SELECT_STOP_CALLED, NIF_SELECT_STOP_SCHEDULED, NIF_SELECT_INVALID_EVENT,
-    NIF_SELECT_FAILED, NIF_SELECT_READ_CANCELLED, NIF_SELECT_WRITE_CANCELLED,
-    NIF_SELECT_ERROR_CANCELLED, NIF_SELECT_NOTSUP,
+/// The select event handle and input flags, plus the result-bitmask constants
+/// that [`select`]/[`select_x`] return. Re-exported from `enif_ffi` so the
+/// select API is fully usable without the `raw` feature. (A typed result wrapper
+/// replacing the raw `i32` + `SELECT_*` decode is tracked as enhance-12.)
+pub use enif_ffi::{
+    Event, SELECT_ERROR_CANCELLED, SELECT_FAILED, SELECT_INVALID_EVENT, SELECT_NOTSUP,
+    SELECT_READ_CANCELLED, SELECT_STOP_CALLED, SELECT_STOP_SCHEDULED, SELECT_WRITE_CANCELLED,
+    SelectFlags,
 };
 
-/// Register interest in I/O events on an OS-level event handle.
+// `select`/`select_x` return a raw `i32` bitmask of result flags. otter does not
+// yet wrap that in a typed result, so callers decode it against the raw
+// `enif_ffi::SELECT_*` constants. A typed surface is tracked as enhance-12.
+
+/// Register interest in I/O events on an OS-level event handle (`enif_select`).
 ///
-/// When the event becomes ready, the BEAM sends a message to `pid`.
-/// `obj` is the resource object associated with this event (its `stop`
-/// callback will be invoked on cleanup). `ref_term` is included in the
-/// notification message.
-///
-/// Returns a bitmask of `SELECT_*` result flags.
-///
-/// Wraps `enif_select`.
-pub fn select<T: Resource>(
-    env: Env<'_>,
-    event: NifEvent,
-    flags: NifSelectFlags,
+/// When the event becomes ready, the BEAM sends a message to `pid`. `obj` is the
+/// resource associated with this event (its `stop` callback runs on cleanup).
+/// `ref_term` is included in the notification message. Returns a raw `i32`
+/// bitmask of `enif_ffi::SELECT_*` result flags.
+pub fn select<'id, T: Resource>(
+    env: impl Env<'id>,
+    event: enif_ffi::Event,
+    flags: enif_ffi::SelectFlags,
     obj: &ResourceArc<T>,
-    pid: &Pid,
-    ref_term: Term<'_>,
+    pid: &LocalPid,
+    ref_term: impl Term<'id>,
 ) -> i32 {
-    let nif_pid = NifPid { pid: pid.term };
     unsafe {
-        crate::wrapper::select::select(
-            env.as_ptr(),
+        enif_ffi::select(
+            env.raw_env(),
             event,
             flags,
             obj.raw_ptr(),
-            &nif_pid,
-            ref_term.as_raw(),
+            &pid.pid,
+            ref_term.raw_term(),
         )
     }
 }
 
-/// Register interest in I/O events with a custom message.
-///
-/// Like [`select`] but sends `msg` (built in `msg_env`) instead of
-/// the standard `{select, ...}` tuple.
-///
-/// Wraps `enif_select_x`.
-pub fn select_x<T: Resource>(
-    env: Env<'_>,
-    event: NifEvent,
-    flags: NifSelectFlags,
+/// Like [`select`] but sends `msg` (built in `msg_env`) instead of the standard
+/// `{select, ...}` tuple (`enif_select_x`). `msg_env` is the process-independent
+/// env `msg` was built in, or `None` to copy from the caller env.
+pub fn select_x<'id, 'm, T: Resource, M: Env<'m>>(
+    env: impl Env<'id>,
+    event: enif_ffi::Event,
+    flags: enif_ffi::SelectFlags,
     obj: &ResourceArc<T>,
-    pid: &Pid,
-    msg: Term<'_>,
-    msg_env: Option<Env<'_>>,
+    pid: &LocalPid,
+    msg: impl Term<'m>,
+    msg_env: Option<M>,
 ) -> i32 {
-    let nif_pid = NifPid { pid: pid.term };
-    let msg_env_ptr = msg_env.map(|e| e.as_ptr()).unwrap_or(std::ptr::null_mut());
+    let msg_env_ptr = msg_env.map(|e| e.raw_env()).unwrap_or(std::ptr::null_mut());
     unsafe {
-        crate::wrapper::select::select_x(
-            env.as_ptr(),
+        enif_ffi::select_x(
+            env.raw_env(),
             event,
             flags,
             obj.raw_ptr(),
-            &nif_pid,
-            msg.as_raw(),
+            &pid.pid,
+            msg.raw_term(),
             msg_env_ptr,
         )
     }

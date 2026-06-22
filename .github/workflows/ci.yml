@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The heart of the suite: the full `cargo test` surface across every feature
+  # combination. The default row also runs `cargo test --workspace` (covering
+  # otter_codegen and the non-raw trybuild UI fixtures); the `raw` rows exercise
+  # the raw-gated codegen, including the raw trybuild set.
+  #
+  # NOTE: the trybuild `.stderr` fixtures (otter/tests/ui) are sensitive to the
+  # exact rustc diagnostic wording, so a new stable compiler can require
+  # re-blessing them (`TRYBUILD=overwrite cargo test -p otter-nif --test codegen_ui`
+  # and the same with `--features raw`). A red codegen_ui job after a toolchain
+  # bump usually means exactly that.
+  test:
+    name: test (${{ matrix.features || 'default' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ["", "bigint", "nif_2_18", "raw", "raw,bigint,nif_2_18"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test (otter)
+        run: |
+          FEAT=""
+          [ -n "${{ matrix.features }}" ] && FEAT="--features ${{ matrix.features }}"
+          cargo test -p otter-nif $FEAT
+      - name: cargo test --workspace (default row only)
+        if: matrix.features == ''
+        run: cargo test --workspace
+
+  clippy:
+    name: clippy (${{ matrix.features || 'default' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ["", "bigint", "nif_2_18", "raw", "raw,bigint,nif_2_18"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy
+        run: |
+          FEAT=""
+          [ -n "${{ matrix.features }}" ] && FEAT="--features ${{ matrix.features }}"
+          cargo clippy --all-targets $FEAT -- -D warnings
+
+  docs:
+    name: doc links
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --no-deps --features raw,bigint,nif_2_18
+
+  msrv:
+    name: msrv (1.82)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # otter's declared MSRV is 1.82 (its own `&raw mut` use); otter_codegen
+      # declares 1.56 for its own code, but its syn dependency floors the
+      # *buildable* graph higher, so the meaningful check is the whole
+      # workspace on otter's floor — which dominates everything below it.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.82"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --all-features
+
+  cross-32bit:
+    name: cross (32-bit layout)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      # The 64-bit runners never exercise the pointer-width-dependent layouts
+      # otter inherits from enif-ffi (most importantly Monitor, sized
+      # `sizeof(void*) * 4`). Compile-only — there is no 32-bit BEAM to load
+      # against — but it catches a layout regression at the type level.
+      - run: cargo check --target i686-unknown-linux-gnu
+      - run: cargo check --target i686-unknown-linux-gnu --features raw,bigint,nif_2_18
+
+  # Real behavioral coverage: build the demo NIF *through the rebar3 plugin* and
+  # run its EUnit suite under a live BEAM, plus the plugin's own EUnit (the
+  # `otter new` scaffold integration test and the cdylib-path unit tests).
+  #
+  # Floor is OTP 27: the plugin and demo use triple-quoted doc strings, an
+  # OTP 27 feature (`minimum_otp_vsn` in rebar3_otter/rebar.config). 29 proves
+  # forward-compat on a newer (NIF 2.18) BEAM.
+  beam:
+    name: beam (OTP ${{ matrix.otp }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        otp: ["27", "29"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          rebar3-version: "3.27.0"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: test_apps/otter_demo/native/otter_demo
+      - name: otter_demo EUnit (build via plugin + load under BEAM)
+        run: cd test_apps/otter_demo && rebar3 eunit
+      - name: rebar3_otter plugin EUnit (scaffold + cdylib-path logic)
+        run: cd rebar3_otter && rebar3 eunit
+        env:
+          OTTER_PATH: ${{ github.workspace }}/otter

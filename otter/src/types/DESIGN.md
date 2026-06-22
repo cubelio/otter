@@ -1,65 +1,83 @@
 # Types
 
 Every Erlang term that crosses the NIF boundary is represented by one of the
-types in this directory. The two-level resolution model (`RawTerm` → `Term`)
-lets callers choose how much work to pay for: zero cost with `RawTerm`, one
-`enif_term_type` call with `Term`, or full decoding with `Decoder`.
+types in this directory. The resolution model (`AnyTerm` → `TypedTerm` →
+concrete) lets callers choose how much work to pay for: zero cost with
+`AnyTerm`, one `enif_term_type` call with `TypedTerm`, or full decoding with
+`Decoder`. Every term carries only its env's **brand** `'id` — never the env
+itself — so accessors take an `env: impl Env<'id>` of that brand explicitly.
 
 
-## Term Resolution
+## TypedTerm Resolution
 
 ```
-NifTerm (u64 machine word)
+RawTerm (machine word)
   │
-  ├─ RawTerm<'a>     zero cost, no type check
+  ├─ AnyTerm<'id>     zero cost, no type check (repr(transparent) over RawTerm)
   │    │
-  │    └─ .resolve()  one enif_term_type call
+  │    └─ .resolve(env)  one enif_term_type call → Option (None = unknown type)
   │         │
-  │         └─ Term<'a>   typed enum (Atom | Binary | ... | Tuple)
+  │         └─ TypedTerm<'id>   typed enum (Atom | Bitstring | ... | Tuple)
   │              │
-  │              └─ T::decode()   full extraction (e.g. Integer → i64)
+  │              └─ T::decode(term, env)   full extraction (e.g. Integer → i64)
 ```
 
-The `Bitstring` type tag from `enif_term_type` covers both binaries and
-non-byte-aligned bitstrings. `resolve()` calls `enif_is_binary` to
-distinguish the two, producing either `Term::Binary` or `Term::Bitstring`.
+`Term<'id>` is the *trait* every term implements (`raw_term`, `copy_to`);
+`AnyTerm<'id>` is the bare-word handle. `TypedTerm` mirrors `ErlNifTermType`
+exactly — one variant per tag. The `Bitstring` variant covers both byte-aligned
+binaries and sub-byte bitstrings (BEAM treats every binary as a bitstring); call
+`Bitstring::is_binary` or `Bitstring::to_binary` to refine. `resolve(env)` is
+uniformly one NIF call regardless of variant.
 
 
-## Lifetime Model
+## Brand Model
 
-Types that reference data on the BEAM heap carry a lifetime `'a` tied to the
-`Env<'a>` that owns that heap. This prevents terms from escaping the NIF call
-that created them.
+Types that reference data on the BEAM heap carry a generative **brand** `'id`,
+tied to the `Env<'id>` that owns that heap, via `Invariant<'id> =
+PhantomData<*mut &'id ()>`. The brand is minted per-call through a `for<'id>`
+closure and cannot escape it, so a term cannot outlive — or be used outside —
+the NIF call that created it. The term stores only the brand marker (a ZST), not
+the env; every accessor takes an `env: impl Env<'id>` of the matching brand.
 
-Three types have no lifetime: `Atom`, `Pid`, `Port`. These are global or
-carry their identity in the term word itself. Their `Encoder` impls return the
-term directly rather than copying.
+Three types have **no brand**: `Atom`, `LocalPid`, `LocalPort`. These are global
+or carry their identity in the term word itself (an internal pid/port is a
+tagged immediate), so they implement `FreeTerm: for<'id> Term<'id>` and are valid
+in any env. `Pid<'id>`/`Port<'id>` — pids/ports of unestablished locality — *do*
+carry `'id`, because an external one is heap-boxed (see the Pid section).
 
-All other types' `Encoder` impls call `enif_make_copy` to copy the term into
-the destination environment.
+`Encoder` for a same-brand term wraps its word for free (no copy); the general
+cross-env copy is `Term::copy_to(env)` (`enif_make_copy`).
 
-All concrete types implement `From<T> for Term<'a>`, enabling `let t: Term = atom.into()`.
-`RawTerm` converts to `Term` via `From` (calls `resolve()`).
+All concrete types implement `From<T> for TypedTerm<'id>`, enabling `let t:
+TypedTerm = atom.into()`. Resolution is `AnyTerm::resolve(self, env) ->
+Option<TypedTerm<'id>>`; `TypedTerm` is itself a `Decoder` (decode =
+`resolve().ok_or(UnknownTermType)`). There is no `TryFrom<Term>`.
 
 
 ## Codec Traits
 
 ```rust
-pub trait Encoder {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a>;
+pub trait Encoder<'id> {
+    fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError>;
 }
 
-pub trait Decoder<'a>: Sized {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
+pub trait Decoder<'id>: Sized {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError>;
 }
 ```
 
-`CodecError` has three variants: `WrongType`, `IntegerOverflow`,
-`InvalidCodepoint`. The `#[otter::nif]` macro converts any `CodecError` into
-a `badarg` exception automatically.
+Both directions are fallible. `CodecError` has seven variants: `WrongType`,
+`IntegerOverflow`, `NotFinite`, `FloatRange`, `NotUtf8`, `WrongArity`,
+`UnknownTermType`. The `#[otter::nif]` macro converts a `Decoder` failure on an
+argument into `badarg`, and an `Encoder` failure on a return into `badret`.
 
-Every type in this directory implements both traits. `Decoder` accepts only
-the matching `Term` variant and rejects everything else with `WrongType`.
+Every type in this directory implements both traits and never fails (encode
+wraps the word; decode checks the type then rewraps). The fallible impls are the
+native-Rust-type conversions in `codec/` (a non-finite float on encode; an
+out-of-range integer, bad UTF-8, or wrong-arity tuple on decode). A
+return-position `impl Encoder for Result<T, Raised<'id>>` is the `?`-propagation
+mechanism — `Ok` encodes the value, `Err` returns the non-value word with the
+exception already pending.
 
 ---
 
@@ -83,21 +101,44 @@ the matching `Term` variant and rejects everything else with `WrongType`.
 ### Otter API
 
 ```rust
-struct Atom { term: NifTerm }  // no lifetime — atoms are global
+struct Atom { term: RawTerm }  // no brand — atoms are global (FreeTerm)
 ```
 
 | Method | Does | Calls |
 |---|---|---|
-| `new(env, name) → Option<Atom>` | Create/intern atom from UTF-8 `&str` | `enif_make_new_atom_len` |
+| `intern(env, name) → Result<Atom, AtomError>` | Create/intern atom from UTF-8 `&str` | `enif_make_new_atom_len` |
 | `try_existing(env, name) → Option<Atom>` | Look up without creating | `enif_make_existing_atom_len` |
+| `is_atom(env, term) → bool` | Type predicate | `enif_is_atom` |
 | `name(self, env) → String` | Read atom's name | `enif_get_atom_length` + `enif_get_atom` |
+
+**`AtomError`** — a single variant `NameTooLong` (a plain Rust error, never a
+pending BEAM exception; the env is untouched, so the caller can recover).
+
+**`StaticAtom`** — a pre-declared atom, `OnceLock<Atom>` storage (no term-repr
+assumption):
+
+| Method | Does |
+|---|---|
+| `const new(name) → StaticAtom` | Uninitialized handle |
+| `init(&self, env) → Result<(), AtomError>` | Intern at load (from `init!`'s `atoms=[]` it's length-checked at compile time, so infallible there) |
+| `get(&self) → Atom` | Acquire load of the `OnceLock<Atom>`; panics if used before `init` |
+
+> **DoS warning:** the atom table is global, fixed-size, and never shrinks;
+> exhausting it terminates the VM. Never `intern` untrusted input — use
+> `try_existing` and treat `None` as "not recognized, reject", or pre-declare
+> trusted names in `init!`'s `atoms = [...]`.
 
 ### Internals
 
-`new` calls `enif_make_new_atom_len` (NIF 2.17) which returns a success/fail
-int rather than creating atoms unconditionally. Returns `None` if the atom
-table is full. `name` does two calls: first to get the byte length, then to
-read into a buffer.
+`intern` calls `enif_make_new_atom_len` (NIF 2.17), which returns a success/fail
+int rather than creating atoms unconditionally. For a Rust `&str` the only
+reachable failure is an over-length name (> 255 chars), reported as
+`Err(AtomError::NameTooLong)` — a plain Rust error, never a pending exception.
+Bad encoding cannot occur (a `&str` is always valid UTF-8), and atom-table
+exhaustion is not surfaced here: it aborts the VM (`erts_exit` in `index_put`)
+before `intern` could return. `try_existing` stays `Option` because `None` =
+"not interned yet" is an expected, non-error outcome. `name` does two calls:
+first to get the byte length, then to read into a buffer.
 
 ### Not Exposed
 
@@ -128,67 +169,78 @@ read into a buffer.
 ### Otter API
 
 ```rust
-struct Binary<'a> { term: NifTerm, env: Env<'a> }
-struct Bitstring<'a> { term: NifTerm, env: Env<'a> }
+struct Binary<'id> { raw_term: RawTerm, _id: Invariant<'id> }
+struct Bitstring<'id> { raw_term: RawTerm, _id: Invariant<'id> }
 ```
+
+Accessors take `env: impl Env<'id>` of the binary's brand (the term carries only
+the brand).
 
 | Method | Does | Calls |
 |---|---|---|
-| `as_bytes(self) → &'a [u8]` | Zero-copy view of binary data | `enif_inspect_binary` |
-| `len(self) → usize` | Byte count | `enif_inspect_binary` |
-| `is_empty(self) → bool` | Empty check | `enif_inspect_binary` |
-| `try_str(self) → Result<&'a str, Utf8Error>` | Zero-copy UTF-8 view | `enif_inspect_binary` + `std::str::from_utf8` |
-| `sub(self, pos, len) → Binary<'a>` | Zero-copy sub-binary (panics on OOB) | `enif_make_sub_binary` |
-| `from_bytes(env, data) → Binary<'a>` | Allocate and copy bytes onto BEAM heap | `enif_alloc_binary` + `enif_make_binary` |
-| `to_term(self, env, safe) → Option<Term<'a>>` | Deserialize from external binary format | `enif_binary_to_term` |
-| `impl Deref<Target=[u8]>` | Auto-coerce to `&[u8]` | `enif_inspect_binary` |
-| `impl AsRef<[u8]>` | Trait-based byte access | `enif_inspect_binary` |
-| `impl Debug` | `Binary(N bytes)` | `enif_inspect_binary` |
+| `as_bytes(self, env) → &'id [u8]` | Zero-copy view of binary data | `enif_inspect_binary` |
+| `len(self, env) → usize` | Byte count | `enif_inspect_binary` |
+| `is_empty(self, env) → bool` | Empty check | `enif_inspect_binary` |
+| `try_str(self, env) → Result<&'id str, Utf8Error>` | Zero-copy UTF-8 view | `enif_inspect_binary` + `std::str::from_utf8` |
+| `sub(self, env, pos, len) → Binary<'id>` | Zero-copy sub-binary (panics on OOB) | `enif_make_sub_binary` |
+| `from_bytes(env, data) → Binary<'id>` | Allocate and copy bytes onto BEAM heap | `enif_make_new_binary` |
+| `is_binary(env, term) → bool` | Type predicate (byte-aligned) | `enif_is_binary` |
+| `deserialize(self, env, safe) → Option<AnyTerm<'id>>` | Deserialize a term from this binary's ETF bytes | `enif_binary_to_term` |
 
-**BinaryBuilder** — growable buffer mirroring `Vec<u8>`:
+`Bitstring` adds `is_binary(self, env) → bool` and `to_binary(self, env) →
+Option<Binary<'id>>` to refine to the byte-aligned case. (`Binary` implements
+`Debug` and the ordering traits, but **not** `Deref`/`AsRef` — read bytes through
+`as_bytes`.)
+
+**BinaryBuf** — growable owned buffer mirroring `Vec<u8>` (no env, no brand; it
+owns its `enif_alloc_binary` allocation directly, so it is not a term):
 
 ```rust
-struct BinaryBuilder { bin: NifBinary, len: usize, released: bool }
+struct BinaryBuf { bin: enif_ffi::Binary, len: usize, released: bool }
 ```
 
 | Method | Does | Calls |
 |---|---|---|
-| `new() → BinaryBuilder` | Empty builder | `enif_alloc_binary(0)` |
-| `with_capacity(cap) → BinaryBuilder` | Preallocated builder | `enif_alloc_binary(cap)` |
+| `new() → BinaryBuf` | Empty buffer | `enif_alloc_binary(0)` |
+| `with_capacity(cap) → BinaryBuf` | Preallocated buffer | `enif_alloc_binary(cap)` |
 | `push(&mut self, byte)` | Append one byte, grow if needed | `enif_realloc_binary` |
 | `extend_from_slice(&mut self, &[u8])` | Append slice, grow if needed | `enif_realloc_binary` |
 | `resize(&mut self, new_len, value)` | Resize and fill new bytes with value | `enif_realloc_binary` |
-| `as_slice(&self) → &[u8]` | View written bytes | — |
-| `as_mut_slice(&mut self) → &mut [u8]` | Mutable view of written bytes | — |
+| `as_bytes(&self) → &[u8]` | View written bytes (zero-copy) | — |
+| `as_bytes_mut(&mut self) → &mut [u8]` | Mutable view of written bytes | — |
 | `len(&self) → usize` | Bytes written | — |
 | `capacity(&self) → usize` | Bytes allocated | — |
 | `reserve(&mut self, additional)` | Ensure room for more bytes | `enif_realloc_binary` |
-| `finish(self, env) → Binary<'a>` | Shrink to len, finalize | `enif_realloc_binary` + `enif_make_binary` |
+| `into_binary(self, env) → Binary<'a>` | Consume, handing the allocation to the BEAM as a term (shrinks first) | `enif_realloc_binary` + `enif_make_binary` |
 | `impl Write` | `write!` and `write_all` support | — |
-| `impl Deref<Target=[u8]>` | Auto-coerce to `&[u8]` (written bytes) | — |
+| `impl Deref<Target=[u8]>` | Auto-coerce to `&[u8]` (written bytes); gives `.to_vec()` | — |
 | `impl DerefMut` | Auto-coerce to `&mut [u8]` (written bytes) | — |
 | `impl AsRef<[u8]>` / `AsMut<[u8]>` | Trait-based byte access | — |
 | `impl Extend<u8>` | Iterator-based appending | — |
-| `impl Debug` | `BinaryBuilder { len: N, capacity: M }` | — |
-| `Drop` | Release if not finalized | `enif_release_binary` |
+| `impl Debug` | `BinaryBuf { len: N, capacity: M }` | — |
+| `Drop` | Release if not converted to a term | `enif_release_binary` |
 
-**Term methods** (on `Term<'a>`):
+**Serialization** — type-agnostic free verbs in `ops.rs` (re-exported from
+`types`), not methods:
 
-| Method | Does | Calls |
+| Function | Does | Calls |
 |---|---|---|
-| `to_binary(self, env) → Option<Binary<'a>>` | Serialize any term to external binary format | `enif_term_to_binary` + `enif_make_binary` |
+| `serialize(env, term) → Option<BinaryBuf>` | Serialize any term to ETF bytes; `.into_binary(env)` for a term, `.as_bytes()`/`.to_vec()` for bytes | `enif_term_to_binary` |
+| `deserialize(env, &[u8], safe) → Option<AnyTerm<'id>>` | Reconstruct a term from ETF bytes (`safe` rejects unknown atoms) | `enif_binary_to_term` |
 
 ### Internals
 
 `as_bytes` calls `enif_inspect_binary` which returns a pointer and size into
 the BEAM heap. The returned slice borrows from the environment lifetime `'a`,
-so it cannot outlive the NIF call. `BinaryBuilder` mirrors `Vec<u8>`: it
+so it cannot outlive the NIF call. `BinaryBuf` mirrors `Vec<u8>`: it
 tracks `len` (bytes written) and `capacity` (bytes allocated via
 `enif_alloc_binary`) separately. `push` and `extend_from_slice` grow via
-`enif_realloc_binary` with amortized doubling. `finish` calls
+`enif_realloc_binary` with amortized doubling. `into_binary` calls
 `enif_realloc_binary` to shrink to exact `len`, then `enif_make_binary` to
 transfer ownership to the BEAM. The `Drop` impl calls `enif_release_binary`
-if the builder is dropped without finishing, preventing leaks.
+if the buffer is dropped without being converted to a term, preventing leaks.
+`BinaryBuf` is also what `Term::serialize` returns, so the same RAII owner
+covers both building binaries and holding `enif_term_to_binary` output.
 
 `Bitstring` is a pass-through type with no inspection methods (the NIF API
 provides none for sub-byte bitstrings). It implements `Encoder`, `Decoder`,
@@ -198,9 +250,9 @@ them.
 
 ### Not Exposed
 
-`enif_inspect_iolist_as_binary` (iolist flattening is a higher-level
-operation), `enif_make_new_binary` (one-step alloc+term; BinaryBuilder
-covers this with more control).
+`enif_inspect_iolist_as_binary` (iolist flattening is a higher-level operation).
+(`from_bytes` uses `enif_make_new_binary` for the one-step alloc+copy+term;
+`BinaryBuf` is the growable path with more control.)
 
 ---
 
@@ -228,31 +280,32 @@ covers this with more control).
 ### Otter API
 
 ```rust
-struct Integer<'a> { term: NifTerm, env: Env<'a> }
+struct Integer<'id> { raw_term: RawTerm, _id: Invariant<'id> }
 ```
 
 | Method | Does | Calls |
 |---|---|---|
-| `impl TryFrom<Integer> for i64` | Extract as signed 64-bit | `enif_get_int64` or `enif_get_long` |
-| `impl TryFrom<Integer> for u64` | Extract as unsigned 64-bit | `enif_get_uint64` or `enif_get_ulong` |
-| `impl TryFrom<Integer> for i128` | Extract as signed 128-bit | tries i64 path, falls back to u64 |
-| `from_i64(env, val) → Integer<'a>` | Construct from signed 64-bit | `enif_make_int64` or `enif_make_long` |
-| `from_u64(env, val) → Integer<'a>` | Construct from unsigned 64-bit | `enif_make_uint64` or `enif_make_ulong` |
+| `from_i64(env, val) → Integer<'id>` | Construct from signed 64-bit | `enif_make_int64` |
+| `from_u64(env, val) → Integer<'id>` | Construct from unsigned 64-bit | `enif_make_uint64` |
+| `to_i64(self, env) → Option<i64>` | Extract as signed 64-bit; `None` on overflow | `enif_get_int64` |
+| `to_u64(self, env) → Option<u64>` | Extract as unsigned 64-bit; `None` if negative/overflow | `enif_get_uint64` |
+| `to_bigint(self, env) → BigInt` | Read any integer incl. bignums (`bigint` feature) | `enif_term_to_binary` + ETF parse |
+| `from_bigint(env, &BigInt) → Integer<'id>` | Build any integer (`bigint` feature) | i64/u64 fast-path else `enif_binary_to_term` of ETF |
 
 ### Internals
 
-The wrapper uses platform-conditional compilation. On 64-bit systems,
-`enif_get_long`/`enif_make_long` are 64-bit and equivalent to the `_int64`
-variants. On 32-bit systems, the explicit `_int64` functions are used instead.
+Construction uses inherent methods (`from_i64`/`from_u64`) because `From` cannot
+accept an `Env` parameter. Extraction returns `Option` — `None` when the value
+does not fit the requested Rust width.
 
-`TryFrom<Integer> for i128` is a Rust-side convenience: it tries the signed
-path first; if that fails with overflow (value > i64::MAX), it tries the
-unsigned path and converts. This covers the full range of Erlang integers
-that fit in 128 bits. Construction uses inherent methods (`from_i64`,
-`from_u64`) because `From` cannot accept an `Env` parameter.
-
-Erlang integers are arbitrary precision. Values larger than 2^64 cannot be
-extracted by any of these functions and will return `IntegerOverflow`.
+Erlang integers are arbitrary precision, and the NIF API has no accessor beyond
+`enif_get_int64`/`enif_get_uint64`. To read (or write) bignums that exceed
+`i64`/`u64`, enable the `bigint` feature: `to_bigint` serializes the term to the
+external term format and parses the ETF integer tag (total over every integer
+term); `from_bigint` fast-paths the i64/u64 range and otherwise emits an ETF
+bignum parsed back with `enif_binary_to_term`. `BigInt` is `num_bigint::BigInt`,
+re-exported as `otter::types::BigInt`. (The old `to_i128` convenience was removed —
+it only spanned `i64::MIN..=u64::MAX`; use `to_bigint` for the unbounded case.)
 
 ### Not Exposed
 
@@ -276,18 +329,22 @@ are redundant on 64-bit systems (the `_long` variants cover the full range).
 ### Otter API
 
 ```rust
-struct Float<'a> { term: NifTerm, env: Env<'a> }
+struct Float<'id> { raw_term: RawTerm, _id: Invariant<'id> }
 ```
 
 | Method | Does | Calls |
 |---|---|---|
-| `impl From<Float> for f64` | Extract the float value | `enif_get_double` |
-| `from_f64(env, val) → Float<'a>` | Construct from f64 | `enif_make_double` |
+| `to_f64(self, env) → f64` | Extract the float value (asserts; always valid) | `enif_get_double` |
+| `from_f64(env, val) → Option<Float<'id>>` | Construct from f64; `None` if not finite | `enif_make_double` |
 
 ### Internals
 
 Erlang floats are IEEE 754 doubles. The C API and otter both use `f64`/`double`
-directly. There is no precision loss or conversion.
+directly — no precision loss. The non-finite check in `from_f64` is done in
+Rust and returns `None` (NaN / infinity), so a rejected value never calls into
+the BEAM and the env is never left with a pending exception; a caller that wants
+a `badarg` raises one from a `CallEnv` itself. `to_f64` asserts success — a
+validated `Float` is always a float term and every Erlang float is an `f64`.
 
 ---
 
@@ -314,37 +371,40 @@ directly. There is no precision loss or conversion.
 ### Otter API
 
 ```rust
-struct List<'a> { term: NifTerm, env: Env<'a> }
+struct List<'id> { raw_term: RawTerm, _id: Invariant<'id> }
 
-enum Node<'a> {
+enum Node<'id> {
     Nil,
-    Cell(RawTerm<'a>, RawTerm<'a>),  // head, tail — unresolved
+    Cell(AnyTerm<'id>, AnyTerm<'id>),  // head, tail — unresolved
 }
 ```
 
 | Method | Does | Calls |
 |---|---|---|
-| `node(self) → Node<'a>` | Decompose into nil or cons cell | `enif_get_list_cell` |
-| `iter(self) → ListIterator<'a>` | Iterator over head elements | `enif_get_list_cell` per `next()` |
-| `try_string(self) → Result<String, CodecError>` | Extract string as UTF-8 `String` | `enif_get_string_length` + `enif_get_string` |
-| `len(self) → Option<usize>` | Element count; `None` for improper lists | `enif_get_list_length` |
-| `reverse(self) → Option<List<'a>>` | Reverse a proper list; `None` for improper | `enif_make_reverse_list` |
-| `from_terms(env, impl IntoIterator<Item: TermIn>) → List<'a>` | Construct from iterable | `enif_make_list_from_array` |
-| `from_str(env, &str) → List<'a>` | Construct string (list of codepoints) from UTF-8 | `enif_make_string_len` |
-| `cons(env, impl TermIn, impl TermIn) → List<'a>` | Construct cons cell `[head \| tail]` | `enif_make_list_cell` |
+| `node(self, env) → Node<'id>` | Decompose into nil or cons cell | `enif_get_list_cell` |
+| `iter(self, env) → ListIterator<'id>` | Iterator over head elements | `enif_get_list_cell` per `next()` |
+| `try_string(self, env) → Option<String>` | Extract string as UTF-8 `String` | `enif_get_string_length` + `enif_get_string` |
+| `len(self, env) → Option<usize>` | Element count; `None` for improper lists | `enif_get_list_length` |
+| `is_empty(self, env) → bool` | Empty-list check | `enif_get_list_cell` |
+| `reverse(self, env) → Option<List<'id>>` | Reverse a proper list; `None` for improper | `enif_make_reverse_list` |
+| `from_terms(env, IntoIterator<Item: Term<'id>>) → List<'id>` | Construct from iterable | `enif_make_list_from_array` |
+| `from_str(env, &str) → List<'id>` | Construct string (list of codepoints) from UTF-8 | `enif_make_string_len` |
+| `cons(env, impl Term<'id>, impl Term<'id>) → List<'id>` | Construct cons cell `[head \| tail]` | `enif_make_list_cell` |
+| `is_list(env, term) → bool` | Type predicate (incl. improper/empty) | `enif_is_list` |
 
-**ListIterator** — yields `RawTerm<'a>` heads, one `enif_get_list_cell` per step:
+**ListIterator** — yields `AnyTerm<'id>` heads, one `enif_get_list_cell` per step
+(`FusedIterator`):
 
 | Method | Does |
 |---|---|
-| `next() → Option<RawTerm<'a>>` | Yield next head; `None` when a non-cell tail is reached |
-| `tail() → Option<Term<'a>>` | Terminal value after iteration: `[]` for proper lists, improper tail otherwise |
+| `next() → Option<AnyTerm<'id>>` | Yield next head; `None` when a non-cell tail is reached |
+| `tail() → Option<AnyTerm<'id>>` | Terminal value after iteration: `[]` for proper lists, improper tail otherwise |
 
 ### Internals
 
 Lists in Erlang are cons cells, and otter mirrors this directly. `node`
-returns `RawTerm`s for head and tail — the caller chooses whether to resolve
-them. `iter()` builds on this: it yields heads as `RawTerm`s and stops when
+returns `AnyTerm`s for head and tail — the caller chooses whether to resolve
+them. `iter()` builds on this: it yields heads as `AnyTerm`s and stops when
 the tail is not a cons cell. After exhaustion, `tail()` returns the terminal
 value — `[]` (nil) for proper lists, or the improper tail term. This means
 every list walk, proper or improper, is fully observable.
@@ -379,24 +439,36 @@ the same ground), `enif_is_list`/`enif_is_empty_list` (handled by `enif_term_typ
 ### Otter API
 
 ```rust
-struct Tuple<'a> { term: NifTerm, env: Env<'a> }
+struct Tuple<'id> { raw_term: RawTerm, _id: Invariant<'id> }              // lean one-word handle
+struct TupleView<'id> { raw_term, raw_elements: &'id [RawTerm], _id }     // elements resolved
 ```
 
 | Method | Does | Calls |
 |---|---|---|
-| `len(self) → usize` | Arity | `enif_get_tuple` |
-| `is_empty(self) → bool` | Zero-element check | `enif_get_tuple` |
-| `element(self, i) → Term<'a>` | Element at zero-based index; panics if out of bounds | `enif_get_tuple` |
-| `from_terms(env, impl IntoIterator<Item: TermIn>) → Tuple<'a>` | Construct from iterable | `enif_make_tuple_from_array` |
+| `with_elements(self, env) → TupleView<'id>` | Resolve elements (the single fetch); asserts | `enif_get_tuple` |
+| `from_terms(env, IntoIterator<Item: Term<'id>>) → Tuple<'id>` | Construct from iterable | `enif_make_tuple_from_array` |
+| `is_tuple(env, term) → bool` | Type predicate | `enif_is_tuple` |
+
+**TupleView** (a `Term`, and a fixed-size collection):
+
+| Method | Does |
+|---|---|
+| `len(self) → usize` / `is_empty(self) → bool` | Arity (no env) |
+| `Index<usize> → AnyTerm<'id>` | `view[i]`, zero-copy; panics OOB |
+| `IntoIterator (Item = AnyTerm<'id>)` | Iterate elements |
 
 ### Internals
 
-`enif_get_tuple` returns a pointer to the tuple's element array and the arity
-in one call. `element` dereferences the pointer at the given offset. The
-pointer is valid for the lifetime of the environment.
-
-`element` panics on out-of-bounds access. This is deliberate — an incorrect
-index is a programmer error, like indexing past the end of a Rust slice.
+The lean/view split keeps a tuple that is only passed through (matched in
+`TypedTerm`, re-encoded, compared) from paying for the element fetch. `Tuple` is
+the env-less one-word handle; `with_elements` does the single `enif_get_tuple`
+(which cannot fail on a validated tuple — hence the assert) and caches the
+element pointer. Indexing/iteration is zero-copy: `AnyTerm` is
+`#[repr(transparent)]` over `RawTerm`, so the cached `&[RawTerm]` is reinterpreted
+in place as `&[AnyTerm<'id>]`. The pointer is valid for the brand's lifetime (the
+process heap is fixed for the NIF call). `TupleView` deliberately has **no**
+`PartialEq`/`Ord` (compare through the raw word if needed). Indexing panics OOB —
+a deliberate programmer-error signal, like a Rust slice.
 
 ### Not Exposed
 
@@ -430,31 +502,37 @@ index is a programmer error, like indexing past the end of a Rust slice.
 ### Otter API
 
 ```rust
-struct Map<'a> { term: NifTerm, env: Env<'a> }
-struct MapIterator<'a> { iter: Box<NifMapIterator>, env: Env<'a>, exhausted: bool }
+struct Map<'id> { raw_term: RawTerm, _id: Invariant<'id> }
+struct MapIterator<'id> { iter: Box<enif_ffi::MapIterator>, env: AnyEnv<'id>, exhausted: bool }
 ```
 
 | Method | Does | Calls |
 |---|---|---|
-| `new(env) → Map<'a>` | Create empty map | `enif_make_new_map` |
-| `size(self) → usize` | Key-value pair count | `enif_get_map_size` |
-| `get(self, impl TermIn) → Option<Term<'a>>` | Look up key | `enif_get_map_value` |
-| `put(self, impl TermIn, impl TermIn) → Map<'a>` | Insert or replace | `enif_make_map_put` |
-| `update(self, impl TermIn, impl TermIn) → Option<Map<'a>>` | Update existing key; `None` if absent | `enif_make_map_update` |
-| `remove(self, impl TermIn) → Option<Map<'a>>` | Remove key; `None` if absent | `enif_make_map_remove` |
-| `iter(self) → MapIterator<'a>` | Forward iterator over key-value pairs | `enif_map_iterator_create` |
+| `new(env) → Map<'id>` | Create empty map | `enif_make_new_map` |
+| `size(self, env) → usize` | Key-value pair count (asserts) | `enif_get_map_size` |
+| `get(self, env, impl Term<'id>) → Option<AnyTerm<'id>>` | Look up key | `enif_get_map_value` |
+| `put(self, env, impl Term<'id>, impl Term<'id>) → Map<'id>` | Insert or replace | `enif_make_map_put` |
+| `update(self, env, impl Term<'id>, impl Term<'id>) → Option<Map<'id>>` | Update existing key; `None` if absent | `enif_make_map_update` |
+| `remove(self, env, impl Term<'id>) → Map<'id>` | Remove key (absent → unchanged) | `enif_make_map_remove` |
+| `iter(self, env) → MapIterator<'id>` | Forward iterator over key-value pairs | `enif_map_iterator_create` |
+| `is_map(env, term) → bool` | Type predicate | `enif_is_map` |
 
-`MapIterator` implements `Iterator<Item = (Term<'a>, Term<'a>)>` and `Drop`.
+`MapIterator` implements `Iterator<Item = (AnyTerm<'id>, AnyTerm<'id>)>` (unresolved key/value) and `Drop`.
 
 ### Internals
 
-Maps are immutable in Erlang. `put`, `update`, and `remove` each return a
-new `Map` — the original is unchanged. `update` and `remove` return `Option`
-because the C functions signal failure when the key is absent.
+Maps are immutable in Erlang. `put`, `update`, and `remove` each return a new
+`Map` — the original is unchanged. `update` returns `Option` (its C function
+fails on an absent key), but **`remove` returns `Map`, not `Option`**:
+`enif_make_map_remove` fails only on a non-map (an absent key yields the map
+unchanged), which cannot happen on a validated `Map`, so the None arm was
+unreachable. `size` asserts for the same reason.
 
-`MapIterator` is heap-allocated (`Box<NifMapIterator>`) to pin the C iterator
-struct. It starts at the first entry and advances with `enif_map_iterator_next`.
-`Drop` calls `enif_map_iterator_destroy`.
+`MapIterator` is heap-allocated (`Box<enif_ffi::MapIterator>`) to pin the C
+iterator struct and is non-`Copy` (a bitwise copy would share the hashmap-iterator
+work-stack pointer and double-free on the second `Drop`; see robust-12). It starts
+at the first entry, advances with `enif_map_iterator_next`, and `Drop` calls
+`enif_map_iterator_destroy`.
 
 ### Not Exposed
 
@@ -482,28 +560,55 @@ sufficient; the exhaustion check uses `get_pair` returning `None`).
 ### Otter API
 
 ```rust
-struct Pid { term: NifTerm }  // no lifetime — pids are self-contained
+struct Pid<'id> { raw_term: RawTerm, _id: Invariant<'id> }   // unestablished locality — brand-bound
+struct LocalPid { pid: enif_ffi::Pid }                       // validated local — no brand, Copy, FreeTerm
 ```
 
-| Method | Does | Calls |
+| Type / Method | Does | Calls |
 |---|---|---|
-| `self_(env) → Pid` | Get calling process PID | `enif_self` |
-| `is_alive(self, env) → bool` | Check if process is alive | `enif_is_process_alive` |
-| `whereis(env, name) → Option<Pid>` | Look up by registered name | `enif_whereis_pid` |
-| `as_nif_pid(self, env) → Option<NifPid>` | Convert to `NifPid` for `OwnedEnv::send`; `None` for distributed pids | `enif_get_local_pid` |
+| `Pid::to_local(self, env) → Option<LocalPid>` | Refine to local; `None` if external | `enif_get_local_pid` |
+| `Pid::is_pid(env, term) → bool` | Type predicate | `enif_is_pid` |
+| `LocalPid::self_(env: CallEnv) → LocalPid` | Calling process PID (always local; `CallEnv` only) | `enif_self` |
+| `LocalPid::whereis(env, name: impl Term) → Option<LocalPid>` | Look up by registered name | `enif_whereis_pid` |
+| `LocalPid::is_alive(self, env) → bool` | Check if process is alive | `enif_is_process_alive` |
 
-`is_current_process_alive` is exposed on `Env`, not `Pid`.
+Sending is **four free verbs** in `types`, a 2×2 of **copy vs. move** ×
+**caller-attributed (`_from`, in-NIF) vs. not (plain, off-thread)**. `copy` copies
+a live term into the recipient's mailbox (`enif_send`, NULL `msg_env`); `move`
+transplants (steals) an `OwnedEnvArena`'s whole heap into the message
+(`enif_send`, non-NULL `msg_env`), O(1), leaving the arena dirty until cleared.
+The `_from` verbs take an `impl CallingEnv` and pass it as the caller env, so the
+BEAM attributes the message to the calling process; the plain verbs pass a NULL
+caller (use them from a non-scheduler thread).
+
+| Verb | Caller | Payload | Calls |
+|---|---|---|---|
+| `send_copy(&LocalPid, msg: impl Term) → bool` | off-thread, NULL caller | copy | `enif_send` (NULL caller + NULL msg_env) |
+| `send_move(&LocalPid, &mut OwnedEnvArena, OwnedEnvTerm) → bool` | off-thread, NULL caller | steal | `enif_send` (NULL caller, non-NULL msg_env) |
+| `send_copy_from(impl CallingEnv, &LocalPid, msg: impl Term) → bool` | in-NIF, attributed | copy | `enif_send` (caller, NULL msg_env) |
+| `send_move_from(impl CallingEnv, &LocalPid, &mut OwnedEnvArena, OwnedEnvTerm) → bool` | in-NIF, attributed | steal | `enif_send` (caller, non-NULL msg_env) |
+
+All four route through one pair of private helpers (`send_move_`/`send_copy_`)
+differing only in the caller-env pointer. `is_current_process_alive` is a default
+method on `Env`.
 
 ### Internals
 
-`Pid` has no lifetime because the term word encodes the process identity
-directly (for local pids). `as_nif_pid` extracts the `ErlNifPid` struct needed
-by `enif_send`. It returns `None` for external (distributed) pids, which
-cannot be used with the local send API.
+A *local* pid's term word is a tagged immediate that encodes the process
+identity directly — so `LocalPid` (validated via `enif_get_local_pid` /
+`enif_self` / `enif_whereis_pid`) is lifetime-free, `Copy`, and safe to store.
+An *external* (remote-node) pid is a heap-boxed term whose word is a heap
+pointer; storing it past the env would dangle, so `Pid<'a>` carries `'a` and
+cannot be stored. `LocalPid` holds the `ErlNifPid` directly, so the operations
+that require an internal pid (`enif_send`, `enif_monitor_process`,
+`enif_select`, `enif_is_process_alive`) take `&LocalPid` and never build an
+`ErlNifPid` from an unvalidated term — the soundness fix for the
+external-pid/UAF gap (assessment finding `audit-03`).
 
 ### Not Exposed
 
-`enif_is_pid` (handled by `enif_term_type`).
+`enif_is_pid` is the associated fn `Pid::is_pid(env, term)`; type identification
+also goes through `enif_term_type` in `resolve`.
 
 ---
 
@@ -523,24 +628,29 @@ cannot be used with the local send API.
 ### Otter API
 
 ```rust
-struct Port { term: NifTerm }  // no lifetime
+struct Port<'id> { raw_term: RawTerm, _id: Invariant<'id> }   // unestablished locality — brand-bound
+struct LocalPort { port: enif_ffi::Port }                     // validated local — no brand, Copy, FreeTerm
 ```
 
-| Method | Does | Calls |
+| Type / Method | Does | Calls |
 |---|---|---|
-| `whereis(env, name) → Option<Port>` | Look up by registered name | `enif_whereis_port` |
-| `command(self, env, msg) → bool` | Send command to port | `enif_port_command` |
+| `Port::to_local(self, env) → Option<LocalPort>` | Refine to local; `None` if external | `enif_get_local_port` |
+| `Port::is_port(env, term) → bool` | Type predicate | `enif_is_port` |
+| `LocalPort::whereis(env, name: impl Term) → Option<LocalPort>` | Look up by registered name | `enif_whereis_port` |
+| `LocalPort::is_alive(self, env) → bool` | Check if port is alive | `enif_is_port_alive` |
+| `port_command(env: impl CallingEnv, &LocalPort, msg: impl Term) → bool` | Send command to port (free verb; NULL msg_env) | `enif_port_command` |
 
 ### Internals
 
-Like `Pid`, `Port` carries no lifetime. `command` passes `NULL` for the
-options pointer (no options are currently defined by the NIF API).
+Mirrors `Pid`: a local port is an immediate (`LocalPort`, validated via
+`enif_get_local_port` / `enif_whereis_port`, lifetime-free and `Copy`), an
+external port is heap-boxed (`Port<'a>`, env-bound). `enif_port_command` and
+`enif_is_port_alive` require an internal port, so they take `&LocalPort`.
 
 ### Not Exposed
 
-`enif_is_port` (handled by `enif_term_type`), `enif_get_local_port` (not
-needed unless interacting with port drivers at the C level),
-`enif_is_port_alive` (could be added if needed).
+`enif_is_port` is the associated fn `Port::is_port(env, term)`; type
+identification also goes through `enif_term_type` in `resolve`.
 
 ---
 
@@ -556,12 +666,13 @@ needed unless interacting with port drivers at the C level),
 ### Otter API
 
 ```rust
-struct Fun<'a> { term: NifTerm, env: Env<'a> }
+struct Fun<'id> { raw_term: RawTerm, _id: Invariant<'id> }
 ```
 
-No methods. The NIF API provides no way to inspect or invoke a fun from C.
-`Fun` exists so that `Term::Fun` can carry the value through — the NIF can
-receive a fun as an argument and pass it back to Erlang unchanged.
+Only `is_fun(env, term) → bool`. The NIF API provides no way to inspect or invoke
+a fun from C. `Fun` exists so that `TypedTerm::Fun` can carry the value through —
+the NIF can receive a fun as an argument and pass it back to Erlang unchanged (or
+to `apply`).
 
 ### Not Exposed
 
@@ -582,17 +693,18 @@ receive a fun as an argument and pass it back to Erlang unchanged.
 ### Otter API
 
 ```rust
-struct Reference<'a> { term: NifTerm, env: Env<'a> }
+struct Reference<'id> { raw_term: RawTerm, _id: Invariant<'id> }
 ```
 
 | Method | Does | Calls |
 |---|---|---|
-| `new(env) → Reference<'a>` | Create a unique reference | `enif_make_ref` |
+| `new(env) → Reference<'id>` | Create a unique reference | `enif_make_ref` |
+| `is_ref(env, term) → bool` | Type predicate | `enif_is_ref` |
 
 ### Internals
 
-References are unique opaque values. The only operation is creation. Equality
-comparison is provided by `Term`'s `PartialEq` impl (via `enif_is_identical`).
+References are unique opaque values. The main operation is creation. `Reference`
+carries its own `PartialEq`/`Ord` (via `enif_is_identical`/`enif_compare`).
 
 ### Not Exposed
 
@@ -610,15 +722,22 @@ per design.
 
 | Type | Create | Inspect | Modify | Iterate | Encode/Decode |
 |---|---|---|---|---|---|
-| Atom | `new`, `try_existing` | `name` | — | — | yes |
-| Binary | `from_bytes`, `BinaryBuilder` | `as_bytes`, `try_str`, `len` | `sub` | — | yes |
-| Bitstring | — | — | — | — | yes (pass-through) |
-| Integer | `from_i64`, `from_u64` | `TryFrom` for i64/u64/i128 | — | — | yes |
-| Float | `from_f64` | `From<Float> for f64` | — | — | yes |
-| List | `from_terms`, `from_str`, `cons` | `node`, `iter`, `try_string`, `len`, `reverse` | — | `iter()` | yes |
-| Tuple | `from_terms` | `element`, `len` | — | — | yes |
+| Atom | `intern`, `try_existing` | `name` | — | — | yes |
+| Binary | `from_bytes`, `BinaryBuf` | `as_bytes`, `try_str`, `len` | `sub` | — | yes |
+| Bitstring | — | `is_binary`, `to_binary` | — | — | yes (pass-through) |
+| Integer | `from_i64`, `from_u64`, `from_bigint` | `to_i64`, `to_u64`, `to_bigint` | — | — | yes |
+| Float | `from_f64` | `to_f64` | — | — | yes |
+| List | `from_terms`, `from_str`, `cons` | `node`, `iter`, `try_string`, `len`, `is_empty`, `reverse` | — | `iter()` | yes |
+| Tuple | `from_terms` | `with_elements` → `TupleView` (`len`, index, iter) | — | — | yes |
 | Map | `new` | `get`, `size` | `put`, `update`, `remove` | `iter` | yes |
-| Pid | `self_`, `whereis` | `is_alive`, `as_nif_pid` | — | — | yes |
-| Port | `whereis` | — | `command` | — | yes |
+| Pid | `self_`, `whereis` | `to_local`, `is_alive` | — | — | yes |
+| Port | `whereis` | `to_local`, `is_alive` | `port_command` (free verb) | — | yes |
 | Fun | — | — | — | — | yes (pass-through) |
 | Reference | `new` | — | — | — | yes |
+
+> Bignum methods (`to_bigint`/`from_bigint`) require the `bigint` feature.
+> Sends (the four free verbs `send_copy`/`send_move` ± `_from` for caller
+> attribution) and `serialize`/`deserialize` are not shown here. The
+> owned-env messaging tier (`OwnedEnvArena`/`OwnedEnv`/`OwnedEnvTerm`) and the env
+> spine (`Env`/`Term` traits, env kinds, `Raised`, `CallingEnv`) live in `mod.rs`
+> and `ops.rs` — see `otter/DESIGN.md` Layers 3–4.

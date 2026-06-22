@@ -2,7 +2,9 @@
 
 use std::ffi::c_int;
 
-pub use crate::sys::NifSysInfo as SysInfo;
+/// BEAM system information, filled by [`system_info`] (`ErlNifSysInfo`).
+/// Re-exported from `enif_ffi`.
+pub use enif_ffi::SysInfo;
 
 /// The type of thread the current code is running on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -23,19 +25,19 @@ pub enum ThreadType {
 ///
 /// Wraps `enif_thread_type`.
 pub fn thread_type() -> ThreadType {
-    use crate::sys::{NIF_THR_UNDEFINED, NIF_THR_NORMAL_SCHEDULER, NIF_THR_DIRTY_CPU_SCHEDULER, NIF_THR_DIRTY_IO_SCHEDULER};
-    match crate::wrapper::system::thread_type() {
-        NIF_THR_UNDEFINED          => ThreadType::NonScheduler,
-        NIF_THR_NORMAL_SCHEDULER   => ThreadType::Scheduler,
-        NIF_THR_DIRTY_CPU_SCHEDULER => ThreadType::DirtyCpu,
-        NIF_THR_DIRTY_IO_SCHEDULER => ThreadType::DirtyIo,
-        other                  => ThreadType::Unknown(other),
+    match unsafe { enif_ffi::thread_type() } {
+        enif_ffi::THR_UNDEFINED           => ThreadType::NonScheduler,
+        enif_ffi::THR_NORMAL_SCHEDULER    => ThreadType::Scheduler,
+        enif_ffi::THR_DIRTY_CPU_SCHEDULER => ThreadType::DirtyCpu,
+        enif_ffi::THR_DIRTY_IO_SCHEDULER  => ThreadType::DirtyIo,
+        other                             => ThreadType::Unknown(other),
     }
 }
 
-/// Fill a `SysInfo` struct with BEAM system information.
+/// Fill a [`SysInfo`] struct with BEAM system information (`enif_system_info`).
 ///
-/// Wraps `enif_system_info`.
+/// Pass a `&mut SysInfo` to be populated; otter forwards `size_of::<SysInfo>()`
+/// as the struct-size argument the C API requires for version negotiation.
 pub fn system_info(info: &mut SysInfo) {
-    crate::wrapper::system::system_info(info);
+    unsafe { enif_ffi::system_info(info, std::mem::size_of::<SysInfo>()) };
 }

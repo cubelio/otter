@@ -1,23 +1,45 @@
 [package]
-name = "otter"
-version = "0.1.0"
-edition = "2024"
-authors = ["Lynn Gabbay"]
+name = "otter-nif"
+version = "0.3.0"
+edition = "2021"
+rust-version = "1.82"
+authors = ["Lynn Gabbay <lynn@cubelio.com>"]
 license = "MIT OR Apache-2.0"
 description = "Write Erlang NIFs in Rust. Direct mapping of the NIF C ABI with compile-time lifetime safety and no hidden magic."
 repository = "https://github.com/cubelio/otter"
-readme = "../README.md"
+readme = "README.md"
 keywords = ["erlang", "nif", "beam", "otp", "ffi"]
 categories = ["api-bindings", "external-ffi-bindings"]
 
+# docs.rs builds on nightly: enable every feature so the full surface is
+# documented, and pass `--cfg docsrs` so the `doc(cfg(...))` feature pills render.
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+# Published as `otter-nif` (the bare `otter` is taken on crates.io), but the
+# library — and therefore the `use otter::` path and every `::otter::*` path the
+# codegen emits — stays `otter`.
+[lib]
+name = "otter"
+
 [dependencies]
-otter_codegen = { path = "../otter_codegen" }
+otter-nif-macros = { path = "../otter_codegen", version = "0.3.0" }
+enif-ffi = { version = "0.2.0", features = ["nif_2_17"] }
+num-bigint = { version = "0.4", optional = true }
 
 [dev-dependencies]
 trybuild = "1"
 
 [features]
-nif_2_18 = []
+nif_2_18 = ["enif-ffi/nif_2_18"]
+# Expose the raw, 1:1, all-unsafe `enif` module as a public escape hatch, and
+# accept the tier-2 `_raw` lifecycle callbacks in `init!`.
+raw = ["otter-nif-macros/raw"]
+# Read/write arbitrary-precision integers (bignums beyond i64/u64) as
+# `num_bigint::BigInt`, with `Encoder`/`Decoder` impls. Off by default — only
+# NIFs that handle out-of-range integers need it.
+bigint = ["dep:num-bigint"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

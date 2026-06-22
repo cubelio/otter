@@ -45,7 +45,7 @@ In `rebar.config`:
 {otter_crates, [
     #{
         name    => my_crate,          % must match Cargo.toml [package].name
-        path    => "native/my_crate", % path to crate relative to project root
+        path    => "native/my_crate", % path to crate relative to the app dir
         mode    => release,           % release | debug (default: release)
         features => [],               % list of Cargo features to enable
         target  => undefined          % cross-compile target or undefined
@@ -55,6 +55,14 @@ In `rebar.config`:
 
 Multiple crates are supported — each entry in `otter_crates` is compiled independently.
 
+`otter_crates` is read **per application**. Declare it in each app's own
+`rebar.config`; `path` is resolved relative to that app's directory and the
+built artifact is installed into the same app's `priv/native/`. In a single-app
+project the app dir is the project root, so nothing special is needed. In an
+umbrella project each app declares the crates it owns, and the `.so` lands where
+`code:priv_dir(App)` for that app resolves — a top-level `otter_crates` in an
+umbrella with no root app is not attached to any application and is ignored.
+
 ---
 
 ## Compile Provider (`otter_compile`, module `rebar3_otter__compile`)
@@ -63,28 +71,28 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
 
 ### Steps
 
-1. **Read and validate config** — parse `otter_crates` from `rebar.config` through `rebar3_otter__config:validate/1`, which checks required fields (`name`, `path`), normalizes optional fields (`mode`, `features`, `target`), rejects unknown keys, and produces a list of normalized crate maps. Validation errors halt the build with a formatted message via `rebar_api:abort/2` (the rebar3 pre-hook layer mangles `{error, _}` return values, so config errors take the abort path instead).
+1. **Read and validate config** — iterate `rebar_state:project_apps/1`; for each app read its own `otter_crates` (`rebar_app_info:get/3`) and pass it through `rebar3_otter__config:validate/1`, which checks required fields (`name`, `path`), normalizes optional fields (`mode`, `features`, `target`), rejects unknown keys, and produces a list of normalized crate maps. The app's directory (`rebar_app_info:dir/1`) is the base for both the crate `path` and the install location. Validation errors halt the build with a formatted message via `rebar_api:abort/2` (the rebar3 pre-hook layer mangles `{error, _}` return values, so config errors take the abort path instead).
 
 2. **Invoke cargo:**
    ```
-   cargo rustc \
-     --message-format=json-render-diagnostics \
+   cargo build \
      --manifest-path <path>/Cargo.toml \
+     --target-dir <path>/target \
+     -p <name> \
      [--release] \
      [--features feat1,feat2] \
-     [--target <triple>] \
-     -p <name>
+     [--target <triple>]
    ```
-   `--message-format=json-render-diagnostics` causes cargo to emit one JSON object per line on stdout while rendering human-readable diagnostics to stderr. Cargo is invoked unconditionally — its own incremental check decides whether real work needs to happen, and no-ops cost ~50–200ms.
+   Cargo runs with `ERTS_INCLUDE_DIR` set to the running ERTS's include dir (`<root>/erts-<vsn>/include`), so the native build (e.g. a `bindgen`/`cc` step, or `enif-ffi`) can locate `erl_nif.h` without the user configuring a path. Plain `cargo build` (the default *human* message format) renders compiler diagnostics to stderr; `run/2` lets the child's stderr through to the terminal, so errors and warnings appear in the rebar3 output directly. `--target-dir` is pinned to `<crate>/target` so the output location is dictated rather than discovered (see step 3). Cargo is invoked unconditionally — its own incremental check decides whether real work needs to happen, and no-ops cost ~50–200ms.
 
-3. **Parse artifact location** — scan cargo's JSON output for a line with `"reason": "compiler-artifact"` where the target `kind` list contains `"cdylib"`. Extract the path from `"filenames"`. This handles workspace layouts, custom `target-dir` settings, and cross-compilation output directories.
+3. **Compute artifact path (by convention)** — because the target dir is pinned and cdylib final artifacts are *not* content-hashed, the output path is fully determined by the inputs: `<target_dir>/[<triple>/]<release|debug>/<file>`, where `<file>` is `lib<name>.so` (Linux), `lib<name>.dylib` (macOS), or `<name>.dll` (Windows), with `<name>` normalized `-`→`_` as cargo does for lib targets. The `lib` prefix / extension follow the *target* platform — derived from the `--target` triple when set (so cross-compiles resolve), otherwise the build host (`os:type/0`). This deliberately avoids parsing cargo's JSON output, which would pull in the OTP-27-only stdlib `json` module; pinning `--target-dir` is what makes the path a guarantee instead of a guess (it removes the workspace / custom-`target-dir` ambiguity the JSON scrape previously absorbed). The computed path is confirmed to exist (`filelib:is_file/1`); a miss yields the `{no_cdylib, _}` error below.
 
-4. **Determine output filename** — platform-appropriate extension:
+4. **Determine output filename** — the *destination* uses the platform-appropriate extension Erlang expects:
    - Linux: `<name>.so`
    - macOS: `<name>.so` (not `.dylib` — Erlang expects `.so` regardless)
    - Windows: `<name>.dll`
 
-5. **Copy artifact** to `priv/native/<name>.so`. Create `priv/native/` if it does not exist.
+5. **Copy artifact** to the owning app's `priv/native/<name>.so`. Create `priv/native/` if it does not exist.
 
 6. **Surface diagnostics** — cargo emits compiler errors and warnings on stderr (inherited from the child process), so they appear in the rebar3 build output directly without us needing to parse them.
 
@@ -92,7 +100,8 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
 
 - `cargo` not on PATH → clear error message, build fails
 - Cargo compilation failure → surface the compiler errors, build fails
-- No `cdylib` artifact found in cargo output → error indicating the crate may not have `crate-type = ["cdylib"]` in its `Cargo.toml`
+- No `cdylib` artifact found at the computed path → error indicating the crate may not have `crate-type = ["cdylib"]` in its `Cargo.toml`
+- Artifact copy into `priv/native/` failed → error with the underlying file reason (`copy_failed`)
 
 ---
 
@@ -100,8 +109,8 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
 
 Runs as a `pre_clean` hook.
 
-1. For each configured crate, remove `priv/native/<name>.so` if it exists.
-2. Run `cargo clean --manifest-path <path>/Cargo.toml` to remove the Rust build artifacts.
+1. For each project app's configured crates, remove the app's `priv/native/<name>.so` if it exists.
+2. Remove the crate's pinned target directory (`<crate>/target`) directly. Since the build dictates that directory via `--target-dir`, cleaning is an exact `file:del_dir_r/1` — no cargo invocation, so it works even without a toolchain installed and cannot over-clean a shared workspace target dir.
 
 ---
 
@@ -116,26 +125,31 @@ Scaffolds a minimal NIF crate:
 [package]
 name = "my_nif"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-otter = { git = "https://github.com/cubelio/otter.git" }
+otter-nif = "0.2"
 ```
 
 **`native/my_nif/src/lib.rs`:**
 ```rust
-use otter::env::Env;
-use otter::types::Atom;
+use otter::types::{AnyTerm, Atom, CallEnv, InitEnv};
 
-#[otter::nif]
-fn hello(env: Env) -> Atom {
-    Atom::new(env, "world").unwrap()
+// Optional load hook. Atoms listed in `init!` are interned by the
+// scaffolding before this runs, so a fresh crate has nothing to do here.
+fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
+    true
 }
 
-otter::init!("my_nif", [hello]);
+#[otter::nif]
+fn hello(_env: CallEnv) -> Atom {
+    otter::atom![world]
+}
+
+otter::init!("my_nif", [hello], atoms = [world], load = on_load);
 ```
 
 **Note:** The scaffolded Erlang module and `-on_load` declaration are intentionally not generated. NIF loading is two lines of standard Erlang that the programmer should write and understand:
@@ -174,7 +188,7 @@ rebar3_otter/src/
 ├── rebar3_otter__compile.erl  % pre_compile provider (otter_compile)
 ├── rebar3_otter__clean.erl    % pre_clean provider (otter_clean)
 ├── rebar3_otter__new.erl      % scaffold provider (otter new)
-├── rebar3_otter__cargo.erl    % cargo invocation and JSON output parsing
+├── rebar3_otter__cargo.erl    % cargo invocation and cdylib artifact resolution
 └── rebar3_otter__config.erl   % otter_crates schema validation
 ```
 

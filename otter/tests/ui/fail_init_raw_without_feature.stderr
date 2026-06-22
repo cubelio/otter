@@ -1,0 +1,5 @@
+error: `load_raw` requires otter's `raw` feature — enable it with `otter = { version = "…", features = ["raw"] }`. The tier-2 `_raw` callbacks hand you the library's `priv_data` `void*` directly.
+  --> tests/ui/fail_init_raw_without_feature.rs:15:24
+   |
+15 | otter::init!("m", [f], load_raw = on_load);
+   |                        ^^^^^^^^

@@ -56,7 +56,7 @@ impl Parse for NifAttrs {
 // decoded from `argv` through `Decoder`. The macro does not classify by
 // name — a wrong-type slot 0 surfaces as a normal type error at the user's
 // call site (the env is passed straight through to the user function), and
-// `Term` / `RawTerm` / any decodable type go through `Decoder::decode`
+// `TypedTerm` / `Term` / any decodable type go through `Decoder::decode`
 // uniformly.
 
 fn arg_ident(arg: &FnArg) -> Result<syn::Ident> {
@@ -78,11 +78,12 @@ fn arg_ident(arg: &FnArg) -> Result<syn::Ident> {
 
 fn panic_handler() -> TokenStream {
     quote! {
-        match ::otter::__codegen::Atom::new(__otter_env, "nif_panicked") {
-            Some(__atom) => __otter_env.raise(
-                ::otter::__codegen::Encoder::encode(&__atom, __otter_env)
-            ).as_raw(),
-            None => __otter_env.raise_badarg().as_raw(),
+        match ::otter::__codegen::Atom::intern(__otter_env, "nif_panicked") {
+            ::core::result::Result::Ok(__atom) => ::otter::__codegen::raise_word(
+                __otter_env,
+                ::otter::__codegen::encode_result(&__atom, __otter_env),
+            ),
+            ::core::result::Result::Err(_) => ::otter::__codegen::badarg_word(__otter_env),
         }
     }
 }
@@ -129,11 +130,9 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
         .enumerate()
         .map(|(idx, name)| {
             quote! {
-                let #name = ::otter::__codegen::Decoder::decode(
-                    ::otter::__codegen::new_raw_term(
-                        __otter_env,
-                        unsafe { *__otter_argv.add(#idx) },
-                    ).resolve()
+                let #name = ::otter::__codegen::decode_arg(
+                    __otter_env,
+                    unsafe { *__otter_argv.add(#idx) },
                 )?;
             }
         })
@@ -156,9 +155,17 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
     let panic_arm = panic_handler();
     let result_handling = quote! {
         match __otter_result {
-            Ok(Ok(__val)) => ::otter::__codegen::Encoder::encode(&__val, __otter_env).as_raw(),
-            Ok(Err(_))    => __otter_env.raise_badarg().as_raw(),
-            Err(_)        => { #panic_arm }
+            // Decode + call + encode all completed without unwinding. `__word`
+            // is the already-encoded result word; `encode_result` maps an
+            // encoder `Err` to `badret_word` internally, so a *domain* error
+            // already surfaces as `error:badret` here — only an encoder *panic*
+            // reaches the `Err(_)` arm below.
+            Ok(Ok(__word)) => __word,
+            // A decode `?` bailed before the call.
+            Ok(Err(_))     => ::otter::__codegen::badarg_word(__otter_env),
+            // A panic anywhere in decode/call/encode was caught. The handler
+            // itself must stay panic-free: it only interns short static atoms.
+            Err(_)         => { #panic_arm }
         }
     };
 
@@ -172,8 +179,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
     // Emit the otter-exported constants rather than bare literals so the
     // generated flags stay in lockstep with the crate's own definitions.
     let flags = match attrs.schedule.as_deref() {
-        Some("DirtyCpu") => quote! { ::otter::__codegen::NIF_FUNC_DIRTY_CPU as u32 },
-        Some("DirtyIo") => quote! { ::otter::__codegen::NIF_FUNC_DIRTY_IO as u32 },
+        Some("DirtyCpu") => quote! { ::otter::__codegen::ffi::DIRTY_JOB_CPU_BOUND as u32 },
+        Some("DirtyIo") => quote! { ::otter::__codegen::ffi::DIRTY_JOB_IO_BOUND as u32 },
         _ => quote! { 0u32 },
     };
 
@@ -185,42 +192,43 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
         #[doc(hidden)]
         #[allow(non_snake_case, unused_variables)]
         pub unsafe extern "C" fn #wrapper_name(
-            __otter_nif_env: *mut ::otter::__codegen::NifEnv,
+            __otter_nif_env: *mut ::otter::__codegen::ffi::Env,
             __otter_argc: ::std::ffi::c_int,
-            __otter_argv: *const ::otter::__codegen::NifTerm,
-        ) -> ::otter::__codegen::NifTerm {
-            let __otter_marker = ();
-            let __otter_env = unsafe {
-                ::otter::__codegen::new_env(
-                    &__otter_marker,
-                    __otter_nif_env,
-                    ::otter::__codegen::EnvKind::ProcessBound,
-                )
-            };
+            __otter_argv: *const ::otter::__codegen::ffi::Term,
+        ) -> ::otter::__codegen::ffi::Term {
+            // `CallEnv::with_raw` mints a fresh generative brand `'id` for this
+            // call via its `for<'id>` closure, and the closure's return is the raw
+            // word the C ABI hands back. The user fn, decoded args, and result
+            // all share `'id` through inference — the macro never touches the
+            // user's signature.
+            unsafe {
+                ::otter::__codegen::CallEnv::with_raw(__otter_nif_env, |__otter_env| {
+                    // The unpack reads argv[0..arity) with unchecked offsets. The
+                    // BEAM always calls with argc == the registered arity, so a
+                    // mismatch is a registration/ABI bug — fail safe with badarg.
+                    if __otter_argc != #arity as ::std::ffi::c_int {
+                        return ::otter::__codegen::badarg_word(__otter_env);
+                    }
 
-            // The unpack below reads argv[0..arity) with unchecked pointer
-            // offsets. The BEAM always calls a NIF with argc equal to its
-            // registered arity, so a mismatch means a registration/ABI bug —
-            // fail safe with badarg rather than reading out of bounds.
-            if __otter_argc != #arity as ::std::ffi::c_int {
-                return __otter_env.raise_badarg().as_raw();
-            }
+                    // Decode, call, AND encode all run inside the catch: an
+                    // `Encoder::encode` panic must not unwind across this
+                    // `extern "C"` boundary (that would be UB under the
+                    // mandated `panic = "unwind"`). The closure returns the
+                    // encoded result word, so a panic in any of the three
+                    // stages lands in the `Err(_)` arm of `result_handling`.
+                    let __otter_result = ::std::panic::catch_unwind(
+                        ::std::panic::AssertUnwindSafe(|| {
+                            #(#unpack)*
+                            let __val = #fn_name(#(#call_args),*);
+                            Ok::<_, ::otter::__codegen::CodecError>(
+                                ::otter::__codegen::encode_result(&__val, __otter_env)
+                            )
+                        })
+                    );
 
-            // Constrain the user fn's return type to `Encoder` here so the
-            // diagnostic on a missing impl points at this assertion's bound
-            // rather than at the `Encoder::encode` call deep in the wrapper.
-            fn __otter_assert_encoder<T: ::otter::__codegen::Encoder>(t: T) -> T { t }
-
-            let __otter_result = ::std::panic::catch_unwind(
-                ::std::panic::AssertUnwindSafe(|| {
-                    #(#unpack)*
-                    Ok::<_, ::otter::__codegen::CodecError>(
-                        __otter_assert_encoder(#fn_name(#(#call_args),*))
-                    )
+                    #result_handling
                 })
-            );
-
-            #result_handling
+            }
         }
 
         #[doc(hidden)]

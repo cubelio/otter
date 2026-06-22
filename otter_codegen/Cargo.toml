@@ -1,17 +1,26 @@
 [package]
-name = "otter_codegen"
-version = "0.1.0"
-edition = "2024"
-authors = ["Lynn Gabbay"]
+name = "otter-nif-macros"
+version = "0.3.0"
+edition = "2021"
+rust-version = "1.56"
+authors = ["Lynn Gabbay <lynn@cubelio.com>"]
 license = "MIT OR Apache-2.0"
-description = "Procedural macros for the otter Erlang NIF library."
+description = "Procedural macros for otter-nif (Erlang NIFs in Rust). Re-exported through otter-nif; not used directly."
 repository = "https://github.com/cubelio/otter"
 readme = "../README.md"
 keywords = ["erlang", "nif", "beam", "otp", "macros"]
 categories = ["api-bindings", "external-ffi-bindings"]
 
+# Published as `otter-nif-macros`, but the library stays `otter_codegen` so
+# otter-nif's `pub use otter_codegen::*` and internal references are unchanged.
 [lib]
+name = "otter_codegen"
 proc-macro = true
+
+[features]
+# Accept the tier-2 `_raw` load/upgrade/unload callbacks in `init!`. Enabled
+# transitively by `otter`'s `raw` feature; without it, `_raw` keys are rejected.
+raw = []
 
 [dependencies]
 syn = { version = "2", features = ["full", "extra-traits"] }

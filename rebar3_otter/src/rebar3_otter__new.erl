@@ -12,6 +12,12 @@ with a minimal working NIF.
 
 -export([init/1, do/1, format_error/1]).
 
+-ifdef(TEST).
+%% Exposed so the integration test can scaffold into a temp dir and `cargo
+%% build` the result (rebar3_otter__new_test).
+-export([scaffold/2]).
+-endif.
+
 %%------------------------------------------------------------------------------
 
 -define(PROVIDER, new).
@@ -90,25 +96,30 @@ cargo_toml(Name) ->
     "[package]\n"
     "name = \"~s\"\n"
     "version = \"0.1.0\"\n"
-    "edition = \"2024\"\n"
+    "edition = \"2021\"\n"
     "\n"
     "[lib]\n"
     "crate-type = [\"cdylib\"]\n"
     "\n"
     "[dependencies]\n"
-    "otter = { git = \"https://github.com/cubelio/otter.git\" }\n",
+    "otter-nif = \"0.2\"\n",
     [Name]).
 
 -spec lib_rs(string()) -> iolist().
 lib_rs(Name) ->
   io_lib:format(
-    "use otter::env::Env;\n"
-    "use otter::types::Atom;\n"
+    "use otter::types::{AnyTerm, Atom, CallEnv, InitEnv};\n"
     "\n"
-    "#[otter::nif]\n"
-    "fn hello(env: Env) -> Atom {\n"
-    "    Atom::new(env, \"world\").unwrap()\n"
+    "// Optional load hook. Atoms listed in `init!` are interned by the\n"
+    "// scaffolding before this runs, so a fresh crate has nothing to do here.\n"
+    "fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {\n"
+    "    true\n"
     "}\n"
     "\n"
-    "otter::init!(\"~s\", [hello]);\n",
+    "#[otter::nif]\n"
+    "fn hello(_env: CallEnv) -> Atom {\n"
+    "    otter::atom![world]\n"
+    "}\n"
+    "\n"
+    "otter::init!(\"~s\", [hello], atoms = [world], load = on_load);\n",
     [Name]).

@@ -3,13 +3,18 @@
 //! Wraps `enif_monotonic_time`, `enif_time_offset`, and
 //! `enif_convert_time_unit`.
 
-pub use crate::sys::{NifTime as Time, NifTimeUnit as TimeUnit};
+/// A BEAM time value, in the [`TimeUnit`] it was produced with. Re-exported from
+/// `enif_ffi`.
+pub use enif_ffi::Time;
+/// The unit a [`Time`] value is expressed in (`ErlNifTimeUnit` — seconds,
+/// milliseconds, microseconds, nanoseconds). Re-exported from `enif_ffi`.
+pub use enif_ffi::TimeUnit;
 
 /// Return the current BEAM monotonic time in the given unit.
 ///
 /// Wraps `enif_monotonic_time`.
 pub fn monotonic_time(unit: TimeUnit) -> Time {
-    crate::wrapper::time::monotonic_time(unit)
+    unsafe { enif_ffi::monotonic_time(unit) }
 }
 
 /// Return the current BEAM time offset in the given unit.
@@ -18,12 +23,12 @@ pub fn monotonic_time(unit: TimeUnit) -> Time {
 ///
 /// Wraps `enif_time_offset`.
 pub fn time_offset(unit: TimeUnit) -> Time {
-    crate::wrapper::time::time_offset(unit)
+    unsafe { enif_ffi::time_offset(unit) }
 }
 
 /// Convert a time value from one unit to another.
 ///
 /// Wraps `enif_convert_time_unit`.
 pub fn convert_time_unit(val: Time, from: TimeUnit, to: TimeUnit) -> Time {
-    crate::wrapper::time::convert_time_unit(val, from, to)
+    unsafe { enif_ffi::convert_time_unit(val, from, to) }
 }

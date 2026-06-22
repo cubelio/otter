@@ -22,16 +22,16 @@ You only depend on `otter`. The codegen macros are re-exported through it.
 [package]
 name = "my_nifs"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-otter = { git = "https://github.com/cubelio/otter.git" }
+otter-nif = "0.2"
 ```
 
-The crate must be `cdylib` — this produces a shared library the BEAM can load.
+The crate must be `cdylib` — this produces a shared library the BEAM can load. otter is edition 2021 with MSRV 1.82; the optional `bigint` / `raw` / `nif_2_18` features are off by default.
 
 ### rebar.config
 
@@ -65,33 +65,45 @@ add(_A, _B) -> exit(nif_not_loaded).
 
 ## Core Concepts
 
-### Term Resolution
+### TypedTerm Resolution
 
 Terms are resolved lazily. Each step costs one NIF call, and you only pay for what you use.
 
 ```
-NifTerm          bare machine word, no metadata
-  -> RawTerm     + Env and lifetime, zero work
-    -> Term      + type tag (one enif_term_type call)
-      -> data    extraction methods on concrete types
+RawTerm           bare machine word, no metadata
+  -> AnyTerm<'id>      + the env's brand, zero work
+    -> Option<TypedTerm<'id>>   + type tag (one enif_term_type call)
+      -> data    extraction methods on concrete types (each takes the env)
 ```
 
-`RawTerm` is what you receive from the BEAM. Call `.resolve()` to get a `Term` (typed enum). Call methods like `i64::try_from(integer)` or `.as_bytes()` to extract actual data. Each step is explicit.
+`AnyTerm<'id>` is what you receive from the BEAM. Call `.resolve(env)` to get an `Option<TypedTerm>` (typed enum) — `None` only if the term's type is one this otter build does not recognize (a type added by a newer OTP); the `AnyTerm` you called it on is still valid to use. Call methods like `integer.to_i64(env)` or `bin.as_bytes(env)` to extract actual data. Each step is explicit. (`Term` is the *trait* every term implements; `AnyTerm` is the bare-word handle.)
 
 ### Env and Lifetimes
 
-`Env<'a>` ties every term to the NIF call that created it. When the NIF returns, the `Env` is gone and no `Term<'a>` can outlive it. This is enforced at compile time — there is no runtime check.
+`Env<'id>` is a sealed *trait* with a generative **brand** `'id` that ties every term to the NIF call that created it. When the NIF returns, the brand is gone and no `TypedTerm<'id>` can outlive it. This is enforced at compile time — there is no runtime check. A term carries only the brand, not the env, so accessors take the env explicitly.
+
+A NIF receives the concrete env kind `CallEnv<'id>`. Other kinds appear in other contexts:
+
+| Env kind | Where |
+|---|---|
+| `CallEnv<'id>` | a NIF call |
+| `InitEnv<'id>` | the `load` / `upgrade` callbacks |
+| `CallbackEnv<'id>` | resource callbacks (`destructor` / `down` / `stop`) |
+| `DeinitEnv<'id>` | the `unload` callback |
+| `OwnedEnv<'a,'id>` | a process-independent arena (`OwnedEnvArena::run`) |
+
+All implement `Env<'id>`; generic helpers take `impl Env<'id>`. The brand-minting (`with_*_env` / `run`) is codegen-internal — in a NIF you just write `CallEnv<'a>`.
 
 ```rust
 #[otter::nif]
-fn example(env: Env, val: Term) -> Term {
-    // env and val share lifetime 'a
+fn example(env: CallEnv, val: TypedTerm) -> TypedTerm {
+    // env and val share the brand 'id
     // both are valid until this function returns
     val
 }
 ```
 
-`Env` is `Copy`. Pass it by value everywhere.
+Every env kind is `Copy`. Pass it by value everywhere.
 
 ### The `#[otter::nif]` Macro
 
@@ -99,31 +111,31 @@ Transforms a Rust function into a NIF. Generates the `extern "C"` wrapper, argum
 
 ```rust
 #[otter::nif]
-fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    let sum = i64::try_from(a).unwrap() + i64::try_from(b).unwrap();
-    Integer::from_i64(env, sum)
+fn add(_env: CallEnv, a: i64, b: i64) -> i64 {
+    a + b
 }
 ```
 
-**Argument types and their cost:**
+Here `a` and `b` decode straight to `i64` and the sum encodes back — the native codec path. You can also take BEAM term types (`Integer<'a>`, extracted with `.to_i64(env)`) when you want lazy, zero-copy access. Each argument form and its cost:
 
 | Type | What happens | Cost |
 |---|---|---|
-| `Env<'a>` | Passed through, must be first, does not count toward arity | 0 |
-| `Term<'a>` | Wraps argv[i] + `enif_term_type` | 1 NIF call |
-| `T: Decoder` | Wraps + resolves + decodes, badarg on failure | 2+ NIF calls |
+| `CallEnv<'a>` | Passed through, must be first, does not count toward arity | 0 |
+| `AnyTerm<'a>` | Wraps argv[i]. `Decoder` is identity | 0 NIF calls |
+| `TypedTerm<'a>` | Wraps + `.resolve(env)` (`enif_term_type`) | 1 NIF call |
+| `T: Decoder` (concrete type) | Wraps + `enif_is_*` (or `enif_term_type`) check, badarg on failure | 1 NIF call |
 
-`RawTerm<'a>` is supported as a return type but not as an argument — argument-side resolution always goes through `Decoder`, which is a no-op for `Term`.
+Every argument goes through `Decoder::decode(term: AnyTerm<'a>, env)`. `AnyTerm::decode` is the identity (zero cost — pick this when you want the raw word with a brand and no type discrimination). `TypedTerm::decode` calls `.resolve(env)` internally. Concrete-type decoders (`Integer`, `Binary`, `Atom`, …) call the dedicated `enif_is_*` check directly, so each is a single NIF call with no eager discriminator.
 
 **Return type:**
 
-The user's return type must implement `Encoder`. The macro emits a single `Encoder::encode(&val, env).as_raw()` call — no inspection of the return type, no per-shape branching. Trait dispatch picks the right impl:
+The user's return type must implement `Encoder`. The macro emits a single `Encoder::encode(&val, env)` call (inside the panic catch — audit-16) — no inspection of the return type, no per-shape branching. Trait dispatch picks the right impl:
 
 | Type | What happens |
 |---|---|
-| `T: Encoder` (any otter term type) | `.encode(env).as_raw()` — one NIF call to build the term, plus the BEAM-bound machine word |
-| `Result<T, E>` where `T: Encoder, E: Encoder` | `Ok(v)` encodes `v` and returns; `Err(e)` encodes `e` and raises it as a class-`error` exception |
-| `Term<'a>` / `RawTerm<'a>` | Same path — both implement `Encoder`. The encode is essentially a passthrough |
+| `T: Encoder` (any otter term type, or a native type) | `.encode(env)` — `Ok(word)` for term types (free); a native value outside the term domain returns `Err`, which the wrapper raises as `badret` |
+| `Result<T, Raised<'a>>` where `T: Encoder` | `Ok(v)` encodes `v` and returns; `Err(Raised)` returns the already-pending exception's marker word (the BEAM raises it on return — never re-raised) |
+| `AnyTerm<'a>` / `TypedTerm<'a>` | Same path — both implement `Encoder`, wrapping the same-brand word for free |
 
 **Attributes:**
 
@@ -137,13 +149,13 @@ The user's return type must implement `Encoder`. The macro emits a single `Encod
 
 ```rust
 // Won't compile — ambiguous lifetimes:
-fn add(env: Env, a: Integer, b: Integer) -> Integer { ... }
+fn add(env: CallEnv, a: Integer, b: Integer) -> Integer { ... }
 
 // Correct:
-fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> { ... }
+fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> { ... }
 ```
 
-Types without lifetimes (`Atom`, `Pid`, `Port`) don't need this.
+Types without lifetimes (`Atom`, `LocalPid`, `LocalPort`) don't need this.
 
 ### The `init!` Macro
 
@@ -153,19 +165,53 @@ Registers all NIFs with the BEAM.
 otter::init!("my_module", [add, subtract, hello]);
 ```
 
-With an optional load callback:
+With optional resource types and lifecycle callbacks (all keyword arguments
+after the NIF list are order-independent):
 
 ```rust
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::init_atoms!(env);  // initialize pre-declared atoms
-    otter::resource::register_resource_type::<MyResource>(env, "my_resource");
-    true
-}
-
-otter::init!("my_module", [add, subtract], load = on_load);
+otter::init!("my_module", [add, subtract],
+    atoms = [ok, error],        // interned automatically; see "Pre-Declared Atoms"
+    resources = [MyResource],   // registered automatically; see "Resources"
+    load = on_load);            // also: upgrade = f, unload = f
 ```
 
-The load callback receives `Env` (with `EnvKind::Init`) and the load info term. Return `true` for success, `false` to abort loading. Panics are caught and treated as failure.
+`load` and `upgrade` are `fn(InitEnv, T) -> bool` (where `T: Decoder` is the load
+info — see below); `unload` is `fn(DeinitEnv)`. otter always generates the
+`load`/`upgrade`/`unload` NIF callbacks (even with none of these arguments), so
+every otter module is hot-upgradeable.
+
+Under the `raw` feature, the `load_raw`/`upgrade_raw`/`unload_raw` variants
+(mutually exclusive with the plain forms) instead hand you the library's
+`priv_data` `void*` directly — `&mut *mut c_void` to manage yourself, faithfully
+mirroring the enif contract. This is the tier-2 escape hatch for state you need
+to carry across a hot upgrade by hand; see `docs/UPGRADE.md`.
+
+**Panic strategy.** otter keeps a panic in a NIF or callback from crossing the
+C-ABI boundary and crashing the BEAM by catching it with `catch_unwind`, which
+only works while panics unwind. A crate built with `panic = "abort"` aborts the
+whole emulator at the panic site, silently removing this protection, so `init!`
+fails to compile under that profile. If you accept the trade-off (e.g. NIFs you
+have proven panic-free), pass the bare flag `allow_panic_abort` to `init!` to opt
+out of the check:
+
+```rust
+otter::init!("my_module", [add, subtract],
+    load = on_load,
+    allow_panic_abort);     // build with panic = "abort"; panics will abort the VM
+```
+
+The load callback receives an `InitEnv<'_>` and the load info term. The second parameter can be any type that implements `Decoder` — `AnyTerm<'a>` is the zero-cost choice when you don't inspect the value, `TypedTerm<'a>` adds an `enif_term_type` call, and a concrete type (e.g. `Integer<'a>`) lets you reject mismatched `LoadInfo` at the type level. Return `true` for success, `false` to abort loading. Panics are caught and treated as failure.
+
+**Load failure return codes.** When the load callback returns non-zero, BEAM aborts the library load and `erlang:load_nif(Path, LoadInfo)` returns `{error, {load_failed, "Library load-call unsuccessful (N)."}}`. The integer `N` carries the cause:
+
+| `N` | Cause |
+|---|---|
+| 0 | Success (`erlang:load_nif/2` returns `ok`) |
+| 1 | User load callback returned `false` |
+| 2 | User load callback panicked (caught at the FFI boundary) |
+| 3 | `Decoder::decode` rejected the `LoadInfo` term — the type declared for the second parameter of the load callback did not match what `erlang:load_nif/2` was given |
+
+There is no structured channel back to Erlang for the decode-failure reason; the integer is the only signal. The codes live in `otter::__codegen` as named constants (`LOAD_OK`, `LOAD_FAILED_USER_FALSE`, `LOAD_FAILED_PANIC`, `LOAD_FAILED_DECODE`).
 
 ---
 
@@ -175,28 +221,11 @@ The load callback receives `Env` (with `EnvKind::Init`) and the load info term. 
 
 Atoms are tagged immediates — no lifetime needed. They are valid across environments.
 
-```rust
-// Create (interns if new)
-let ok = Atom::new(env, "ok").unwrap();
-
-// Look up without creating
-let existing = Atom::try_existing(env, "error");
-
-// Extract name
-let name: String = ok.name(env);
-```
-
-`Atom::new` returns `None` if the atom table is full (extremely unlikely). `try_existing` returns `None` if the atom doesn't exist.
-
-**Pre-declared atoms** — for atoms used repeatedly, declare them once and retrieve them with zero cost (a single atomic load, no NIF call):
+**Declare literal atom names in `init!` and retrieve them with `atom![…]`** — each name is interned exactly once at NIF load and retrieved at use as a single atomic load, with no NIF call:
 
 ```rust
-otter::declare_atoms![ok, error, not_found, content_type = "content-type"];
-
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::init_atoms!(env);
-    true
-}
+otter::init!("my_module", [my_nif],
+    atoms = [ok, error, not_found, content_type = "content-type"]);
 
 // In any NIF — zero-cost retrieval:
 let ok = otter::atom![ok];
@@ -204,32 +233,57 @@ let ok = otter::atom![ok];
 
 Bare identifiers use the identifier as the atom name. For names that aren't valid Rust identifiers, use `ident = "name"` syntax. See the [Pre-Declared Atoms](#pre-declared-atoms) section for details.
 
+**Lookup and inspection:**
+
+```rust
+// Look up by name without creating — None if it doesn't exist
+let existing = Atom::try_existing(env, "error");
+
+// Extract name
+let name: String = ok.name(env);
+```
+
+**`Atom::intern(env, name)` exists for the rare case where you need to construct an atom from a runtime string, but read [Atom-table safety](#atom-table-safety) first.**
+
+#### Atom-table safety
+
+The BEAM atom table is global, has a fixed maximum size (default 1,048,576), and **never shrinks** — every interned name persists for the life of the VM. Calling `Atom::intern` on attacker-influenced input (a network protocol field, a binary parsed from a file, etc.) turns each unique string into a permanent atom-table entry. Eventually the table fills, and the entire VM crashes — not just the NIF, the whole node.
+
+This is a well-known BEAM DoS vector. The rule:
+
+- **Never call `Atom::intern` on untrusted strings.** For input handling, use `Atom::try_existing` and treat `None` as "atom not recognized, reject input."
+- **For compile-time-known names, declare them in `init!`'s `atoms = [...]`** rather than calling `Atom::intern`. Same atom, but with no chance of leaking growth from a mistaken hot-path call.
+- `Atom::intern` returns `Result<Atom, AtomError>`, and `AtomError::NameTooLong` (name over 255 characters) is its **only** failure: a Rust `&str` is always valid UTF-8 so encoding never fails, and atom-table exhaustion does not return an error at all — it aborts the whole VM (`erts_exit`) before `intern` can return. In other words, the table-full case is never something you get to observe and recover from; the only defense is not interning untrusted input in the first place.
+
 ### Integer
 
 ```rust
-// Decode from a Term
-let Term::Integer(i) = term else { ... };
+// Decode from a TypedTerm
+let TypedTerm::Integer(i) = term else { ... };
 
-// Extract value
-let val: i64 = i.try_into()?;          // may overflow
-let val: u64 = i.try_into()?;         // negative -> overflow
-let val: i128 = i.try_into()?;        // covers i64 | u64 range
+// Extract value (each takes the env; None if it doesn't fit)
+let val: Option<i64> = i.to_i64(env);
+let val: Option<u64> = i.to_u64(env);   // None if negative / overflow
 
 // Construct
 let three = Integer::from_i64(env, 3);
 let big = Integer::from_u64(env, u64::MAX);
+
+// Arbitrary precision (bignums beyond i64/u64) — requires the `bigint` feature:
+let big = i.to_bigint(env);                       // otter::types::BigInt
+let term = Integer::from_bigint(env, &big);
 ```
 
 ### Float
 
 ```rust
-let Term::Float(f) = term else { ... };
+let TypedTerm::Float(f) = term else { ... };
 
 // Extract (always succeeds — Erlang floats are f64)
-let val: f64 = f.into();
+let val: f64 = f.to_f64(env);
 
-// Construct
-let pi = Float::from_f64(env, 3.14159);
+// Construct — None if the value is not finite (NaN / infinity)
+let pi = Float::from_f64(env, 3.14159).unwrap();
 ```
 
 ### Binary
@@ -237,46 +291,68 @@ let pi = Float::from_f64(env, 3.14159);
 Zero-copy access to BEAM-heap binaries.
 
 ```rust
-let Term::Binary(bin) = term else { ... };
+// Decode an argument as Binary (rejects sub-byte bitstrings):
+//   fn read<'a>(_env: CallEnv<'a>, bin: Binary<'a>) -> ...
+//
+// Or refine from a TypedTerm — every binary surfaces as TypedTerm::Bitstring,
+// and Bitstring::to_binary refines to Binary if byte-aligned:
+let TypedTerm::Bitstring(bs) = term else { ... };
+let bin = bs.to_binary(env).ok_or(...)?;
 
-// Read
-let bytes: &[u8] = bin.as_bytes();
-let len: usize = bin.len();
-let text: &str = bin.try_str()?;      // UTF-8 validation
+// Read (each accessor takes the env)
+let bytes: &[u8] = bin.as_bytes(env);
+let len: usize = bin.len(env);
+let text: &str = bin.try_str(env)?;   // UTF-8 validation
 
 // Sub-binary (zero-copy slice)
-let sub = bin.sub(0, 5);
+let sub = bin.sub(env, 0, 5);
 
 // Construct from bytes
 let new_bin = Binary::from_bytes(env, b"hello");
 ```
 
-**BinaryBuilder** — growable buffer for constructing binaries, mirrors `Vec<u8>`:
+**BinaryBuf** — growable buffer for constructing binaries, mirrors `Vec<u8>`:
 
 ```rust
 // Append-style (unknown size)
-let mut builder = BinaryBuilder::new();
+let mut builder = BinaryBuf::new();
 builder.extend_from_slice(b"hel");
 builder.extend_from_slice(b"lo");
-let bin: Binary = builder.finish(env);
+let bin: Binary = builder.into_binary(env);
 
 // Pre-sized with indexed writes (known size)
-let mut builder = BinaryBuilder::with_capacity(5);
+let mut builder = BinaryBuf::with_capacity(5);
 builder.resize(5, 0);
-let buf: &mut [u8] = builder.as_mut_slice();
+let buf: &mut [u8] = builder.as_bytes_mut();
 buf[0] = b'h';
 buf[1] = b'e';
 buf[2] = b'l';
 buf[3] = b'l';
 buf[4] = b'o';
-let bin: Binary = builder.finish(env);
+let bin: Binary = builder.into_binary(env);
 ```
 
-`BinaryBuilder` allocates via `enif_alloc_binary` and grows via `enif_realloc_binary`. `finish()` shrinks to the written length and transfers ownership to the BEAM. If dropped without calling `finish()`, the allocation is released. Implements `std::io::Write`.
+`BinaryBuf` allocates via `enif_alloc_binary` and grows via `enif_realloc_binary`. `into_binary()` shrinks to the written length and transfers ownership to the BEAM. If dropped without calling `into_binary()`, the allocation is released. Implements `std::io::Write`.
+
+### Serialize / deserialize (external term format)
+
+`otter::types::serialize` is the `term_to_binary/1` codec — a free verb that works on any term (no `resolve`) and returns a `BinaryBuf`, so you choose whether you want the bytes or an Erlang binary term. `deserialize` is the `binary_to_term/1` inverse.
+
+```rust
+// term -> ETF
+let buf = otter::types::serialize(env, term).expect("serializable");
+let bytes: &[u8] = buf.as_bytes();        // use the bytes in Rust
+let bin: Binary = buf.into_binary(env);   // ...or hand them back as a binary term
+
+// ETF -> term (safe = reject unknown atoms)
+let term: AnyTerm = otter::types::deserialize(env, bytes, true).ok_or(...)?;
+// or from an existing Binary term:
+let term: AnyTerm = binary.deserialize(env, true).ok_or(...)?;
+```
 
 ### Bitstring
 
-Sub-byte bitstrings. Received via `Term::Bitstring`. No inspection API exists in the NIF interface — you can pass them through or encode them, but you cannot read the bits.
+Sub-byte bitstrings. Received via `TypedTerm::Bitstring`. No inspection API exists in the NIF interface — you can pass them through or encode them, but you cannot read the bits.
 
 ### List
 
@@ -284,36 +360,36 @@ Lists in the BEAM are cons cells or nil (`[]`). Use `iter()` to walk a list:
 
 ```rust
 // Sum all integers in a list
-let sum: i64 = list.iter()
-    .filter_map(|raw| match raw.resolve() {
-        Term::Integer(i) => Some(i64::try_from(i).unwrap()),
+let sum: i64 = list.iter(env)
+    .filter_map(|raw| match raw.resolve(env) {
+        Some(TypedTerm::Integer(i)) => i.to_i64(env),
         _ => None,
     })
     .sum();
 ```
 
-`iter()` yields heads as `RawTerm` — one `enif_get_list_cell` per step. After iteration, call `tail()` to inspect the terminal value:
+`iter(env)` yields heads as `AnyTerm` — one `enif_get_list_cell` per step. After iteration, call `tail()` to inspect the terminal value:
 
 ```rust
-let mut iter = list.iter();
-for head in &mut iter {
-    // process head.resolve()
+let mut iter = list.iter(env);
+while let Some(head) = iter.next() {
+    // process head.resolve(env)
 }
-match iter.tail().unwrap() {
-    Term::List(_) => { /* proper list — tail is [] */ }
-    other => { /* improper list — tail is some other term */ }
+match iter.tail().unwrap().resolve(env) {
+    Some(TypedTerm::List(_)) => { /* proper list — tail is [] */ }
+    _ => { /* improper list — tail is some other term */ }
 }
 ```
 
-For low-level decomposition, `node()` gives direct access to the cons cell:
+For low-level decomposition, `node(env)` gives direct access to the cons cell:
 
 ```rust
 use otter::types::Node;
 
-match list.node() {
+match list.node(env) {
     Node::Nil => { /* empty list [] */ }
     Node::Cell(head, tail) => {
-        // head and tail are RawTerm — resolve when needed
+        // head and tail are AnyTerm — resolve(env) when needed
     }
 }
 ```
@@ -321,8 +397,8 @@ match list.node() {
 **Constructing lists:**
 
 ```rust
-// From a slice of terms
-let list = List::from_terms(env, &[term1, term2, term3]);
+// From any iterable of terms
+let list = List::from_terms(env, [term1, term2, term3]);
 
 // From a UTF-8 string (creates a list of codepoints)
 let charlist = List::from_str(env, "hello");
@@ -331,97 +407,111 @@ let charlist = List::from_str(env, "hello");
 let cell = List::cons(env, head_term, tail_term);
 
 // List length (O(n), None for improper lists)
-let len: Option<usize> = list.len();
+let len: Option<usize> = list.len(env);
 
 // Reverse (None for improper lists)
-let rev: Option<List> = list.reverse();
+let rev: Option<List> = list.reverse(env);
 
-// Collect codepoints into a String
-let s: String = list.try_string()?;
+// Collect codepoints into a String (None if not a valid string)
+let s: Option<String> = list.try_string(env);
 ```
 
 ### Tuple
 
 ```rust
-let Term::Tuple(tup) = term else { ... };
+let TypedTerm::Tuple(tup) = term else { ... };
 
-// Arity
-let len: usize = tup.len();
+// Resolve elements (the single enif_get_tuple) into a TupleView
+let view = tup.with_elements(env);
 
-// Element access (0-indexed)
-let first: Term = tup.element(0);
-let second: Term = tup.element(1);
+// Arity (no env)
+let len: usize = view.len();
 
-// Construct from a slice
-let tup = Tuple::from_terms(env, &[term1, term2]);
+// Element access (0-indexed, zero-copy) — each is an AnyTerm
+let first: AnyTerm = view[0];
+for e in view { let t = e.resolve(env); }
+
+// Construct from any iterable
+let tup = Tuple::from_terms(env, [term1, term2]);
 ```
 
 ### Map
 
 ```rust
-let Term::Map(map) = term else { ... };
+let TypedTerm::Map(map) = term else { ... };
 
 // Size
-let n: usize = map.size();
+let n: usize = map.size(env);
 
-// Lookup — accepts any TermIn (Atom, Integer, Term, etc.)
-let val: Option<Term> = map.get(atom_key);
+// Lookup — accepts any `impl Term` (Atom, Integer, AnyTerm, etc.)
+let val: Option<AnyTerm> = map.get(env, atom_key);
 
 // Insert (returns a new map — maps are immutable)
-let map2: Map = map.put(atom_key, integer_val);
+let map2: Map = map.put(env, atom_key, integer_val);
 
 // Update existing key (None if key not found)
-let map3: Option<Map> = map.update(atom_key, new_val);
+let map3: Option<Map> = map.update(env, atom_key, new_val);
 
-// Remove (None if key not found)
-let map4: Option<Map> = map.remove(atom_key);
+// Remove (returns the map unchanged if the key is absent — NOT Option)
+let map4: Map = map.remove(env, atom_key);
 
 // Construct empty
 let empty = Map::new(env);
 
 // Iterate
-for (key, value) in map.iter() {
-    // key and value are Term<'a>
+for (key, value) in map.iter(env) {
+    // key and value are AnyTerm — call .resolve(env) to type them
 }
 ```
 
 ### Pid
 
-No lifetime — pids are tagged immediates.
+`Pid<'a>` is a pid of unestablished locality, tied to its env: an external
+(remote-node) pid is heap-boxed, so it must not outlive `'a`. It supports
+identity and encoding. To *act* on the process, refine it to a `LocalPid`
+(`Copy`, no lifetime, storable) with `to_local(env)` — only local processes can
+be sent to, monitored, or checked. NIF arguments can be decoded directly as
+`LocalPid` (an external pid then fails with badarg).
 
 ```rust
-let Term::Pid(pid) = term else { ... };
+let TypedTerm::Pid(pid) = term else { ... };       // pid: Pid<'a>
+let Some(local) = pid.to_local(env) else { ... };  // None if external
 
-// Current process
-let self_pid = Pid::self_(env);
+// Current process — always local (CallEnv only)
+let self_pid = LocalPid::self_(env);
 
-// Liveness check
-let alive: bool = pid.is_alive(env);
+// Liveness check / registered-name lookup
+let alive: bool = local.is_alive(env);
+let pid = LocalPid::whereis(env, name_atom);
 
-// Registered name lookup
-let pid = Pid::whereis(env, name_atom);
+// Send (in-NIF): a free verb, caller-attributed via the call env
+otter::types::send_copy_from(env, &local, msg_term);   // copy a live term
+// or send_move_from(env, &local, &mut arena, oterm) to steal an owned-env heap
 ```
 
 ### Port
 
+Symmetric to `Pid`: `Port<'a>` (any port) refines to `LocalPort` via
+`to_local(env)`; `enif_port_command`/`enif_is_port_alive` take a local port.
+
 ```rust
-let Term::Port(port) = term else { ... };
+let TypedTerm::Port(port) = term else { ... };       // port: Port<'a>
+let Some(local) = port.to_local(env) else { ... };
 
-// Registered name lookup
-let port = Port::whereis(env, name_atom);
+let port = LocalPort::whereis(env, name_atom);
 
-// Send a command
-let ok: bool = port.command(env, msg_term);
+// Send a command — a free verb taking a &LocalPort
+let ok: bool = otter::types::port_command(env, &local, msg_term);
 ```
 
 ### Fun
 
-Received via `Term::Fun`. Can be passed through or encoded, but there is no NIF API to call or inspect funs.
+Received via `TypedTerm::Fun`. Can be passed through or encoded, but there is no NIF API to call or inspect funs.
 
 ### Reference
 
 ```rust
-let Term::Reference(r) = term else { ... };
+let TypedTerm::Reference(r) = term else { ... };
 
 // Create a new unique reference
 let new_ref = Reference::new(env);
@@ -431,162 +521,183 @@ let new_ref = Reference::new(env);
 
 ## Pre-Declared Atoms
 
-For atoms used frequently across NIFs, pre-declaration avoids repeated `Atom::new` calls. Pre-declared atoms are interned once at NIF load time and retrieved thereafter as a single atomic load — no NIF call, no lookup.
+For atoms used frequently across NIFs, pre-declaration avoids repeated `Atom::intern` calls. Pre-declared atoms are interned once at NIF load time and retrieved thereafter as a single atomic load — no NIF call, no lookup.
 
 ### Step 1: Declare
 
-At module scope, list the atoms you need:
+List the atoms you need in the `atoms = [...]` argument of [`init!`](#registration), alongside your NIFs and resources:
 
 ```rust
-otter::declare_atoms![ok, error, not_found];
+otter::init!("my_module", [my_nif], atoms = [ok, error, not_found]);
 ```
 
 For atom names that are not valid Rust identifiers, use `ident = "name"` syntax:
 
 ```rust
-otter::declare_atoms![ok, error, content_type = "content-type"];
+otter::init!("my_module", [my_nif], atoms = [ok, error, content_type = "content-type"]);
 ```
 
-This generates a hidden `__otter_atoms` module containing one `StaticAtom` per entry and an `init` function.
+This generates a hidden `__otter_atoms` module containing one `StaticAtom` per entry, which the load scaffolding interns automatically — there is no separate initialization step to remember.
 
-### Step 2: Initialize
-
-Call `init_atoms!` from your `on_load` callback:
-
-```rust
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::init_atoms!(env);
-    true
-}
-
-otter::init!("my_module", [my_nif], load = on_load);
-```
-
-### Step 3: Use
+### Step 2: Use
 
 Retrieve any declared atom by name:
 
 ```rust
 #[otter::nif]
-fn example(_env: Env) -> Atom {
+fn example(_env: CallEnv) -> Atom {
     otter::atom![ok]
 }
 ```
 
 `atom!` returns an `Atom` — it works anywhere an `Atom` is expected.
 
-### What the macros generate
+### What the macro generates
 
-The macros generate code you could write by hand. Nothing is hidden:
+`init!` generates code you could write by hand. Nothing is hidden:
 
 ```rust
-// otter::declare_atoms![ok, error, content_type = "content-type"];
-// expands to:
-mod __otter_atoms {
+// atoms = [ok, error, content_type = "content-type"] expands to:
+pub mod __otter_atoms {
     use otter::types::atom::StaticAtom;
 
     pub static ok: StaticAtom = StaticAtom::new("ok");
     pub static error: StaticAtom = StaticAtom::new("error");
     pub static content_type: StaticAtom = StaticAtom::new("content-type");
 
-    pub fn init(env: otter::env::Env<'_>) {
-        ok.init(env);
-        error.init(env);
-        content_type.init(env);
+    pub fn init(env: otter::__codegen::InitEnv<'_>) {
+        ok.init(env).expect("...");          // init returns Result<(), AtomError>;
+        error.init(env).expect("...");       // names were length-checked at compile
+        content_type.init(env).expect("..."); // time, so this never fails here
     }
 }
 
-// otter::init_atoms!(env);  →  __otter_atoms::init(env);
-// otter::atom![ok]          →  __otter_atoms::ok.get()
+// otter::atom![ok]  →  __otter_atoms::ok.get()
 ```
 
-`StaticAtom::get()` is a single `AtomicUsize` load with `Relaxed` ordering. In debug builds, it panics if called before `init`.
+The generated load **and** upgrade callbacks call `__otter_atoms::init(env)` before dispatching your own `load`/`upgrade` callback, so the atoms are ready before any NIF runs. `StaticAtom::get()` is an acquire load of a `OnceLock<Atom>` (it stores the `Atom` itself, no term-representation assumption); it panics (in release builds too) if called before init.
+
+### Hot upgrade
+
+Atom pre-declaration is upgrade-safe with no extra machinery. An atom term is a VM-global tagged immediate — an index into the global atom table, which never shrinks and outlives every code version. So each build owns its own `__otter_atoms` statics, and the scaffolding re-interns them in the **upgrade** callback exactly as it does in load. Re-interning hits the existing table entries (idempotent, cheap) and touches no cross-build state. Nothing is shared across the upgrade boundary, so atoms never participate in the ABI concerns that govern `priv_data` and resource payloads.
 
 ### Notes
 
-A few rules follow from what the macros expand to:
+A few rules follow from what the macro expands to:
 
-- **Initialize in `on_load`.** Call `init_atoms!(env)` before any NIF runs — atoms are eager, with no lazy fallback. Calling it more than once is harmless; it re-interns the same names.
-- **One `declare_atoms!` per module.** The generated `__otter_atoms` submodule has a fixed name. For separate groups, put each `declare_atoms!` in its own child module.
-- **`atom![…]` and `init_atoms!` resolve `__otter_atoms` relative to the current scope.** Use them in the module that declared the atoms, or `use super::__otter_atoms;` from a descendant. They will not find atoms declared in a sibling module.
+- **Declaration lives in `init!`.** All your literal atoms go in one `atoms = [...]` list. The generated `__otter_atoms` module is emitted at the `init!` site (conventionally the crate root). For full manual control over the declaration site or interning timing, construct `StaticAtom`s yourself and call `init` from your `load`/`upgrade` callback.
+- **`atom![…]` resolves `__otter_atoms` by ordinary name lookup, so it must be in scope.** In the module that invokes `init!`, it's already in scope. To use the atoms from a sibling or descendant module, bring the module in with a `use` statement:
+
+  ```rust
+  // lib.rs — invokes init! here:
+  otter::init!("my_module", [my_nif], atoms = [ok, error, not_found]);
+  mod handlers;
+
+  // handlers.rs — uses the atoms from a sibling module:
+  use crate::__otter_atoms;     // bring the generated module into scope
+
+  pub fn handle() -> otter::types::Atom {
+      otter::atom![ok]          // resolves to __otter_atoms::ok.get()
+  }
+  ```
+
+  The `__` prefix marks `__otter_atoms` as framework-generated, but the module is `pub` and the `use` line is ordinary Rust — bring it in wherever you need `atom![…]`.
 - **Non-identifier names need `ident = "name"`.** For hyphens, leading digits, reserved words, non-ASCII — pick a valid identifier and map it to the string you want:
 
   ```rust
-  otter::declare_atoms![ok, content_type = "content-type"];
+  otter::init!("my_module", [my_nif], atoms = [ok, content_type = "content-type"]);
   let ct = otter::atom![content_type];  // the atom "content-type"
   ```
 
 - **Duplicates.** Two entries with the same identifier are a compile error. Two different identifiers mapped to the same string (`ok` and `okay = "ok"`) are fine — both intern the same BEAM atom and compare equal.
-- **Atom name length.** Erlang atoms cap at 255 characters; over-length names fail at `init_atoms!`, not mid-NIF.
-- **Thread- and env-safe.** `atom![…]` is safe from any scheduler thread, including dirty NIFs. The returned `Atom` is valid in any environment, including an `OwnedEnv`.
+- **Atom name length.** Erlang atoms cap at 255 characters; for declared atoms an over-length name is a **compile error** (`init!` length-checks each name at macro expansion), not a load- or run-time failure.
+- **Thread- and env-safe.** `atom![…]` is safe from any scheduler thread, including dirty NIFs. The returned `Atom` is valid in any environment, including a process-independent one (e.g. an `OwnedEnvArena`'s).
 
 ---
 
 ## Encoder and Decoder
 
-All otter types implement `Encoder` and `Decoder`. These traits are what the `#[otter::nif]` macro uses for automatic argument decoding and return encoding.
+All otter term types implement `Encoder` and `Decoder`, and so do the common native Rust types — integers, floats, `bool`, `str`/`String`, tuples (arity 1–12), `Vec<T>`, and `HashMap<K, V>` — so a NIF can take and return them directly. These traits are what the `#[otter::nif]` macro uses for automatic argument decoding and return encoding. Both directions are fallible: a failed decode on an argument raises `badarg`, a failed encode on a return raises `badret` (e.g. returning a non-finite `f64`). otter term types never fail to encode; only the native conversions can.
+
+The native integer codecs cover `i8`…`i64`/`isize` and `u8`…`u64`/`usize`; an integer outside the target type's range fails to decode (`badarg`). To read or write **arbitrary-precision integers** — Erlang bignums beyond `i64`/`u64` — enable the off-by-default `bigint` feature and use `otter::types::BigInt`, which then implements `Encoder`/`Decoder`. `BigInt` round-trips every Erlang integer (it goes through the external term format for the >64-bit cases, since the NIF API has no bignum accessor); the same conversions are available directly as `Integer::to_bigint(env)` and `Integer::from_bigint(env, &big)`. Name `BigInt` through otter's re-export (`otter::types::BigInt`) so your NIF shares otter's exact `num-bigint` version — the trait impls are tied to it.
 
 ```rust
-pub trait Encoder {
-    fn encode<'a>(&self, env: Env<'a>) -> RawTerm<'a>;
+pub trait Encoder<'id> {
+    fn encode(&self, env: impl Env<'id>) -> Result<AnyTerm<'id>, CodecError>;
 }
 
-pub trait Decoder<'a>: Sized {
-    fn decode(term: Term<'a>) -> Result<Self, CodecError>;
+pub trait Decoder<'id>: Sized {
+    fn decode(term: AnyTerm<'id>, env: impl Env<'id>) -> Result<Self, CodecError>;
 }
 ```
 
-`Decoder::decode` is called on resolved `Term` values. If the term doesn't match the expected type, it returns `CodecError::WrongType`. The generated wrapper converts this to a `badarg` exception.
+`Decoder::decode` takes an `AnyTerm<'id>` — the bare branded word, with no type tag — plus the env. Each impl calls its own type-specific `enif_is_*` (or `enif_term_type`) check directly, so a decode is one NIF call regardless of which concrete type you ask for. If the term doesn't match the expected type, it returns `CodecError::WrongType` and the generated wrapper converts that to a `badarg` exception.
 
-`Encoder::encode` converts a value back into a `RawTerm` tied to the target env's lifetime. For types that already hold a NIF term (like `Integer`, `Binary`), this copies the term into the target environment via `enif_make_copy`.
+`Encoder::encode` is fallible, mirroring `Decoder`. An otter term type encodes by wrapping its same-brand word for free (always `Ok`); the native-type impls can fail — a non-finite `f64`, an out-of-range integer — and the generated wrapper turns an `Err` into a `badret` exception. (To move a term to a *different* env, copy it first with `Term::copy_to(env)`.)
 
-`Result<T, E>` implements `Encoder` when both `T` and `E` do: `Ok(v)` encodes `v`, `Err(e)` encodes `e` and raises it via `enif_raise_exception`. This is how `Result`-returning NIFs work — through normal trait dispatch on the return type, not through any macro-level special case. A user type happening to be called `Result` does not inherit this behavior.
+`Result<T, Raised<'id>>` implements `Encoder`: `Ok(v)` encodes `v`; `Err(Raised)` returns the already-pending exception's marker word (the BEAM raises it on return — never re-raised). This is how `Result`-returning NIFs raise — through normal trait dispatch on the return type, not any macro-level special case. See [Raising exceptions](#raising-exceptions-raised-and-resultt-raised). A user type happening to be called `Result` does not inherit this behavior.
 
 **CodecError variants:**
 
 | Variant | Meaning |
 |---|---|
-| `WrongType` | Term is not the expected type |
-| `IntegerOverflow` | Integer doesn't fit in the target Rust type |
-| `InvalidCodepoint` | Integer is not a valid Unicode codepoint |
+| `WrongType` | The term is not the expected type |
+| `IntegerOverflow` | Integer doesn't fit in the target Rust integer type |
+| `NotFinite` | A non-finite `f64`/`f32` cannot be encoded as an Erlang float (encode side) |
+| `FloatRange` | A finite float is outside the target Rust float's range (`f32` decode) |
+| `NotUtf8` | A binary's bytes are not valid UTF-8, or a list is not a valid string |
+| `WrongArity` | An Erlang tuple's arity does not match the Rust tuple type |
+| `UnknownTermType` | The term's type code is from a newer OTP than this otter build knows |
 
 ---
 
 ## Error Handling
 
-### Result return type
+### Raising exceptions: `Raised` and `Result<T, Raised>`
 
-The idiomatic shape is a `Result<T, E>` return type where both `T: Encoder` and `E: Encoder`. `Ok(val)` encodes and returns; `Err(reason)` encodes the reason and raises it as a class-`error` exception (via `enif_raise_exception`):
+The NIF C API has exactly two exception mechanisms — `enif_make_badarg` and `enif_raise_exception` — and both *raise on the spot*: they set a pending exception on the environment and the BEAM raises it when the NIF returns. While an exception is pending, any further environment operation is undefined behaviour.
+
+Otter models this with `Raised<'id>`: a term-less typestate token that can only be produced by an operation that actually raised, so holding one is proof the env is already in the pending-exception state. You produce one with `CallEnv::raise` or `CallEnv::badarg`, and propagate it out of the NIF:
 
 ```rust
+// `division_by_zero` is declared in init!'s `atoms = [...]` list.
+
 #[otter::nif]
-fn divide<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Result<Integer<'a>, Atom> {
-    let bv = i64::try_from(b).unwrap();
-    if bv == 0 {
-        Err(Atom::new(env, "division_by_zero").unwrap())
-    } else {
-        let av = i64::try_from(a).unwrap();
-        Ok(Integer::from_i64(env, av / bv))
+fn divide<'a>(env: CallEnv<'a>, a: i64, b: i64) -> Result<i64, Raised<'a>> {
+    if b == 0 {
+        return env.raise(otter::atom![division_by_zero]);
     }
+    Ok(a / b)
 }
 ```
 
-This is normal `Encoder` trait dispatch on the return type — `Result<T, E>` has a blanket impl. No macro-level special case; a user type happening to be named `Result` does not inherit this behavior.
-
-### Raising exceptions explicitly
-
-For the cases where a `Result` return type doesn't fit — raising from a helper, or building the error term mid-function — call the raise primitives directly. Both produce a `Term<'a>` that you return from the NIF:
+Both primitives always fail and are generic over the success type, so they slot into any position — `raise` accepts any `impl Term<'a>` as the reason:
 
 ```rust
-// badarg
-return env.raise_badarg();
+return env.badarg();                       // enif_make_badarg
+return env.raise(otter::atom![oops]);      // enif_raise_exception
 
-// arbitrary reason — accepts any TermIn, no .encode(env) needed
-let reason = Atom::new(env, "my_error").unwrap();
-return env.raise(reason);
+// in a `let`-`else` (the `return` makes the arm diverge):
+let TypedTerm::Tuple(t) = term else { return env.badarg() };
+
+// bridging a fallible extraction to badarg:
+let n: i64 = int.to_i64(env).ok_or(()).or_else(|_| env.badarg())?;
 ```
 
-These are the only two exception mechanisms in the NIF C API (`enif_make_badarg` and `enif_raise_exception`). The `Err` branch of a `Result` return goes through `enif_raise_exception` under the hood.
+A NIF's error type is always `Raised`. At return, the `Encoder` for `Result<T, Raised>` hands the marker word straight back — it never *re-*raises, because the exception is already pending — so propagating a `Raised` out of a NIF is sound even though the env is in the exception state.
+
+### Builders that return `None`, and `check_raised`
+
+Some builders reject bad input without raising. `Float::from_f64` returns `None` for `NaN`/infinity — the check is done in Rust, so the env is never left pending and *you* decide whether to turn it into a raise:
+
+```rust
+let f = match Float::from_f64(env, x) {
+    Some(f) => f,
+    None => return env.badarg(),   // x was not finite
+};
+```
+
+To call a `raw`-surface enif function that genuinely *does* raise and handle it safely, pass its result through `CallEnv::check_raised`, which tests `enif_has_pending_exception` and returns `Err(Raised)` if one is pending.
 
 ---
 
@@ -594,77 +705,100 @@ These are the only two exception mechanisms in the NIF C API (`enif_make_badarg`
 
 Resources let you own Rust data from the BEAM side. The BEAM manages the lifetime via reference counting — when no Erlang term references the resource, the destructor runs.
 
+> **Hot upgrade caveat.** A resource's Rust payload is not assumed to survive a code upgrade across non-identical builds. Outside the `raw` feature, otter never assumes two builds share an allocator or a datatype layout — see `docs/UPGRADE.md` and `otter/DESIGN.md` "Core safety invariant". By default a resource type's BEAM-side name carries a hash of this build's binary, so a different build does *not* take over its resources; opt a type into cross-build takeover with `resources = [MyState: "v1"]` (a promise that its layout is stable).
+
 ### Defining a resource
 
 ```rust
-use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
-use std::sync::OnceLock;
+use otter::resource::{Resource, ResourceArc};
 
 struct MyState {
     counter: std::sync::atomic::AtomicU64,
 }
 
-static MY_STATE_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
-
-impl Resource for MyState {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MY_STATE_TYPE
-    }
-}
+impl Resource for MyState {}
 ```
+
+The `Resource` trait has no required methods — `destructor`, `down`, and `stop`
+are all optional (see below).
 
 ### Registering
 
-Registration must happen in the load callback:
+List resource types in `init!`; otter registers them in the generated load and
+upgrade callbacks:
 
 ```rust
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::resource::register_resource_type::<MyState>(env, "my_state");
-    true
-}
-
-otter::init!("my_module", [create, increment, read], load = on_load);
+otter::init!("my_module", [create, increment, read],
+    resources = [MyState],
+    load = on_load);
 ```
+
+The registered type pointer lives in the library's private data, keyed by
+`TypeId`. To opt a type into cross-build hot-upgrade takeover, give it a stable
+tag: `resources = [MyState: "v1"]`. For dynamic cases you can still register
+by hand inside `load`/`upgrade` with
+`otter::resource::register::<MyState>(env, ResourceFlags::CREATE)`.
 
 ### Creating and using
 
+Construction takes the env, which looks the type up in the registry:
+
 ```rust
 #[otter::nif]
-fn create(env: Env) -> ResourceArc<MyState> {
-    ResourceArc::from(MyState {
+fn create(env: CallEnv) -> ResourceArc<MyState> {
+    otter::resource::make_resource(env, MyState {
         counter: std::sync::atomic::AtomicU64::new(0),
     })
 }
 
 #[otter::nif]
-fn increment(env: Env, state: ResourceArc<MyState>) -> Atom {
+fn increment(_env: CallEnv, state: ResourceArc<MyState>) -> Atom {
     state.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    Atom::new(env, "ok").unwrap()
+    otter::atom![ok]
 }
 
 #[otter::nif]
-fn read<'a>(env: Env<'a>, state: ResourceArc<MyState>) -> Integer<'a> {
+fn read<'a>(env: CallEnv<'a>, state: ResourceArc<MyState>) -> Integer<'a> {
     let val = state.counter.load(std::sync::atomic::Ordering::Relaxed);
     Integer::from_u64(env, val)
 }
 ```
 
-`ResourceArc<T>` implements `Deref<Target=T>`, `Encoder`, `Decoder`, `Clone`, and `Drop`. It is `Send + Sync`.
+`make_resource(env, val)` is a free function (it looks the type up in the registry via the env). `ResourceArc<T>` implements `Deref<Target=T>`, `Encoder`, `Decoder`, `Clone`, and `Drop`. It is `Send + Sync`.
 
-### Destructors and monitors
+To create a resource off a NIF thread (e.g. inside an `OwnedEnvArena` worker, where
+`enif_priv_data` is unavailable), capture a `Send` handle from a module-bound
+env first, then use it on the worker thread:
 
 ```rust
-impl Resource for MyState {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MY_STATE_TYPE
-    }
+let handle = otter::resource::resource_handle::<MyState>(env);   // Send + Sync
+std::thread::spawn(move || {
+    let arc = handle.make(MyState {
+        counter: std::sync::atomic::AtomicU64::new(0),
+    });
+    // ...
+});
+```
 
-    fn destructor(self, _env: Env<'_>) {
+### Destructors and other callbacks
+
+Resource callbacks run with a `CallbackEnv` (a scheduler thread, no process context):
+
+```rust
+use otter::resource::Monitor;
+use otter::select::Event;
+
+impl Resource for MyState {
+    fn destructor(self, _env: CallbackEnv<'_>) {
         // cleanup when reference count hits zero
     }
 
-    fn down<'a>(&'a self, _env: Env<'a>, _pid: Pid, _monitor: Monitor) {
+    fn down<'a>(&'a self, _env: CallbackEnv<'a>, _pid: LocalPid, _monitor: Monitor) {
         // a monitored process went down
+    }
+
+    fn stop(&self, _env: CallbackEnv<'_>, _event: Event, _is_direct_call: bool) {
+        // the BEAM stopped monitoring an event selected on this resource
     }
 }
 ```
@@ -680,30 +814,49 @@ let success: bool = resource_arc.demonitor(Some(env), &monitor);
 
 ---
 
-## OwnedEnv and Message Passing
+## Message Passing
 
-`OwnedEnv` lets you build terms and send messages from outside a NIF call — typically from a spawned OS thread.
+Sending a message is **four free verbs** in `otter::types`, a **2×2** of *copy vs. move* (how the payload reaches the recipient) × *caller-attributed vs. not* (whether the message is attributed to a calling process):
+
+| | copy a live term | move (steal) an `OwnedEnvArena` heap |
+|---|---|---|
+| **in a NIF** (caller env, attributed) | `send_copy_from(env, &pid, msg)` | `send_move_from(env, &pid, &mut arena, oterm)` |
+| **off-thread** (NULL caller) | `send_copy(&pid, msg)` | `send_move(&pid, &mut arena, oterm)` |
+
+The `_from` verbs take the calling env (an `impl CallingEnv`) and pass it as the caller, so the message is attributed to the calling process; the plain verbs send with a NULL caller, for use from a non-scheduler thread. `copy` copies the message from the caller env (`enif_send`, NULL `msg_env`); `move` transplants the arena's whole heap into the message (`enif_send`, non-NULL `msg_env`), O(1), leaving the arena dirty until `clear`ed.
+
+To build a term and send it from a spawned OS thread, use an `OwnedEnvArena` (a reusable, process-independent env): build inside `arena.run(|oenv| …)`, `export` the term you want to an `OwnedEnvTerm`, then `send_move` it:
 
 ```rust
 use std::thread;
+use otter::types::{CallEnv, OwnedEnvArena};
 
 #[otter::nif]
-fn start_worker(env: Env) -> Atom {
-    let pid = Pid::self_(env);
+fn start_worker(env: CallEnv) -> Atom {
+    let pid = LocalPid::self_(env);
     thread::spawn(move || {
-        let mut owned = OwnedEnv::new();
         let result = do_heavy_work();
-        owned.send(&pid, |env| {
-            Integer::from_i64(env, result).into()
-        });
+        let mut arena = OwnedEnvArena::new();
+        let msg = arena.run(|oenv| oenv.export(Integer::from_i64(oenv, result)));
+        otter::types::send_move(&pid, &mut arena, msg);   // off-thread steal
     });
     otter::atom![ok]  // assuming `ok` is pre-declared
 }
 ```
 
-The closure passed to `send` receives a temporary `Env`. Terms built inside cannot escape — the lifetime is bound to the closure. After `send`, the environment is automatically cleared.
+`arena.run` mints a branded `OwnedEnv` (`oenv`); terms built on it cannot escape the closure, and `export` records one as a portable `OwnedEnvTerm`. `send_move` transplants the arena's heap, so the arena is then dirty until `clear`ed for reuse. `OwnedEnvTerm` is generation-guarded — using it against a cleared or different arena fails an assertion (a globally-unique stamp). There is no off-thread `port_command` (`enif_port_command` aborts the VM when its caller env is NULL, and a non-scheduler thread has no process env to supply).
 
-Call `owned.clear()` to reuse the environment for multiple sends without reallocating.
+**From inside a NIF**, you already hold the process env, so copy a live term directly with the caller-attributed `_from` verb — no arena needed:
+
+```rust
+#[otter::nif]
+fn notify<'a>(env: CallEnv<'a>, to: LocalPid, msg: TypedTerm<'a>) -> Atom {
+    otter::types::send_copy_from(env, &to, msg);   // copied into to's mailbox, attributed to the caller
+    otter::atom![ok]
+}
+```
+
+`send_copy_from` returns `true` if the target was alive. The matching port operation is the free verb `otter::types::port_command(env, &port, msg)`.
 
 ---
 
@@ -715,12 +868,12 @@ For long-running work, schedule on dirty schedulers to avoid blocking normal one
 
 ```rust
 #[otter::nif(schedule = "DirtyCpu")]
-fn heavy_compute(env: Env) -> Integer {
+fn heavy_compute(env: CallEnv) -> Integer {
     // CPU-bound work
 }
 
 #[otter::nif(schedule = "DirtyIo")]
-fn read_file(env: Env, path: Binary) -> Binary {
+fn read_file(env: CallEnv, path: Binary) -> Binary {
     // I/O-bound work
 }
 ```
@@ -769,80 +922,100 @@ match thread_type() {
 
 ---
 
+## enif-backed global allocator
+
+By default Rust allocations in your NIF use Rust's own global allocator. You can
+instead route them through the BEAM allocator (`enif_alloc`/`enif_free`) by
+installing otter's [`EnifAlloc`](https://docs.rs/otter) as the global allocator —
+invoke the macro once in your cdylib:
+
+```rust
+otter::enif_global_allocator!();
+```
+
+Why bother: `enif_free` is the one free path valid across two independently
+compiled builds of the library, so routing allocations through it is a building
+block for carrying state across a hot upgrade (see `docs/UPGRADE.md`). The macro
+is the only opt-in — `EnifAlloc` is otherwise inert and otter still links into
+ordinary binaries. Once installed, the crate links **only** as a BEAM-hosted
+cdylib (it direct-links `enif_alloc`/`enif_free`, which the VM resolves at load).
+
+---
+
 ## I/O Select
 
 For integrating OS-level I/O events (file descriptors, sockets) with the BEAM scheduler. Requires a resource to own the event lifecycle.
 
 ```rust
-use otter::select;
+use otter::select::{self, SelectFlags};
 
 // Register interest in a file descriptor
-let result = select::select(
+let result: i32 = select::select(
     env,
     fd,                         // OS event (fd on Unix)
-    NifSelectFlags::READ,       // interest flags
+    SelectFlags::READ,          // interest flags
     &resource_arc,              // resource that owns this event
     &pid,                       // process to notify
-    ref_term,                   // reference for matching notifications
+    Reference::new(env),        // reference term included in the notification
 );
 ```
 
-The BEAM sends a message to `pid` when the event fires. Use `NifSelectFlags::READ`, `WRITE`, `ERROR`, `CANCEL`, and `STOP` flags.
+The BEAM sends a message to `pid` when the event fires. Flags: `SelectFlags::{READ, WRITE, ERROR, CANCEL, STOP, CUSTOM_MSG}`. The `i32` return is a bitmask decoded against `select::SELECT_*` (`Event`, `SelectFlags`, and the `SELECT_*` constants are re-exported from `otter::select`, so this is usable without the `raw` feature).
 
-`select_x` is the extended version that allows custom messages and a message environment.
+`select_x(env, fd, flags, &arc, &pid, msg, msg_env)` is the extended version that sends a custom `msg` instead of the standard `{select, …}` tuple; `msg_env` is `Some(owned_env)` for a term built in a process-independent env, or `None::<CallEnv>` to copy from the caller.
 
 ---
 
 ## Complete Example
 
 ```rust
-use otter::env::Env;
-use otter::term::Term;
-use otter::types::{Atom, Binary, BinaryBuilder, Integer, List};
-
-otter::declare_atoms![world, ok];
+use otter::types::{AnyTerm, Atom, Binary, BinaryBuf, CallEnv, Integer, List, TypedTerm};
 
 #[otter::nif]
-fn hello(_env: Env) -> Atom {
+fn hello(_env: CallEnv) -> Atom {
     otter::atom![world]
 }
 
 #[otter::nif]
-fn add<'a>(env: Env<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> {
-    let sum = i64::try_from(a).unwrap() + i64::try_from(b).unwrap();
-    Integer::from_i64(env, sum)
+fn add(_env: CallEnv, a: i64, b: i64) -> i64 {
+    a + b
 }
 
 #[otter::nif]
-fn echo(_env: Env, val: Term) -> Term {
+fn echo(_env: CallEnv, val: AnyTerm) -> AnyTerm {
     val
 }
 
 #[otter::nif]
-fn reverse_binary<'a>(env: Env<'a>, bin: Binary<'a>) -> Binary<'a> {
-    let bytes = bin.as_bytes();
-    let mut builder = BinaryBuilder::with_capacity(bytes.len());
+fn reverse_binary<'a>(env: CallEnv<'a>, bin: Binary<'a>) -> Binary<'a> {
+    let bytes = bin.as_bytes(env);
+    let mut builder = BinaryBuf::with_capacity(bytes.len());
     for &b in bytes.iter().rev() {
         builder.push(b);
     }
-    builder.finish(env)
+    builder.into_binary(env)
 }
 
 #[otter::nif]
-fn sum_list<'a>(env: Env<'a>, list: List<'a>) -> Integer<'a> {
-    let sum: i64 = list.iter()
-        .filter_map(|raw| match raw.resolve() {
-            Term::Integer(i) => Some(i64::try_from(i).unwrap()),
+fn sum_list<'a>(env: CallEnv<'a>, list: List<'a>) -> Integer<'a> {
+    let sum: i64 = list.iter(env)
+        .filter_map(|raw| match raw.resolve(env) {
+            Some(TypedTerm::Integer(i)) => i.to_i64(env),
             _ => None,
         })
         .sum();
     Integer::from_i64(env, sum)
 }
 
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::init_atoms!(env);
-    true
+// The same sum via the native codec: `Vec<i64>` decodes the whole list up front
+// (one pass, `badarg` if any element isn't an integer) and `i64` encodes the
+// result. Reach for the term-walking form above when the list is large or
+// heterogeneous and you'd rather not materialize it.
+#[otter::nif]
+fn sum_ints(_env: CallEnv, xs: Vec<i64>) -> i64 {
+    xs.iter().sum()
 }
 
-otter::init!("my_nifs", [hello, add, echo, reverse_binary, sum_list], load = on_load);
+otter::init!("my_nifs", [hello, add, echo, reverse_binary, sum_list, sum_ints],
+    atoms = [world, ok]);
 ```

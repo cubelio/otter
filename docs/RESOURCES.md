@@ -23,38 +23,29 @@ This is a plain Rust struct. It lives on the Rust heap and follows normal Rust r
 
 ### 2. Register it as a resource type
 
-Before the BEAM can manage instances of your struct, you register the type once at NIF load time.
+Before the BEAM can manage instances of your struct, you register the type. You list it in `init!`, and otter registers it in the generated load (and upgrade) callbacks.
 
 ```rust
-use std::sync::OnceLock;
-use otter::resource::{Resource, ResourceArc, ResourceTypeHandle};
+use otter::resource::{Resource, ResourceArc};
 
-static MY_MAP_TYPE: OnceLock<ResourceTypeHandle> = OnceLock::new();
+impl Resource for MyMap {}
 
-impl Resource for MyMap {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MY_MAP_TYPE
-    }
-}
-
-fn on_load(env: Env, _load_info: Term) -> bool {
-    otter::resource::register_resource_type::<MyMap>(env, "my_map");
-    true
-}
-
-otter::init!("my_module", [new, put, get], load = on_load);
+otter::init!("my_module", [new, put, get],
+    resources = [MyMap]);
 ```
 
-`Resource` requires `Send + Sync + 'static`. This is enforced at compile time — the compiler will reject a struct that isn't safe to share across threads.
+`Resource` requires `Send + Sync + 'static`. This is enforced at compile time — the compiler will reject a struct that isn't safe to share across threads. The trait has no required methods; `destructor`, `down`, and `stop` are optional.
 
-The `OnceLock<ResourceTypeHandle>` static is a one-time slot that `register_resource_type` fills. It stores the BEAM's internal type pointer so that `ResourceArc` can look it up later.
+The registered type pointer lives in a per-instance registry inside otter-owned `priv_data`, keyed by the type's `TypeId`. Each module instance carries its own registry (sound across a hot upgrade — no shared static), and `ResourceArc` looks the pointer up via `env → enif_priv_data → registry`. This is why creation takes an env (step 3).
+
+The BEAM-side resource type identifier is derived from `std::any::type_name::<T>()` — the fully-qualified Rust type path (e.g. `"my_crate::MyMap"`) — plus a per-build ABI suffix. The type path guarantees uniqueness within the NIF library (BEAM's resource type table is per-library and rustc's `type_name` for distinct types produces distinct strings); the ABI suffix keeps a different build from taking the type over on upgrade. To opt a type into cross-build takeover under a stable name, tag it: `resources = [MyMap: "v1"]`. For dynamic registration outside the list, call `otter::resource::register::<T>(env, ResourceFlags::CREATE)` (or `register_tagged`) inside `load`/`upgrade`.
 
 ### 3. Create an instance
 
 ```rust
 #[otter::nif]
-fn new(_env: Env) -> ResourceArc<MyMap> {
-    ResourceArc::from(MyMap {
+fn new(env: CallEnv) -> ResourceArc<MyMap> {
+    otter::resource::make_resource(env, MyMap {
         data: Mutex::new(HashMap::new()),
     })
 }
@@ -62,7 +53,7 @@ fn new(_env: Env) -> ResourceArc<MyMap> {
 
 What happens here:
 
-1. `ResourceArc::from(val)` calls `enif_alloc_resource` — the BEAM allocates a block of memory and sets its reference count to 1.
+1. `otter::resource::make_resource(env, val)` looks `MyMap` up in the registry and calls `enif_alloc_resource` — the BEAM allocates a block of memory and sets its reference count to 1. (It is a free function, not an env method; `resource_handle::<MyMap>(env).make(val)` is the two-step form, useful when you want to capture the `Send` handle and create off-thread.)
 2. Rust writes `val` into that block via `ptr::write`.
 3. The NIF returns a `ResourceArc`, which the `#[otter::nif]` macro encodes by calling `enif_make_resource` — this creates an Erlang term (an opaque reference) that holds a second reference to the same block.
 4. The `ResourceArc` is then dropped at the end of the NIF call, decrementing the count back to 1. Now only the Erlang term keeps the allocation alive.
@@ -79,24 +70,25 @@ This reference is the BEAM's handle to your Rust struct. You cannot inspect it f
 ### 4. Use the instance from other NIFs
 
 ```rust
+// `ok` and `error` are declared in init!'s `atoms = [...]` list.
 #[otter::nif]
-fn put<'a>(env: Env<'a>, key: Binary<'a>, val: Binary<'a>, map: ResourceArc<MyMap>) -> Atom {
+fn put<'a>(env: CallEnv<'a>, key: Binary<'a>, val: Binary<'a>, map: ResourceArc<MyMap>) -> Atom {
     map.data.lock().unwrap().insert(
-        key.as_bytes().to_vec(),
-        val.as_bytes().to_vec(),
+        key.as_bytes(env).to_vec(),
+        val.as_bytes(env).to_vec(),
     );
-    Atom::new(env, "ok").unwrap()
+    otter::atom![ok]
 }
 
 #[otter::nif]
-fn get<'a>(env: Env<'a>, key: Binary<'a>, map: ResourceArc<MyMap>) -> Term<'a> {
-    match map.data.lock().unwrap().get(key.as_bytes()) {
+fn get<'a>(env: CallEnv<'a>, key: Binary<'a>, map: ResourceArc<MyMap>) -> TypedTerm<'a> {
+    match map.data.lock().unwrap().get(key.as_bytes(env)) {
         Some(val) => {
-            let ok: Term = Atom::new(env, "ok").unwrap().into();
-            let bin: Term = Binary::from_bytes(env, val).into();
-            Term::Tuple(Tuple::from_terms(env, [ok, bin]))
+            let ok: TypedTerm = otter::atom![ok].into();
+            let bin: TypedTerm = Binary::from_bytes(env, val).into();
+            TypedTerm::Tuple(Tuple::from_terms(env, [ok, bin]))
         }
-        None => Term::Atom(Atom::new(env, "error").unwrap()),
+        None => TypedTerm::Atom(otter::atom![error]),
     }
 }
 ```
@@ -117,17 +109,36 @@ When the last Erlang reference to the resource is garbage collected, the BEAM ca
 
 ```rust
 impl Resource for MyMap {
-    fn resource_type_handle() -> &'static OnceLock<ResourceTypeHandle> {
-        &MY_MAP_TYPE
-    }
-
-    fn destructor(self, _env: Env<'_>) {
+    fn destructor(self, _env: CallbackEnv<'_>) {
         // self is moved here — Rust drops it when this function returns
     }
 }
 ```
 
 The destructor callback is always registered at the C level — it calls `ptr::read` to move the value out and drop it. If you override `destructor`, your code runs before the drop. If you don't, the default no-op runs and the value drops normally. Either way, Rust `Drop` semantics are preserved.
+
+Resource callbacks run with a `CallbackEnv<'_>`, not the `CallEnv` a NIF receives — they fire on a scheduler thread outside any process context (no caller to attribute a send to, no `enif_self`). A panic that escapes a callback is caught and logged (it cannot unwind across the C boundary), never raised.
+
+### Optional callbacks: `down` and `stop`
+
+Two more optional callbacks complete the lifecycle:
+
+```rust
+use otter::resource::Monitor;
+use otter::select::Event;
+
+impl Resource for MyMap {
+    // A process monitored via `arc.monitor(Some(env), &pid)` exited.
+    fn down<'a>(&'a self, _env: CallbackEnv<'a>, _pid: LocalPid, _monitor: Monitor) {}
+
+    // The BEAM stopped monitoring an event selected on this resource
+    // (see `enif_select`). `is_direct_call` is true when run synchronously
+    // inside the `select` call.
+    fn stop(&self, _env: CallbackEnv<'_>, _event: Event, _is_direct_call: bool) {}
+}
+```
+
+`arc.monitor(env, &pid)` returns `Some(Monitor)` (or `None` if the process is already dead); `arc.demonitor(env, &mon)` cancels it. `env` is an `Option` so both can be called from a non-NIF thread (`None`). `Monitor` is `Copy`, compares by `enif_compare_monitors`, and converts to a term with `mon.to_term(env)`.
 
 ---
 
@@ -151,9 +162,11 @@ Pick the narrowest lock scope either way. A NIF that holds a lock across a long 
 
 ## Lifetime model
 
-Resources live outside the `Env<'a>` lifetime system. A resource outlives any single NIF call — that's the point. The `ResourceArc<T>` does not carry a lifetime parameter.
+Resources live outside the env-brand lifetime system. A resource outlives any single NIF call — that's the point. The `ResourceArc<T>` does not carry a brand parameter.
 
-This means you cannot store `Term<'a>` or `Binary<'a>` inside a resource — those are borrowed from the NIF call's environment and become invalid when the NIF returns. To store term data in a resource, copy it into an owned Rust type first (e.g. `Vec<u8>`, `String`, `i64`).
+This means you cannot store `TypedTerm<'id>` or `Binary<'id>` inside a resource — those are branded to the NIF call's environment and become invalid when the NIF returns (the brand `'id` cannot escape the call). To store term data in a resource, copy it into an owned Rust type first (e.g. `Vec<u8>`, `String`, `i64`).
+
+**Across a hot code upgrade**, that owned payload is *not* assumed to survive: a second build taking over the resource type must not assume it can interpret or free data the previous build allocated (different compiler, allocator, or layout). Outside the `raw` feature this is a core safety invariant — see `docs/UPGRADE.md`. The module and the resource *type* survive reload; the Rust-typed *payload* is the part under the ABI constraint.
 
 ---
 
