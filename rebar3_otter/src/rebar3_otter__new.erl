@@ -102,7 +102,7 @@ cargo_toml(Name) ->
     "crate-type = [\"cdylib\"]\n"
     "\n"
     "[dependencies]\n"
-    "otter-nif = \"0.2\"\n",
+    "otter-nif = \"0.3\"\n",
     [Name]).
 
 -spec lib_rs(string()) -> iolist().

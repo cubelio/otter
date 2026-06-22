@@ -131,7 +131,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-otter-nif = "0.2"
+otter-nif = "0.3"
 ```
 
 **`native/my_nif/src/lib.rs`:**
