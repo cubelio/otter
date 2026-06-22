@@ -17,15 +17,16 @@ Schema:
 ```
 {otter_crates, [
     #{
-        name     := atom() | string() | binary(),  % required
-        path     := string() | binary(),           % required, app-relative
-        mode     => release | debug,               % default release
-        features => [atom() | string() | binary()],% default []
-        target   => atom() | string() | binary()   % default undefined
+        name     := string() | binary(),  % required
+        path     := string() | binary(),  % required, app-relative
+        mode     => release | debug,      % default release
+        features => [string() | binary()],% default []
+        target   => string() | binary()   % default undefined
     }
 ]}.
 ```
 
+String-typed values accept a string or binary, normalized to a string.
 Unknown map keys are rejected.
 """.
 
@@ -72,8 +73,8 @@ format_error({invalid_mode, Value, Identity}) ->
   io_lib:format("crate ~s field 'mode' must be 'release' or 'debug', got: ~p",
                 [Identity, Value]);
 format_error({invalid_feature, Value, Identity}) ->
-  io_lib:format("crate ~s field 'features' must be a list of atoms/strings, "
-                "got element: ~p", [Identity, Value]);
+  io_lib:format("crate ~s field 'features' must be a list of strings or "
+                "binaries, got element: ~p", [Identity, Value]);
 format_error({unknown_key, Key, Identity}) ->
   io_lib:format("crate ~s has unknown key '~s'", [Identity, Key]);
 format_error(Other) ->
@@ -150,10 +151,10 @@ normalize_fields([{Key, Normalizer, Reader} | Rest], Entry, Identity, Acc) ->
   end.
 
 -spec normalize_name(term(), iolist()) -> {ok, string()} | {error, term()}.
-normalize_name(V, _Identity) when is_atom(V); is_list(V); is_binary(V) ->
+normalize_name(V, _Identity) when is_list(V); is_binary(V) ->
   {ok, to_str(V)};
 normalize_name(V, Identity) ->
-  {error, {invalid_field_type, name, "an atom, string, or binary", V, Identity}}.
+  {error, {invalid_field_type, name, "a string or binary", V, Identity}}.
 
 -spec normalize_path(term(), iolist()) -> {ok, string()} | {error, term()}.
 normalize_path(V, _Identity) when is_list(V); is_binary(V) ->
@@ -176,16 +177,16 @@ normalize_features(V, Identity) ->
   {error, {invalid_field_type, features, "a list", V, Identity}}.
 
 -spec is_feature_elem(term()) -> boolean().
-is_feature_elem(V) -> is_atom(V) orelse is_list(V) orelse is_binary(V).
+is_feature_elem(V) -> is_list(V) orelse is_binary(V).
 
 -spec normalize_target(term(), iolist()) ->
   {ok, string() | undefined} | {error, term()}.
 normalize_target(undefined, _Identity) ->
   {ok, undefined};
-normalize_target(V, _Identity) when is_atom(V); is_list(V); is_binary(V) ->
+normalize_target(V, _Identity) when is_list(V); is_binary(V) ->
   {ok, to_str(V)};
 normalize_target(V, Identity) ->
-  {error, {invalid_field_type, target, "an atom, string, or binary", V, Identity}}.
+  {error, {invalid_field_type, target, "a string or binary", V, Identity}}.
 
 %%------------------------------------------------------------------------------
 %% Helpers
@@ -208,7 +209,6 @@ identify(Entry) ->
       io_lib:format("~p", [Name])
   end.
 
--spec to_str(atom() | string() | binary()) -> string().
-to_str(V) when is_atom(V)   -> atom_to_list(V);
+-spec to_str(string() | binary()) -> string().
 to_str(V) when is_list(V)   -> V;
 to_str(V) when is_binary(V) -> binary_to_list(V).

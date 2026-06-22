@@ -25,7 +25,7 @@ resolution free of the stdlib `json` module (no JSON to parse).
 %%%=============================================================================
 %%% Public
 
--spec build(string(), string(), release | debug, [atom() | string()], atom() | string() | undefined) ->
+-spec build(string(), string(), release | debug, [string()], string() | undefined) ->
   {ok, string()} | {error, term()}.
 build(CratePath, Name, Mode, Features, Target) ->
   case find_cargo() of
@@ -81,7 +81,7 @@ find_cargo() ->
     Path  -> {ok, Path}
   end.
 
--spec build_args(string(), string(), release | debug, [atom() | string()], atom() | string() | undefined, string()) ->
+-spec build_args(string(), string(), release | debug, [string()], string() | undefined, string()) ->
   [string()].
 build_args(ManifestPath, Name, Mode, Features, Target, TargetDir) ->
   %% Plain `cargo build` (human message format): compiler diagnostics render
@@ -98,11 +98,11 @@ build_args(ManifestPath, Name, Mode, Features, Target, TargetDir) ->
   end,
   FeatureArgs = case Features of
     [] -> [];
-    _  -> ["--features", string:join([to_str(F) || F <- Features], ",")]
+    _  -> ["--features", string:join(Features, ",")]
   end,
   TargetArgs = case Target of
     undefined -> [];
-    T         -> ["--target", to_str(T)]
+    T         -> ["--target", T]
   end,
   Base ++ ModeArgs ++ FeatureArgs ++ TargetArgs.
 
@@ -141,14 +141,14 @@ erts_include_dir() ->
 %% target dir, the build mode, and the optional --target triple. cargo lays
 %% artifacts out as `<target_dir>/[<triple>/]<release|debug>/<file>` and the
 %% cdylib final name is not content-hashed, so this is exact.
--spec artifact_path(string(), string(), release | debug, atom() | string() | undefined) ->
+-spec artifact_path(string(), string(), release | debug, string() | undefined) ->
   string().
 artifact_path(TargetDir, Name, Mode, Target) ->
   ProfileDir = case Mode of release -> "release"; debug -> "debug" end,
   File = artifact_filename(normalize_crate_name(Name), Target),
   Parts = case Target of
             undefined -> [TargetDir, ProfileDir, File];
-            _         -> [TargetDir, to_str(Target), ProfileDir, File]
+            _         -> [TargetDir, Target, ProfileDir, File]
           end,
   filename:join(Parts).
 
@@ -157,7 +157,7 @@ artifact_path(TargetDir, Name, Mode, Target) ->
 %% triple when one is set (so cross-compiles resolve correctly), otherwise
 %% from the build host. Note this is the cargo *source* name (`.dylib` on
 %% macOS); `nif_filename/1` gives the `.so` *destination* Erlang expects.
--spec artifact_filename(string(), atom() | string() | undefined) -> string().
+-spec artifact_filename(string(), string() | undefined) -> string().
 artifact_filename(Norm, undefined) ->
   case os:type() of
     {win32, _}     -> Norm ++ ".dll";
@@ -165,7 +165,7 @@ artifact_filename(Norm, undefined) ->
     {unix, _}      -> "lib" ++ Norm ++ ".so"
   end;
 artifact_filename(Norm, Target) ->
-  case classify_triple(to_str(Target)) of
+  case classify_triple(Target) of
     windows -> Norm ++ ".dll";
     darwin  -> "lib" ++ Norm ++ ".dylib";
     other   -> "lib" ++ Norm ++ ".so"
@@ -203,8 +203,3 @@ nif_filename(Name) ->
     {win32, _} -> Name ++ ".dll";
     _          -> Name ++ ".so"
   end.
-
--spec to_str(atom() | string() | binary()) -> string().
-to_str(V) when is_atom(V)   -> atom_to_list(V);
-to_str(V) when is_list(V)   -> V;
-to_str(V) when is_binary(V) -> binary_to_list(V).
