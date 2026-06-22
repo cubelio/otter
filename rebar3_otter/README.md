@@ -3,14 +3,13 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/rebar3_otter.svg)](https://hex.pm/packages/rebar3_otter)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-A rebar3 plugin that builds Rust NIF crates and installs the resulting shared
-library where `erlang:load_nif/2` expects it. It pairs with
-[`otter-nif`](https://crates.io/crates/otter-nif) — write NIFs in Rust, then let
-this plugin drive `cargo` from your normal rebar3 build.
+A `rebar3` plugin that builds Rust NIF crates written with
+[`otter-nif`](https://crates.io/crates/otter-nif) and installs the resulting
+shared library where `erlang:load_nif/2` expects it. Write NIFs in Rust, then
+let this plugin drive `cargo` from your normal `rebar3` build.
 
-The plugin has no Rust dependency of its own. It treats the Rust toolchain as an
-external tool, the same way rebar3 treats the Erlang compiler, and will build any
-crate that produces a `cdylib` — it is otter-agnostic.
+The plugin has no Rust dependency of its own — it treats the Rust toolchain as
+an external tool, the same way `rebar3` treats the Erlang compiler.
 
 ## Requirements
 
@@ -28,19 +27,31 @@ Add the plugin to your `rebar.config`:
 {plugins, [rebar3_otter]}.
 ```
 
-Declare the crates to build, then wire the providers as build hooks:
+Declare the crates to build:
 
 ```erlang
 {otter_crates, [
-    #{
-        name     => my_nif,           % must match Cargo.toml [package].name
-        path     => "native/my_nif",  % crate dir, relative to the app dir
-        mode     => release,          % release | debug (default: release)
-        features => [],               % Cargo features to enable
-        target   => undefined         % cross-compile triple, or undefined
-    }
+    #{name => "my_nif", path => "native/my_nif"}
 ]}.
+```
 
+Each entry in `otter_crates` is a map describing one crate:
+
+| Key | Required? | Type | Description |
+|---|---|---|---|
+| `name` | Required | `string() \| binary()` | Cargo crate name — must match `[package].name` in the crate's `Cargo.toml`. |
+| `path` | Required | `string() \| binary()` | Crate directory, relative to the declaring app's directory. |
+| `mode` | Optional | `release \| debug` | Cargo build profile. Defaults to `release`. |
+| `features` | Optional | `[string() \| binary()]` | Cargo features to enable. Defaults to `[]`. |
+| `target` | Optional | `string() \| binary() \| undefined` | Cross-compilation target triple; `undefined` builds for the host. Defaults to `undefined`. |
+
+String-typed values (`name`, `path`, `target`, and each `features` element)
+accept a string or a binary, normalized to a string. They mirror Cargo's own
+strings and carry hyphens (e.g. `"x86_64-unknown-linux-gnu"`) naturally.
+
+Then wire the providers as build hooks:
+
+```erlang
 {provider_hooks, [
     {pre, [
         {compile, otter_compile},

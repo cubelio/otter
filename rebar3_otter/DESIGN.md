@@ -2,15 +2,14 @@
 
 ## Purpose
 
-`rebar3_otter` is a rebar3 plugin that integrates Rust NIF compilation into the Erlang build pipeline. It invokes `cargo`, locates the built shared library, and places it where `erlang:load_nif/2` expects to find it.
+`rebar3_otter` is a `rebar3` plugin that integrates Rust NIF compilation into the Erlang build pipeline. It invokes `cargo`, locates the built shared library, and places it where `erlang:load_nif/2` expects to find it.
 
-This is a pure Erlang OTP application. It has no Rust dependency — it treats the Rust toolchain as an external tool, the same way rebar3 treats the Erlang compiler.
+This is a pure Erlang OTP application. It has no Rust dependency — it treats the Rust toolchain as an external tool, the same way `rebar3` treats the Erlang compiler.
 
 ---
 
 ## What it does not do
 
-- It does not know or care about otter (the Rust library). It will build any Rust crate that produces a `cdylib`.
 - It does not generate Erlang boilerplate. NIF loading is standard Erlang and belongs in the user's module.
 - It does not manage Rust toolchain installation. `cargo` must already be on `PATH`.
 
@@ -41,15 +40,23 @@ In `rebar.config`:
 {plugins, [rebar3_otter]}.
 
 {otter_crates, [
-    #{
-        name    => my_crate,          % must match Cargo.toml [package].name
-        path    => "native/my_crate", % path to crate relative to the app dir
-        mode    => release,           % release | debug (default: release)
-        features => [],               % list of Cargo features to enable
-        target  => undefined          % cross-compile target or undefined
-    }
+    #{name => "my_crate", path => "native/my_crate"}
 ]}.
 ```
+
+Each entry in `otter_crates` is a map describing one crate:
+
+| Key | Required? | Type | Description |
+|---|---|---|---|
+| `name` | Required | `string() \| binary()` | Cargo crate name — must match `[package].name` in the crate's `Cargo.toml`. |
+| `path` | Required | `string() \| binary()` | Crate directory, relative to the declaring app's directory. |
+| `mode` | Optional | `release \| debug` | Cargo build profile. Defaults to `release`. |
+| `features` | Optional | `[string() \| binary()]` | Cargo features to enable. Defaults to `[]`. |
+| `target` | Optional | `string() \| binary() \| undefined` | Cross-compilation target triple; `undefined` builds for the host. Defaults to `undefined`. |
+
+String-typed values (`name`, `path`, `target`, and each `features` element)
+accept a string or binary, normalized to a string via `to_str/1`. They mirror
+Cargo's own strings and carry hyphens naturally.
 
 Multiple crates are supported — each entry in `otter_crates` is compiled independently.
 
@@ -81,7 +88,7 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
      [--features feat1,feat2] \
      [--target <triple>]
    ```
-   Cargo runs with `ERTS_INCLUDE_DIR` set to the running ERTS's include dir (`<root>/erts-<vsn>/include`), so the native build (e.g. a `bindgen`/`cc` step, or `enif-ffi`) can locate `erl_nif.h` without the user configuring a path. Plain `cargo build` (the default *human* message format) renders compiler diagnostics to stderr; `run/2` lets the child's stderr through to the terminal, so errors and warnings appear in the rebar3 output directly. `--target-dir` is pinned to `<crate>/target` so the output location is dictated rather than discovered (see step 3). Cargo is invoked unconditionally — its own incremental check decides whether real work needs to happen, and no-ops cost ~50–200ms.
+   Cargo runs with `ERTS_INCLUDE_DIR` set to the running ERTS's include dir (`<root>/erts-<vsn>/include`), so the native build (e.g. a `bindgen`/`cc` step, or `enif-ffi`) can locate `erl_nif.h` without the user configuring a path. Plain `cargo build` (the default *human* message format) renders compiler diagnostics to stderr; `run/2` lets the child's stderr through to the terminal, so errors and warnings appear in the `rebar3` output directly. `--target-dir` is pinned to `<crate>/target` so the output location is dictated rather than discovered (see step 3). Cargo is invoked unconditionally — its own incremental check decides whether real work needs to happen, and no-ops cost ~50–200ms.
 
 3. **Compute artifact path (by convention)** — because the target dir is pinned and cdylib final artifacts are *not* content-hashed, the output path is fully determined by the inputs: `<target_dir>/[<triple>/]<release|debug>/<file>`, where `<file>` is `lib<name>.so` (Linux), `lib<name>.dylib` (macOS), or `<name>.dll` (Windows), with `<name>` normalized `-`→`_` as cargo does for lib targets. The `lib` prefix / extension follow the *target* platform — derived from the `--target` triple when set (so cross-compiles resolve), otherwise the build host (`os:type/0`). This deliberately avoids parsing cargo's JSON output, which would pull in the OTP-27-only stdlib `json` module; pinning `--target-dir` is what makes the path a guarantee instead of a guess (it removes the workspace / custom-`target-dir` ambiguity the JSON scrape previously absorbed). The computed path is confirmed to exist (`filelib:is_file/1`); a miss yields the `{no_cdylib, _}` error below.
 
@@ -92,7 +99,7 @@ Runs as a `pre_compile` hook so the `.so` is in place before the Erlang compiler
 
 5. **Copy artifact** to the owning app's `priv/native/<name>.so`. Create `priv/native/` if it does not exist.
 
-6. **Surface diagnostics** — cargo emits compiler errors and warnings on stderr (inherited from the child process), so they appear in the rebar3 build output directly without us needing to parse them.
+6. **Surface diagnostics** — cargo emits compiler errors and warnings on stderr (inherited from the child process), so they appear in the `rebar3` build output directly without us needing to parse them.
 
 ### Error handling
 
