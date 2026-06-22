@@ -15,14 +15,14 @@
 //! easy, efficient way to write NIFs in Rust. The design is driven by two
 //! foundational principles:
 //! 1. **Functionality** — `otter`'s first priority is an API surface that
-//! faithfully captures the capabilities of the underlying `erl_nif` C API — and
-//! where the safe surface isn't enough, the raw API can be exposed by enabling
-//! the `raw` feature.
+//!    faithfully captures the capabilities of the underlying `erl_nif` C API — and
+//!    where the safe surface isn't enough, the raw API can be exposed by enabling
+//!    the `raw` feature.
 //! 2. **Speed** — One of the prime motivations for writing NIFs is to achieve
-//! speed and memory efficiency not possible in the Erlang VM. `otter`'s
-//! datatypes are designed to "pay only for what you need" through controlled
-//! layering of `enif_*` calls, with extensive work to employ compile-time
-//! constraints rather than runtime ones.
+//!    speed and memory efficiency not possible in the Erlang VM. `otter`'s
+//!    datatypes are designed to "pay only for what you need" through controlled
+//!    layering of `enif_*` calls, with extensive work to employ compile-time
+//!    constraints rather than runtime ones.
 //!
 //! ## Quickstart
 //!
