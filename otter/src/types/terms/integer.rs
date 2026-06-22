@@ -66,6 +66,7 @@ impl<'id> Integer<'id> {
     ///
     /// Requires the `bigint` feature.
     #[cfg(feature = "bigint")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "bigint")))]
     pub fn to_bigint(self, env: impl Env<'id>) -> BigInt {
         let buf = crate::types::serialize(env, self)
             .expect("enif_term_to_binary failed on an integer term");
@@ -82,6 +83,7 @@ impl<'id> Integer<'id> {
     ///
     /// Requires the `bigint` feature.
     #[cfg(feature = "bigint")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "bigint")))]
     pub fn from_bigint(env: impl Env<'id>, val: &BigInt) -> Self {
         if let Ok(i) = i64::try_from(val) {
             return Self::from_i64(env, i);

@@ -18,6 +18,7 @@ pub use enif_ffi::{Hash, TermType, UniqueInteger};
 // impls are tied to this crate's `BigInt`, so a semver-incompatible copy would
 // not satisfy them. Only the type is exposed, not the whole `num_bigint` crate.
 #[cfg(feature = "bigint")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bigint")))]
 pub use num_bigint::BigInt;
 
 

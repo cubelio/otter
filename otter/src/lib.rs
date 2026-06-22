@@ -1,3 +1,12 @@
+// Render the "Available on crate feature X" labels on docs.rs (and any
+// `RUSTDOCFLAGS="--cfg docsrs"` nightly doc build). The `feature(doc_cfg)` gate is
+// emitted only when `--cfg docsrs` is set, so ordinary stable builds never see it.
+// `auto_cfg = false` suppresses rustdoc's automatic pills for *every* `#[cfg]`
+// (which would otherwise leak std-internal cfgs like `no_global_oom_handling` and
+// platform gates onto our pages); only the explicit `#[doc(cfg(...))]` annotations
+// on the feature-gated surface show.
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg = false))]
 //! Write Erlang NIFs in Rust — a direct, honest mapping of the Erlang NIF C ABI
 //! into safe Rust types, with compile-time lifetime safety and no hidden magic.
 //!
@@ -169,6 +178,7 @@ pub mod __codegen;
 // `types::{TermType, Hash, UniqueInteger}`, `time::*`, `system::SysInfo`,
 // `resource::ResourceFlags`), so nothing in the safe surface needs this. (enhance-11)
 #[cfg(feature = "raw")]
+#[cfg_attr(docsrs, doc(cfg(feature = "raw")))]
 pub use enif_ffi;
 
 // enif-ffi's `nif_init!` builds the platform entry point and resolves the

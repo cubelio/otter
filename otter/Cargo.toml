@@ -11,6 +11,12 @@ readme = "README.md"
 keywords = ["erlang", "nif", "beam", "otp", "ffi"]
 categories = ["api-bindings", "external-ffi-bindings"]
 
+# docs.rs builds on nightly: enable every feature so the full surface is
+# documented, and pass `--cfg docsrs` so the `doc(cfg(...))` feature pills render.
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 # Published as `otter-nif` (the bare `otter` is taken on crates.io), but the
 # library — and therefore the `use otter::` path and every `::otter::*` path the
 # codegen emits — stays `otter`.

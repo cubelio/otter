@@ -148,6 +148,7 @@ pub unsafe fn free_priv_data(pd: *mut PrivData) {
 ///
 /// `pd` must point at a live [`PrivData`].
 #[cfg(feature = "raw")]
+#[cfg_attr(docsrs, doc(cfg(feature = "raw")))]
 pub unsafe fn user_priv_field(pd: *mut PrivData) -> *mut *mut c_void {
     unsafe { &raw mut (*pd).user_priv_data }
 }
@@ -164,6 +165,7 @@ pub unsafe fn user_priv_field(pd: *mut PrivData) -> *mut *mut c_void {
 /// `old_slot` must be the `*mut *mut c_void` old-priv-data slot the BEAM passes
 /// to the upgrade callback.
 #[cfg(feature = "raw")]
+#[cfg_attr(docsrs, doc(cfg(feature = "raw")))]
 pub unsafe fn old_user_priv_field(old_slot: *mut *mut c_void) -> *mut *mut c_void {
     let old = unsafe { *old_slot } as *mut PrivData;
     if old.is_null() || unsafe { (*old).magic } != PRIV_MAGIC {

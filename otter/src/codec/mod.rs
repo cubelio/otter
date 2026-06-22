@@ -38,6 +38,7 @@
 //! [`Map`]: crate::types::Map
 
 #[cfg(feature = "bigint")]
+#[cfg_attr(docsrs, doc(cfg(feature = "bigint")))]
 mod bigint;
 mod bool;
 mod float;
