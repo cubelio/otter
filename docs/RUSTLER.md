@@ -363,16 +363,6 @@ per use. (Because the stamp is globally unique, a match alone identifies the exa
 arena generation, so otter needs no env-pointer comparison and is immune to the
 freed-then-reused-env aliasing that a pointer check is exposed to.)
 
-### The honest counter-trade
-
-Faithfulness is not free everywhere. Otter's `Binary<'id>` is a lean one-word term that
-does not cache the inspected buffer, so each `as_bytes(env)` re-runs
-`enif_inspect_binary` and requires an env. Rustler's `Binary` caches `buf`/`size` at
-inspect time, so its `as_slice` is a pointer read with no env and no FFI call. Otter
-trades a per-read inspect for a smaller, env-free-to-store term (and offers
-`BinaryBuf`, whose owner *does* cache the allocation, for the read-heavy case). The
-point of the comparison is the trade, stated in both directions — not a clean sweep.
-
 ---
 
 ## What otter takes from rustler
