@@ -61,7 +61,7 @@ do(State) ->
           rebar_api:info(
             "Add to rebar.config:~n~n"
             "  {otter_crates, [~n"
-            "      #{name => ~s, path => \"native/~s\"}~n"
+            "      #{name => \"~s\", path => \"native/~s\"}~n"
             "  ]}.~n~n"
             "  {provider_hooks, [~n"
             "      {pre, [{compile, otter_compile}, {clean, otter_clean}]}~n"
