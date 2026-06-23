@@ -438,7 +438,7 @@ rustler = "0.37"
     {pre, [{compile, otter_compile}, {clean, otter_clean}]}
 ]}.
 {otter_crates, [
-    #{name => my_nifs, path => "native/my_nifs"}
+    #{name => "my_nifs", path => "native/my_nifs"}
 ]}.
 ```
 

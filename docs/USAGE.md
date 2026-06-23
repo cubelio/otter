@@ -44,7 +44,7 @@ The crate must be `cdylib` — this produces a shared library the BEAM can load.
     {pre, [{compile, otter_compile}, {clean, otter_clean}]}
 ]}.
 {otter_crates, [
-    #{name => my_nifs, path => "native/my_nifs"}
+    #{name => "my_nifs", path => "native/my_nifs"}
 ]}.
 ```
 

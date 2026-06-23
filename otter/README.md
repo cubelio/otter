@@ -74,7 +74,7 @@ prints this for you):
 
 ```erlang
 {otter_crates, [
-    #{name => my_nifs, path => "native/my_nifs"}
+    #{name => "my_nifs", path => "native/my_nifs"}
 ]}.
 {provider_hooks, [
     {pre, [{compile, otter_compile}, {clean, otter_clean}]}
