@@ -191,6 +191,38 @@ smoke_test_() ->
       end
     end),
 
+    %% In-NIF attributed steal-send (send_move_from) — moves an owned-arena
+    %% heap into our mailbox AND attributes the send to the calling process
+    %% (enif_send with a non-NULL caller and a non-NULL msg_env). Delivery is
+    %% checked by receiving the message; attribution is checked via a send
+    %% trace, which the VM only emits because the caller env is non-NULL.
+    ?_test(begin
+      Self = self(),
+      Tracer = spawn(fun() ->
+        receive
+          {trace, T, send, {moved, 99}, To} -> Self ! {attributed, T, To}
+        after 5000 -> Self ! attribution_timeout
+        end
+      end),
+      erlang:trace(Self, true, [send, {tracer, Tracer}]),
+      ?assertEqual(ok, otter_demo__nif:send_move_to(Self, {moved, 99})),
+      receive
+        {moved, 99} -> ok
+      after 5000 ->
+        ?assert(false)
+      end,
+      receive
+        {attributed, Traced, RecvTo} ->
+          ?assertEqual(Self, Traced),
+          ?assertEqual(Self, RecvTo);
+        attribution_timeout ->
+          ?assert(false)
+      after 5000 ->
+        ?assert(false)
+      end,
+      erlang:trace(Self, false, [send])
+    end),
+
     %% cpu_time returns an erlang:timestamp()-format 3-tuple.
     ?_assertMatch({_, _, _}, otter_demo__nif:cpu_time()),
 

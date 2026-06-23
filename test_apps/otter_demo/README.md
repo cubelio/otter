@@ -12,7 +12,7 @@ This sits inside the otter repo at `test_apps/otter_demo/` and depends on the ot
 
 ## What the demo covers
 
-The NIF crate demonstrates: pre-declared atoms (`init!`'s `atoms = [...]` + `atom!`), typed arguments and returns, term passthrough, type inspection, binary construction, list iteration, equality/ordering, `Debug` formatting, integer/float/string extraction, native-type codecs (ints, `String`, `Vec`, `HashMap`), bignums (`bigint`), resource types with destructors / monitors / `select` stop callbacks, cross-thread message passing (`OwnedEnvArena`, `send_move` / `send_copy`), the encoder-panic regression, and the `on_load` / upgrade callbacks.
+The NIF crate demonstrates: pre-declared atoms (`init!`'s `atoms = [...]` + `atom!`), typed arguments and returns, term passthrough, type inspection, binary construction, list iteration, equality/ordering, `Debug` formatting, integer/float/string extraction, native-type codecs (ints, `String`, `Vec`, `HashMap`), bignums (`bigint`), resource types with destructors / monitors / `select` stop callbacks, message passing across the full send matrix (`OwnedEnvArena`, off-thread `send_move`, in-NIF `send_copy_from` / `send_move_from`), the encoder-panic regression, and the `on_load` / upgrade callbacks.
 
 ## Running
 

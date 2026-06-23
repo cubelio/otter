@@ -438,6 +438,20 @@ fn send_to<'a>(env: CallEnv<'a>, to: LocalPid, msg: AnyTerm<'a>) -> Atom {
     otter::atom![ok]
 }
 
+// --- send_move_to/2 -----------------------------------------------------
+// In-NIF attributed steal-send: copy the term into an owned arena on the
+// scheduler thread, then move its heap into the recipient's mailbox
+// attributed to the calling process — `enif_send` with a non-NULL caller
+// AND a non-NULL msg_env, the quadrant rustler's API cannot express.
+
+#[otter::nif]
+fn send_move_to<'a>(env: CallEnv<'a>, to: LocalPid, msg: AnyTerm<'a>) -> Atom {
+    let mut arena = OwnedEnvArena::new();
+    let oterm = arena.copy_in(msg);
+    otter::types::send_move_from(env, &to, &mut arena, oterm);
+    otter::atom![ok]
+}
+
 // --- cpu_time/0 ---------------------------------------------------------
 
 #[otter::nif]
@@ -840,6 +854,7 @@ otter::init!("otter_demo__nif", [
     dirty_cpu_thread_type,
     send_from_thread,
     send_to,
+    send_move_to,
     cpu_time,
     codec_i8,
     codec_u8,
