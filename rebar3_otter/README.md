@@ -1,6 +1,9 @@
-# rebar3_otter
+# `rebar3_otter`
 
-[![Hex.pm](https://img.shields.io/hexpm/v/rebar3_otter.svg)](https://hex.pm/packages/rebar3_otter)
+[![CI](https://github.com/cubelio/otter/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/cubelio/otter/actions/workflows/ci.yml)
+[![rebar3_otter](https://img.shields.io/hexpm/v/rebar3_otter?logo=erlang&label=rebar3_otter&color=6E4A7E)](https://hex.pm/packages/rebar3_otter)
+[![hexdocs](https://img.shields.io/badge/hexdocs-rebar3__otter-6E4A7E?logo=hex)](https://rebar3-otter.hexdocs.pm)
+[![OTP](https://img.shields.io/badge/OTP-%E2%89%A527-blue?logo=erlang)](#requirements)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 A `rebar3` plugin that builds Rust NIF crates written with

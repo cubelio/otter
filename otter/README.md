@@ -1,8 +1,11 @@
-# Otter
+# `otter`
 
 [![CI](https://github.com/cubelio/otter/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/cubelio/otter/actions/workflows/ci.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![otter-nif](https://img.shields.io/crates/v/otter-nif?logo=rust&label=otter-nif&color=E37222)](https://crates.io/crates/otter-nif)
+[![docs.rs](https://img.shields.io/docsrs/otter-nif?logo=docsdotrs&label=docs.rs&color=E37222)](https://docs.rs/otter-nif)
 [![MSRV](https://img.shields.io/badge/MSRV-1.82-blue.svg)](#requirements)
+[![OTP](https://img.shields.io/badge/OTP-%E2%89%A526-blue?logo=erlang)](#requirements)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 **`otter` — write fast and efficient Erlang NIFs in Rust**
 
@@ -34,13 +37,10 @@ $ rebar3 new app name=my_app
 $ cd my_app
 ```
 
-**2. Add the plugin to `rebar.config`.** The plugin lives in a subdirectory of
-the `otter` repo, so it must be referenced with `git_subdir`:
+**2. Add the plugin to `rebar.config`.** `rebar3_otter` is published on hex.pm:
 
 ```erlang
-{plugins, [
-    {rebar3_otter, {git_subdir, "https://github.com/cubelio/otter.git", {branch, "master"}, "rebar3_otter"}}
-]}.
+{plugins, [rebar3_otter]}.
 ```
 
 **3. Scaffold the NIF crate.**
