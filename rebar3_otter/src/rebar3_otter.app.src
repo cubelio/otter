@@ -1,6 +1,6 @@
 {application, rebar3_otter, [
   {description, "rebar3 plugin for building Rust NIF crates with otter"},
-  {vsn, "0.3.0"},
+  {vsn, "0.3.1"},
   {registered, []},
   {applications, [kernel, stdlib]},
   {env, []},

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 — 2026-06-23
+
+Documentation-only patch.
+
+- Corrected the rustler send-matrix comparison in `docs/RUSTLER.md`: `send_move`
+  is equivalent to rustler's `OwnedEnv::send_and_clear` (off-thread, NULL-caller
+  steal); only `send_move_from` (in-NIF, caller-attributed steal) has no rustler
+  equivalent. Dropped the speculative "honest counter-trade" section.
+
 ## 0.3.0 — 2026-06-22
 
 Branded env/term spine, native codecs, and the enif-ffi extraction. Supersedes
