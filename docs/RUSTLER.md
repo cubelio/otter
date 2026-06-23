@@ -126,8 +126,11 @@ and always passes a NULL caller. So in rustler:
   off-thread-only.
 - You cannot attribute a steal-send to the calling process — it is always NULL-caller.
 
-`send_move` and `send_move_from` have no rustler equivalent. (The per-send and
-per-clear *costs* of rustler's send path are covered under efficiency, below.)
+`send_move_from` has no rustler equivalent — rustler's only steal path
+(`send_and_clear`) is off-thread and NULL-caller, so an in-NIF attributed steal is
+impossible. (`send_move` corresponds to `send_and_clear`, but otter splits the send
+from the clear.) (The per-send and per-clear *costs* of rustler's send path are
+covered under efficiency, below.)
 
 ### Term types rustler's surface omits
 
