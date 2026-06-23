@@ -21,7 +21,7 @@ fn codegen_ui() {
 
     // The `_raw` keys are gated on otter's `raw` feature. Without it the macro
     // rejects them; with it, it accepts them and the mutual-exclusion check is
-    // what fires for `load` + `load_raw`. Run `cargo test -p otter --features raw`
+    // what fires for `load` + `load_raw`. Run `cargo test -p otter-nif --features raw`
     // to exercise the second arm.
     #[cfg(not(feature = "raw"))]
     t.compile_fail("tests/ui/fail_init_raw_without_feature.rs");

@@ -3,8 +3,8 @@
 //! `cfg(feature = "raw")` resolves against this test crate's view of
 //! otter_codegen's features, so:
 //!
-//!   cargo test -p otter_codegen                  -> the plain (non-pub) copy
-//!   cargo test -p otter_codegen --features raw   -> the `pub` copy
+//!   cargo test -p otter-nif-macros                  -> the plain (non-pub) copy
+//!   cargo test -p otter-nif-macros --features raw   -> the `pub` copy
 //!
 //! Exactly one copy is active in each config; both must compile and the item
 //! must be usable.

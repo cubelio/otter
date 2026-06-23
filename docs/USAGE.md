@@ -926,7 +926,7 @@ match thread_type() {
 
 By default Rust allocations in your NIF use Rust's own global allocator. You can
 instead route them through the BEAM allocator (`enif_alloc`/`enif_free`) by
-installing otter's [`EnifAlloc`](https://docs.rs/otter) as the global allocator —
+installing otter's [`EnifAlloc`](https://docs.rs/otter-nif) as the global allocator —
 invoke the macro once in your cdylib:
 
 ```rust
