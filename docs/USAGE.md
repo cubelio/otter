@@ -1,5 +1,11 @@
 # Otter Usage Guide
 
+> **Start here.** This is a complete reference, not a tutorial — you don't need to
+> read it front to back.
+> - **New to NIFs?** Read [Project Setup](#project-setup) → [The `#[otter::nif]` Macro](#the-otternif-macro) → [Working with Types](#working-with-types). That's enough to write your first NIF.
+> - **Migrating from rustler?** See [MIGRATION.md](MIGRATION.md).
+> - **Want it end to end?** Jump to the [Complete Example](#complete-example).
+
 ## Overview
 
 Otter is a Rust library for writing Erlang NIFs. It maps the NIF C ABI directly into Rust types — no abstractions that an Erlang programmer wouldn't recognize.
@@ -28,7 +34,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-otter-nif = "0.2"
+otter-nif = "0.3"
 ```
 
 The crate must be `cdylib` — this produces a shared library the BEAM can load. otter is edition 2021 with MSRV 1.82; the optional `bigint` / `raw` / `nif_2_18` features are off by default.
@@ -37,14 +43,21 @@ The crate must be `cdylib` — this produces a shared library the BEAM can load.
 
 ```erlang
 {erl_opts, [debug_info]}.
-{plugins, [
-    {rebar3_otter, {git_subdir, "https://github.com/cubelio/otter.git", {branch, "master"}, "rebar3_otter"}}
-]}.
+{plugins, [rebar3_otter]}.
 {provider_hooks, [
     {pre, [{compile, otter_compile}, {clean, otter_clean}]}
 ]}.
 {otter_crates, [
     #{name => "my_nifs", path => "native/my_nifs"}
+]}.
+```
+
+`rebar3_otter` is published on hex.pm; the bare form above pulls the latest release.
+To track the development branch instead, pin the plugin to the monorepo subdir:
+
+```erlang
+{plugins, [
+    {rebar3_otter, {git_subdir, "https://github.com/cubelio/otter.git", {branch, "master"}, "rebar3_otter"}}
 ]}.
 ```
 
@@ -92,7 +105,7 @@ A NIF receives the concrete env kind `CallEnv<'id>`. Other kinds appear in other
 | `DeinitEnv<'id>` | the `unload` callback |
 | `OwnedEnv<'a,'id>` | a process-independent arena (`OwnedEnvArena::run`) |
 
-All implement `Env<'id>`; generic helpers take `impl Env<'id>`. The brand-minting (`with_*_env` / `run`) is codegen-internal — in a NIF you just write `CallEnv<'a>`.
+All implement `Env<'id>`; generic helpers take `impl Env<'id>`. The brand-minting (`CallEnv::with_raw` / `run`) is codegen-internal — in a NIF you just write `CallEnv<'id>`.
 
 ```rust
 #[otter::nif]
@@ -116,16 +129,32 @@ fn add(_env: CallEnv, a: i64, b: i64) -> i64 {
 }
 ```
 
-Here `a` and `b` decode straight to `i64` and the sum encodes back — the native codec path. You can also take BEAM term types (`Integer<'a>`, extracted with `.to_i64(env)`) when you want lazy, zero-copy access. Each argument form and its cost:
+> **⚠️ Lifetime annotations — the most common first stumble.** The example above
+> compiles because `i64` carries no lifetime. The moment a signature uses BEAM term
+> types (`Integer<'id>`, `Binary<'id>`, …), Rust's elision rules can't pick a lifetime
+> for the return and you'll hit `error[E0106]: missing lifetime specifier`. The fix
+> is to introduce one brand `<'id>` and apply it to the env and every term:
+>
+> ```rust
+> // Won't compile — ambiguous lifetimes (E0106):
+> fn add(env: CallEnv, a: Integer, b: Integer) -> Integer { ... }
+>
+> // Correct — one brand 'id ties the env and all terms together:
+> fn add<'id>(env: CallEnv<'id>, a: Integer<'id>, b: Integer<'id>) -> Integer<'id> { ... }
+> ```
+>
+> Types without a lifetime (`Atom`, `LocalPid`, `LocalPort`) don't need this.
+
+Here `a` and `b` decode straight to `i64` and the sum encodes back — the native codec path. You can also take BEAM term types (`Integer<'id>`, extracted with `.to_i64(env)`) when you want lazy, zero-copy access. Each argument form and its cost:
 
 | Type | What happens | Cost |
 |---|---|---|
-| `CallEnv<'a>` | Passed through, must be first, does not count toward arity | 0 |
-| `AnyTerm<'a>` | Wraps argv[i]. `Decoder` is identity | 0 NIF calls |
-| `TypedTerm<'a>` | Wraps + `.resolve(env)` (`enif_term_type`) | 1 NIF call |
+| `CallEnv<'id>` | Passed through, must be first, does not count toward arity | 0 |
+| `AnyTerm<'id>` | Wraps argv[i]. `Decoder` is identity | 0 NIF calls |
+| `TypedTerm<'id>` | Wraps + `.resolve(env)` (`enif_term_type`) | 1 NIF call |
 | `T: Decoder` (concrete type) | Wraps + `enif_is_*` (or `enif_term_type`) check, badarg on failure | 1 NIF call |
 
-Every argument goes through `Decoder::decode(term: AnyTerm<'a>, env)`. `AnyTerm::decode` is the identity (zero cost — pick this when you want the raw word with a brand and no type discrimination). `TypedTerm::decode` calls `.resolve(env)` internally. Concrete-type decoders (`Integer`, `Binary`, `Atom`, …) call the dedicated `enif_is_*` check directly, so each is a single NIF call with no eager discriminator.
+Every argument goes through `Decoder::decode(term: AnyTerm<'id>, env)`. `AnyTerm::decode` is the identity (zero cost — pick this when you want the raw word with a brand and no type discrimination). `TypedTerm::decode` calls `.resolve(env)` internally. Concrete-type decoders (`Integer`, `Binary`, `Atom`, …) call the dedicated `enif_is_*` check directly, so each is a single NIF call with no eager discriminator.
 
 **Return type:**
 
@@ -134,8 +163,8 @@ The user's return type must implement `Encoder`. The macro emits a single `Encod
 | Type | What happens |
 |---|---|
 | `T: Encoder` (any otter term type, or a native type) | `.encode(env)` — `Ok(word)` for term types (free); a native value outside the term domain returns `Err`, which the wrapper raises as `badret` |
-| `Result<T, Raised<'a>>` where `T: Encoder` | `Ok(v)` encodes `v` and returns; `Err(Raised)` returns the already-pending exception's marker word (the BEAM raises it on return — never re-raised) |
-| `AnyTerm<'a>` / `TypedTerm<'a>` | Same path — both implement `Encoder`, wrapping the same-brand word for free |
+| `Result<T, Raised<'id>>` where `T: Encoder` | `Ok(v)` encodes `v` and returns; `Err(Raised)` returns the already-pending exception's marker word (the BEAM raises it on return — never re-raised) |
+| `AnyTerm<'id>` / `TypedTerm<'id>` | Same path — both implement `Encoder`, wrapping the same-brand word for free |
 
 **Attributes:**
 
@@ -145,17 +174,8 @@ The user's return type must implement `Encoder`. The macro emits a single `Encod
 #[otter::nif(schedule = "DirtyIo")]       // dirty I/O scheduler
 ```
 
-**Lifetime annotations:** When multiple arguments carry lifetimes, Rust's elision rules fail. You must add explicit `<'a>`:
-
-```rust
-// Won't compile — ambiguous lifetimes:
-fn add(env: CallEnv, a: Integer, b: Integer) -> Integer { ... }
-
-// Correct:
-fn add<'a>(env: CallEnv<'a>, a: Integer<'a>, b: Integer<'a>) -> Integer<'a> { ... }
-```
-
-Types without lifetimes (`Atom`, `LocalPid`, `LocalPort`) don't need this.
+(See the lifetime-annotation callout near the top of this section — it's the most
+common first stumble when a signature uses term types.)
 
 ### The `init!` Macro
 
@@ -200,7 +220,7 @@ otter::init!("my_module", [add, subtract],
     allow_panic_abort);     // build with panic = "abort"; panics will abort the VM
 ```
 
-The load callback receives an `InitEnv<'_>` and the load info term. The second parameter can be any type that implements `Decoder` — `AnyTerm<'a>` is the zero-cost choice when you don't inspect the value, `TypedTerm<'a>` adds an `enif_term_type` call, and a concrete type (e.g. `Integer<'a>`) lets you reject mismatched `LoadInfo` at the type level. Return `true` for success, `false` to abort loading. Panics are caught and treated as failure.
+The load callback receives an `InitEnv<'_>` and the load info term. The second parameter can be any type that implements `Decoder` — `AnyTerm<'id>` is the zero-cost choice when you don't inspect the value, `TypedTerm<'id>` adds an `enif_term_type` call, and a concrete type (e.g. `Integer<'id>`) lets you reject mismatched `LoadInfo` at the type level. Return `true` for success, `false` to abort loading. Panics are caught and treated as failure.
 
 **Load failure return codes.** When the load callback returns non-zero, BEAM aborts the library load and `erlang:load_nif(Path, LoadInfo)` returns `{error, {load_failed, "Library load-call unsuccessful (N)."}}`. The integer `N` carries the cause:
 
@@ -292,7 +312,7 @@ Zero-copy access to BEAM-heap binaries.
 
 ```rust
 // Decode an argument as Binary (rejects sub-byte bitstrings):
-//   fn read<'a>(_env: CallEnv<'a>, bin: Binary<'a>) -> ...
+//   fn read<'id>(_env: CallEnv<'id>, bin: Binary<'id>) -> ...
 //
 // Or refine from a TypedTerm — every binary surfaces as TypedTerm::Bitstring,
 // and Bitstring::to_binary refines to Binary if byte-aligned:
@@ -466,15 +486,15 @@ for (key, value) in map.iter(env) {
 
 ### Pid
 
-`Pid<'a>` is a pid of unestablished locality, tied to its env: an external
-(remote-node) pid is heap-boxed, so it must not outlive `'a`. It supports
+`Pid<'id>` is a pid of unestablished locality, tied to its env: an external
+(remote-node) pid is heap-boxed, so it must not outlive `'id`. It supports
 identity and encoding. To *act* on the process, refine it to a `LocalPid`
 (`Copy`, no lifetime, storable) with `to_local(env)` — only local processes can
 be sent to, monitored, or checked. NIF arguments can be decoded directly as
 `LocalPid` (an external pid then fails with badarg).
 
 ```rust
-let TypedTerm::Pid(pid) = term else { ... };       // pid: Pid<'a>
+let TypedTerm::Pid(pid) = term else { ... };       // pid: Pid<'id>
 let Some(local) = pid.to_local(env) else { ... };  // None if external
 
 // Current process — always local (CallEnv only)
@@ -491,11 +511,11 @@ otter::types::send_copy_from(env, &local, msg_term);   // copy a live term
 
 ### Port
 
-Symmetric to `Pid`: `Port<'a>` (any port) refines to `LocalPort` via
+Symmetric to `Pid`: `Port<'id>` (any port) refines to `LocalPort` via
 `to_local(env)`; `enif_port_command`/`enif_is_port_alive` take a local port.
 
 ```rust
-let TypedTerm::Port(port) = term else { ... };       // port: Port<'a>
+let TypedTerm::Port(port) = term else { ... };       // port: Port<'id>
 let Some(local) = port.to_local(env) else { ... };
 
 let port = LocalPort::whereis(env, name_atom);
@@ -663,7 +683,7 @@ Otter models this with `Raised<'id>`: a term-less typestate token that can only 
 // `division_by_zero` is declared in init!'s `atoms = [...]` list.
 
 #[otter::nif]
-fn divide<'a>(env: CallEnv<'a>, a: i64, b: i64) -> Result<i64, Raised<'a>> {
+fn divide<'id>(env: CallEnv<'id>, a: i64, b: i64) -> Result<i64, Raised<'id>> {
     if b == 0 {
         return env.raise(otter::atom![division_by_zero]);
     }
@@ -671,7 +691,7 @@ fn divide<'a>(env: CallEnv<'a>, a: i64, b: i64) -> Result<i64, Raised<'a>> {
 }
 ```
 
-Both primitives always fail and are generic over the success type, so they slot into any position — `raise` accepts any `impl Term<'a>` as the reason:
+Both primitives always fail and are generic over the success type, so they slot into any position — `raise` accepts any `impl Term<'id>` as the reason:
 
 ```rust
 return env.badarg();                       // enif_make_badarg
@@ -758,7 +778,7 @@ fn increment(_env: CallEnv, state: ResourceArc<MyState>) -> Atom {
 }
 
 #[otter::nif]
-fn read<'a>(env: CallEnv<'a>, state: ResourceArc<MyState>) -> Integer<'a> {
+fn read<'id>(env: CallEnv<'id>, state: ResourceArc<MyState>) -> Integer<'id> {
     let val = state.counter.load(std::sync::atomic::Ordering::Relaxed);
     Integer::from_u64(env, val)
 }
@@ -793,7 +813,7 @@ impl Resource for MyState {
         // cleanup when reference count hits zero
     }
 
-    fn down<'a>(&'a self, _env: CallbackEnv<'a>, _pid: LocalPid, _monitor: Monitor) {
+    fn down<'id>(&'id self, _env: CallbackEnv<'id>, _pid: LocalPid, _monitor: Monitor) {
         // a monitored process went down
     }
 
@@ -850,7 +870,7 @@ fn start_worker(env: CallEnv) -> Atom {
 
 ```rust
 #[otter::nif]
-fn notify<'a>(env: CallEnv<'a>, to: LocalPid, msg: TypedTerm<'a>) -> Atom {
+fn notify<'id>(env: CallEnv<'id>, to: LocalPid, msg: TypedTerm<'id>) -> Atom {
     otter::types::send_copy_from(env, &to, msg);   // copied into to's mailbox, attributed to the caller
     otter::atom![ok]
 }
@@ -987,7 +1007,7 @@ fn echo(_env: CallEnv, val: AnyTerm) -> AnyTerm {
 }
 
 #[otter::nif]
-fn reverse_binary<'a>(env: CallEnv<'a>, bin: Binary<'a>) -> Binary<'a> {
+fn reverse_binary<'id>(env: CallEnv<'id>, bin: Binary<'id>) -> Binary<'id> {
     let bytes = bin.as_bytes(env);
     let mut builder = BinaryBuf::with_capacity(bytes.len());
     for &b in bytes.iter().rev() {
@@ -997,7 +1017,7 @@ fn reverse_binary<'a>(env: CallEnv<'a>, bin: Binary<'a>) -> Binary<'a> {
 }
 
 #[otter::nif]
-fn sum_list<'a>(env: CallEnv<'a>, list: List<'a>) -> Integer<'a> {
+fn sum_list<'id>(env: CallEnv<'id>, list: List<'id>) -> Integer<'id> {
     let sum: i64 = list.iter(env)
         .filter_map(|raw| match raw.resolve(env) {
             Some(TypedTerm::Integer(i)) => i.to_i64(env),
