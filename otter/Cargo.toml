@@ -7,6 +7,7 @@ authors = ["Lynn Gabbay <lynn@cubelio.com>"]
 license = "MIT OR Apache-2.0"
 description = "Write Erlang NIFs in Rust. Direct mapping of the NIF C ABI with compile-time lifetime safety and no hidden magic."
 repository = "https://github.com/cubelio/otter"
+homepage = "https://github.com/cubelio/otter"
 readme = "README.md"
 keywords = ["erlang", "nif", "beam", "otp", "ffi"]
 categories = ["api-bindings", "external-ffi-bindings"]
