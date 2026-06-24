@@ -255,7 +255,7 @@ fn atom_name<'a>(env: CallEnv<'a>, a: Atom) -> Binary<'a> {
 
 #[otter::nif]
 fn hm_new(env: CallEnv) -> ResourceArc<HashMapResource> {
-    eprintln!("[otter_demo] HashMapResource constructed");
+    eprintln!("[otter_test] HashMapResource constructed");
     otter::resource::make_resource(env, HashMapResource { map: Mutex::new(HashMap::new()) })
 }
 
@@ -468,7 +468,7 @@ struct HashMapResource {
 impl Resource for HashMapResource {
     fn destructor(self, _env: CallbackEnv<'_>) {
         eprintln!(
-            "[otter_demo] HashMapResource destructed ({} entries)",
+            "[otter_test] HashMapResource destructed ({} entries)",
             self.map.lock().unwrap().len()
         );
     }
@@ -823,7 +823,7 @@ fn on_load(_env: InitEnv, _load_info: AnyTerm) -> bool {
 
 // --- init ---------------------------------------------------------------
 
-otter::init!("otter_demo__nif", [
+otter::init!("otter_test__nif", [
     hello,
     add,
     echo,

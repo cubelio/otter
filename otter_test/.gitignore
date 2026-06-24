@@ -1,0 +1,4 @@
+/native/otter_test/target/
+/_build/
+/priv/native/otter_test.so
+/rebar3.crashdump

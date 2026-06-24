@@ -1,13 +1,13 @@
--module(otter_demo__nif).
+-module(otter_test__nif).
 -moduledoc """
-Erlang side of the otter_demo NIF.
+Erlang side of the otter_test NIF.
 
 Declares stubs for every NIF and the `-on_load` callback that loads the
 shared library. Each NIF stub exits with `nif_not_loaded` if it is ever
 called before `erlang:load_nif/2` has succeeded — in practice unreachable
 because the load happens automatically at module load time.
 
-EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
+EUnit tests live in `otter_test__nif_test`; run them with `rebar3 eunit`.
 """.
 
 -on_load(on_load/0).
@@ -45,10 +45,10 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 
 -spec on_load() -> ok | {error, term()}.
 on_load() ->
-  case code:priv_dir(otter_demo) of
+  case code:priv_dir(otter_test) of
     {error, _} -> error(unreachable);
     Name ->
-      Name2 = case filename:join(Name, "native/otter_demo") of
+      Name2 = case filename:join(Name, "native/otter_test") of
         Binary when is_binary(Binary) -> binary_to_list(Binary);
         String -> String
       end,
@@ -186,7 +186,7 @@ cpu_time() -> exit(nif_not_loaded).
 -doc """
 Returns a resource whose `Drop` panics. The destructor wrapper in otter
 must `catch_unwind` the panic so the VM survives — see the S1 regression
-test in `otter_demo__nif_test`.
+test in `otter_test__nif_test`.
 """.
 -spec panicking_resource_new() -> reference().
 panicking_resource_new() -> exit(nif_not_loaded).
@@ -198,7 +198,7 @@ panicking_resource_new() -> exit(nif_not_loaded).
 Calls a NIF whose return type's `Encoder::encode` panics. The generated NIF
 wrapper must run return-value encoding inside `catch_unwind` so the panic
 surfaces as a `nif_panicked` error rather than unwinding across the FFI
-boundary — see the audit-16 regression test in `otter_demo__nif_test`.
+boundary — see the audit-16 regression test in `otter_test__nif_test`.
 """.
 -spec panic_in_encoder() -> no_return().
 panic_in_encoder() -> exit(nif_not_loaded).
@@ -209,7 +209,7 @@ panic_in_encoder() -> exit(nif_not_loaded).
 -doc """
 Returns a resource owning a connected socket pair, for exercising the
 `enif_select` stop path. See the `select_stop` test in
-`otter_demo__nif_test`.
+`otter_test__nif_test`.
 """.
 -spec select_resource_new() -> reference().
 select_resource_new() -> exit(nif_not_loaded).
@@ -242,7 +242,7 @@ select_x_register(_R, _Msg) -> exit(nif_not_loaded).
 
 -doc """
 Returns a resource for exercising `enif_monitor_process`. See the
-`monitor_down` test in `otter_demo__nif_test`.
+`monitor_down` test in `otter_test__nif_test`.
 """.
 -spec monitor_resource_new() -> reference().
 monitor_resource_new() -> exit(nif_not_loaded).

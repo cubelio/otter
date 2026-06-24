@@ -19,7 +19,7 @@ For the introduction, quick start, and feature tour:
 | [`otter/`](otter) | `otter-nif` | [![otter-nif](https://img.shields.io/crates/v/otter-nif?logo=rust&label=crates.io&color=E37222)](https://crates.io/crates/otter-nif) | [![docs.rs](https://img.shields.io/docsrs/otter-nif?logo=docsdotrs&label=docs.rs&color=E37222)](https://docs.rs/otter-nif) | Core Rust library — types, codecs, environment, resources (imported as `otter`) |
 | [`otter_codegen/`](otter_codegen) | `otter-nif-macros` | [![otter-nif-macros](https://img.shields.io/crates/v/otter-nif-macros?logo=rust&label=crates.io&color=E37222)](https://crates.io/crates/otter-nif-macros) | — | Proc macros (`#[otter::nif]`, `otter::init!`), re-exported through `otter-nif` |
 | [`rebar3_otter/`](rebar3_otter) | `rebar3_otter` | [![rebar3_otter](https://img.shields.io/hexpm/v/rebar3_otter?logo=erlang&label=hex.pm&color=6E4A7E)](https://hex.pm/packages/rebar3_otter) | [![hexdocs](https://img.shields.io/badge/hexdocs-online-6E4A7E?logo=hex)](https://rebar3-otter.hexdocs.pm) | rebar3 plugin — drives `cargo build`/`cargo clean` and installs the NIF into `priv/` |
-| [`test_apps/otter_demo/`](test_apps/otter_demo) | `otter_demo` | — | — | In-tree Erlang app exercising the bridge end-to-end |
+| [`otter_test/`](otter_test) | `otter_test` | — | — | In-tree Erlang app — end-to-end test suite exercising the bridge |
 
 You only ever depend on `otter-nif` (imported as `otter`); the codegen macros are
 re-exported through it.

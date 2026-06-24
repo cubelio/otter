@@ -1,11 +1,11 @@
 [package]
-name = "otter_demo"
+name = "otter_test"
 version = "0.1.0"
 edition = "2024"
 
 # Empty [workspace] declares this crate as its own workspace root, so it
 # does not get pulled into the otter workspace above. The otter workspace
-# also lists test_apps/* in its exclude, but this declaration makes the
+# also lists otter_test in its exclude, but this declaration makes the
 # isolation explicit and survives even if the exclude pattern changes.
 [workspace]
 
@@ -13,4 +13,4 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-otter-nif = { path = "../../../../otter", features = ["bigint"] }
+otter-nif = { path = "../../../otter", features = ["bigint"] }
