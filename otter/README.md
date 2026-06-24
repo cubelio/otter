@@ -19,7 +19,7 @@
 
 *`otter` is inspired by rustler; see [docs/RUSTLER.md](../docs/RUSTLER.md) for a detailed comparison.*
 
-**Status:** 0.3.1. The full surface is implemented and exercised end-to-end by [otter_test](../otter_test), but otter has not yet been used in production. Feedback on the API shape, the Erlang-first philosophy, and the safety model is welcome — open an issue.
+**Status:** 0.3.1. The full API surface is implemented, thoroughly tested end-to-end by [otter_test](../otter_test), and security-audited by Claude. Feedback on the API shape, the Erlang-first philosophy, and the safety model is welcome — open an issue.
 
 *Note on Elixir.* For now, `otter` ships no Elixir-specific tooling. Getting the Erlang-facing library right is the current priority; once the surface stabilizes, we will revisit building Elixir tooling on top of the `otter` framework or as an opt-in feature.
 
@@ -114,7 +114,9 @@ world
 ```
 
 To grow from here — more types, pre-declared atoms, an `on_load` callback,
-resources, scheduling — see [docs/USAGE.md](../docs/USAGE.md).
+resources, scheduling — see [docs/USAGE.md](../docs/USAGE.md). For a complete
+working example app that builds against the published packages, see
+[otter-demo](https://github.com/cubelio/otter-demo).
 
 ## Components
 
