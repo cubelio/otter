@@ -61,7 +61,7 @@ do(State) ->
           rebar_api:info(
             "Add to rebar.config:~n~n"
             "  {otter_crates, [~n"
-            "      #{name => ~s, path => \"native/~s\"}~n"
+            "      #{name => \"~s\", path => \"native/~s\"}~n"
             "  ]}.~n~n"
             "  {provider_hooks, [~n"
             "      {pre, [{compile, otter_compile}, {clean, otter_clean}]}~n"
@@ -102,7 +102,7 @@ cargo_toml(Name) ->
     "crate-type = [\"cdylib\"]\n"
     "\n"
     "[dependencies]\n"
-    "otter-nif = \"0.2\"\n",
+    "otter-nif = \"0.3\"\n",
     [Name]).
 
 -spec lib_rs(string()) -> iolist().

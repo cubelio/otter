@@ -1,8 +1,11 @@
-# Otter
+# `otter`
 
 [![CI](https://github.com/cubelio/otter/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/cubelio/otter/actions/workflows/ci.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![otter-nif](https://img.shields.io/crates/v/otter-nif?logo=rust&label=otter-nif&color=E37222)](https://crates.io/crates/otter-nif)
+[![docs.rs](https://img.shields.io/docsrs/otter-nif?logo=docsdotrs&label=docs.rs&color=E37222)](https://docs.rs/otter-nif)
 [![MSRV](https://img.shields.io/badge/MSRV-1.82-blue.svg)](#requirements)
+[![OTP](https://img.shields.io/badge/OTP-%E2%89%A526-blue?logo=erlang)](#requirements)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 **`otter` — write fast and efficient Erlang NIFs in Rust**
 
@@ -16,7 +19,7 @@
 
 *`otter` is inspired by rustler; see [docs/RUSTLER.md](../docs/RUSTLER.md) for a detailed comparison.*
 
-**Status:** 0.3.0. The full surface is implemented and exercised end-to-end by [test_apps/otter_demo](../test_apps/otter_demo), but otter has not yet been used in production. Feedback on the API shape, the Erlang-first philosophy, and the safety model is welcome — open an issue.
+**Status:** 0.3.1. The full API surface is implemented, thoroughly tested end-to-end by [otter_test](../otter_test), and security-audited by Claude. Feedback on the API shape, the Erlang-first philosophy, and the safety model is welcome — open an issue.
 
 *Note on Elixir.* For now, `otter` ships no Elixir-specific tooling. Getting the Erlang-facing library right is the current priority; once the surface stabilizes, we will revisit building Elixir tooling on top of the `otter` framework or as an opt-in feature.
 
@@ -34,13 +37,10 @@ $ rebar3 new app name=my_app
 $ cd my_app
 ```
 
-**2. Add the plugin to `rebar.config`.** The plugin lives in a subdirectory of
-the `otter` repo, so it must be referenced with `git_subdir`:
+**2. Add the plugin to `rebar.config`.** `rebar3_otter` is published on hex.pm:
 
 ```erlang
-{plugins, [
-    {rebar3_otter, {git_subdir, "https://github.com/cubelio/otter.git", {branch, "master"}, "rebar3_otter"}}
-]}.
+{plugins, [rebar3_otter]}.
 ```
 
 **3. Scaffold the NIF crate.**
@@ -74,7 +74,7 @@ prints this for you):
 
 ```erlang
 {otter_crates, [
-    #{name => my_nifs, path => "native/my_nifs"}
+    #{name => "my_nifs", path => "native/my_nifs"}
 ]}.
 {provider_hooks, [
     {pre, [{compile, otter_compile}, {clean, otter_clean}]}
@@ -114,7 +114,9 @@ world
 ```
 
 To grow from here — more types, pre-declared atoms, an `on_load` callback,
-resources, scheduling — see [docs/USAGE.md](../docs/USAGE.md).
+resources, scheduling — see [docs/USAGE.md](../docs/USAGE.md). For a complete
+working example app that builds against the published packages, see
+[otter-demo](https://github.com/cubelio/otter-demo).
 
 ## Components
 

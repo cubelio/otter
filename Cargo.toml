@@ -8,11 +8,11 @@ default-members = [
     "otter",
     "otter_codegen",
 ]
-# Test fixtures under test_apps/ are separate cargo projects with their
-# own workspaces. Excluding them keeps `cargo build` at the root from
-# treating their crates as workspace members.
+# The otter_test suite carries a separate cargo project (its NIF crate)
+# with its own workspace. Excluding it keeps `cargo build` at the root
+# from treating that crate as a workspace member.
 exclude = [
-    "test_apps/*",
+    "otter_test",
 ]
 
 [profile.dev]

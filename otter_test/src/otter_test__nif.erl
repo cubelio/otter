@@ -1,13 +1,13 @@
--module(otter_demo__nif).
+-module(otter_test__nif).
 -moduledoc """
-Erlang side of the otter_demo NIF.
+Erlang side of the otter_test NIF.
 
 Declares stubs for every NIF and the `-on_load` callback that loads the
 shared library. Each NIF stub exits with `nif_not_loaded` if it is ever
 called before `erlang:load_nif/2` has succeeded — in practice unreachable
 because the load happens automatically at module load time.
 
-EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
+EUnit tests live in `otter_test__nif_test`; run them with `rebar3 eunit`.
 """.
 
 -on_load(on_load/0).
@@ -20,7 +20,7 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 -export([hm_new/0, hm_put/3, hm_get/2]).
 -export([test_map/0, test_tuple/0, double_float/1, nan_float/0, test_pid/0, new_ref/0]).
 -export([divide/2, dirty_cpu_thread_type/0, send_from_thread/0]).
--export([send_to/2, cpu_time/0]).
+-export([send_to/2, send_move_to/2, cpu_time/0]).
 -export([panicking_resource_new/0, panic_in_encoder/0]).
 -export([select_resource_new/0, select_register/1, select_stop/1, select_stop_count/1]).
 -export([select_x_register/2]).
@@ -45,10 +45,10 @@ EUnit tests live in `otter_demo__nif_test`; run them with `rebar3 eunit`.
 
 -spec on_load() -> ok | {error, term()}.
 on_load() ->
-  case code:priv_dir(otter_demo) of
+  case code:priv_dir(otter_test) of
     {error, _} -> error(unreachable);
     Name ->
-      Name2 = case filename:join(Name, "native/otter_demo") of
+      Name2 = case filename:join(Name, "native/otter_test") of
         Binary when is_binary(Binary) -> binary_to_list(Binary);
         String -> String
       end,
@@ -174,6 +174,9 @@ send_from_thread() -> exit(nif_not_loaded).
 -spec send_to(pid(), term()) -> ok.
 send_to(_To, _Msg) -> exit(nif_not_loaded).
 
+-spec send_move_to(pid(), term()) -> ok.
+send_move_to(_To, _Msg) -> exit(nif_not_loaded).
+
 -spec cpu_time() -> erlang:timestamp().
 cpu_time() -> exit(nif_not_loaded).
 
@@ -183,7 +186,7 @@ cpu_time() -> exit(nif_not_loaded).
 -doc """
 Returns a resource whose `Drop` panics. The destructor wrapper in otter
 must `catch_unwind` the panic so the VM survives — see the S1 regression
-test in `otter_demo__nif_test`.
+test in `otter_test__nif_test`.
 """.
 -spec panicking_resource_new() -> reference().
 panicking_resource_new() -> exit(nif_not_loaded).
@@ -195,7 +198,7 @@ panicking_resource_new() -> exit(nif_not_loaded).
 Calls a NIF whose return type's `Encoder::encode` panics. The generated NIF
 wrapper must run return-value encoding inside `catch_unwind` so the panic
 surfaces as a `nif_panicked` error rather than unwinding across the FFI
-boundary — see the audit-16 regression test in `otter_demo__nif_test`.
+boundary — see the audit-16 regression test in `otter_test__nif_test`.
 """.
 -spec panic_in_encoder() -> no_return().
 panic_in_encoder() -> exit(nif_not_loaded).
@@ -206,7 +209,7 @@ panic_in_encoder() -> exit(nif_not_loaded).
 -doc """
 Returns a resource owning a connected socket pair, for exercising the
 `enif_select` stop path. See the `select_stop` test in
-`otter_demo__nif_test`.
+`otter_test__nif_test`.
 """.
 -spec select_resource_new() -> reference().
 select_resource_new() -> exit(nif_not_loaded).
@@ -239,7 +242,7 @@ select_x_register(_R, _Msg) -> exit(nif_not_loaded).
 
 -doc """
 Returns a resource for exercising `enif_monitor_process`. See the
-`monitor_down` test in `otter_demo__nif_test`.
+`monitor_down` test in `otter_test__nif_test`.
 """.
 -spec monitor_resource_new() -> reference().
 monitor_resource_new() -> exit(nif_not_loaded).

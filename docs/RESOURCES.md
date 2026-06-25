@@ -72,7 +72,7 @@ This reference is the BEAM's handle to your Rust struct. You cannot inspect it f
 ```rust
 // `ok` and `error` are declared in init!'s `atoms = [...]` list.
 #[otter::nif]
-fn put<'a>(env: CallEnv<'a>, key: Binary<'a>, val: Binary<'a>, map: ResourceArc<MyMap>) -> Atom {
+fn put<'id>(env: CallEnv<'id>, key: Binary<'id>, val: Binary<'id>, map: ResourceArc<MyMap>) -> Atom {
     map.data.lock().unwrap().insert(
         key.as_bytes(env).to_vec(),
         val.as_bytes(env).to_vec(),
@@ -81,7 +81,7 @@ fn put<'a>(env: CallEnv<'a>, key: Binary<'a>, val: Binary<'a>, map: ResourceArc<
 }
 
 #[otter::nif]
-fn get<'a>(env: CallEnv<'a>, key: Binary<'a>, map: ResourceArc<MyMap>) -> TypedTerm<'a> {
+fn get<'id>(env: CallEnv<'id>, key: Binary<'id>, map: ResourceArc<MyMap>) -> TypedTerm<'id> {
     match map.data.lock().unwrap().get(key.as_bytes(env)) {
         Some(val) => {
             let ok: TypedTerm = otter::atom![ok].into();
@@ -129,7 +129,7 @@ use otter::select::Event;
 
 impl Resource for MyMap {
     // A process monitored via `arc.monitor(Some(env), &pid)` exited.
-    fn down<'a>(&'a self, _env: CallbackEnv<'a>, _pid: LocalPid, _monitor: Monitor) {}
+    fn down<'id>(&'id self, _env: CallbackEnv<'id>, _pid: LocalPid, _monitor: Monitor) {}
 
     // The BEAM stopped monitoring an event selected on this resource
     // (see `enif_select`). `is_direct_call` is true when run synchronously

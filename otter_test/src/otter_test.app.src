@@ -1,5 +1,5 @@
-{application, otter_demo, [
-    {description, "Demo of the otter NIF library"},
+{application, otter_test, [
+    {description, "End-to-end test suite for the otter NIF library"},
     {vsn, "0.1.0"},
     {registered, []},
     {applications, [kernel, stdlib]},

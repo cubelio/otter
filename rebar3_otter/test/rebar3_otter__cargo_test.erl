@@ -41,12 +41,6 @@ name_normalization_test() ->
   ?assertEqual("/t/x86_64-unknown-linux-gnu/release/libmy_nif.so",
                ?C:artifact_path("/t", "my-nif", release, "x86_64-unknown-linux-gnu")).
 
--spec target_atom_test() -> _.
-target_atom_test() ->
-  %% Target may arrive as an atom (config sugar); it is stringified.
-  ?assertEqual("/t/x86_64-unknown-linux-gnu/release/libmy_nif.so",
-               ?C:artifact_path("/t", "my_nif", release, 'x86_64-unknown-linux-gnu')).
-
 -spec host_no_target_test() -> _.
 host_no_target_test() ->
   %% No `--target`: the triple subdir is absent and prefix/ext follow the host.

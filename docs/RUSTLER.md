@@ -1,16 +1,19 @@
 # Otter vs Rustler
 
-There is already an established library that builds Erlang NIFs from Rust,
-`rustler`. As a regular user of `rustler`, I ran up against many points of
-friction. The design and documentation lean toward Elixir over Erlang. The API
-surface made several opinionated decisions, like how to convert terms and when
-to raise an exception. It prefers syntactic sugar to explicitness.
+*Compares **otter 0.3.1** against **rustler 0.38.0** (the `_oss/rustler` tree). Every
+claim names the mechanism on each side, so it is checkable against source.*
 
-I built `otter` to be on the opposite end of the spectrum. Everything is
-explicit and as close to the original NIF C API as possible. The design
-philosophy was to expose the full capabilities of the NIF API in the most
-idiomatic Rust way without any opinionated decisions hidden in the scaffolding.
-If a NIF programmer wouldn't recognize a concept, it doesn't belong.
+`rustler` is the established way to write Erlang NIFs in Rust, and it gets a great
+deal right. But as a regular `rustler` user I kept hitting the same friction: the
+design and documentation lean toward Elixir over Erlang, and the API makes
+opinionated decisions — how terms convert, when an exception is raised — that prefer
+syntactic sugar to explicitness. For an Erlang developer who wants to know exactly
+what their NIF is doing, that is working against the grain.
+
+I built `otter` at the opposite end of the spectrum: everything is explicit and as
+close to the `erl_nif` C API as possible, exposing the API's full capabilities the
+most idiomatic Rust way, with no opinionated decisions hidden in the scaffolding. If
+a NIF programmer wouldn't recognize a concept, it doesn't belong.
 
 This document is a long-form comparison of `rustler` and `otter`: where the two
 libraries genuinely differ, with the mechanism named on each side so every claim
@@ -36,9 +39,31 @@ and Elixir; rustler's own README states that "Elixir is favored as of now,"
 operationalized through the `rustler_mix` build tool, the `mix rustler.new`
 getting-started flow, Elixir-flavored examples, and Elixir-specific derive macros
 (`NifStruct`, `NifException`). It is mature, widely deployed, and well engineered.
-This document assumes rustler 0.38 (the `_oss/rustler` tree).
 
 Repository: https://github.com/rusterlium/rustler
+
+---
+
+## At a glance
+
+| | rustler 0.38 | otter 0.3.1 |
+|---|---|---|
+| Audience & docs | Elixir-favored (`mix`, `rustler.new`) | Erlang-first, mapped to `erl_nif` |
+| Hot code upgrade | no `upgrade`/`unload`/`priv_data` | all three; `upgrade` always installed |
+| Improper lists | decoder **panics** on a non-`[]` tail | first-class cons cells; clean codec error |
+| In-NIF attributed steal-send | off-thread, NULL-caller only | full 2×2, incl. `send_move_from` |
+| Bitstring / Port / Fun | not first-class | decoded as distinct types |
+| `enif_select` / `enif_set_option` | no safe wrapper | wrapped |
+| Env identity | advisory brand, backstopped at runtime | compile-time brand, no runtime check |
+| Term size | 2 words (term + env) | 1 word |
+| Env kind / pid locality | runtime enum + branch | distinct types |
+| NIF registration | linker-section discovery (`inventory`) | explicit `init!` list, compile-checked |
+| Narrow integers | `as`-cast, silently truncates (`300`→`44`) | checked → `IntegerOverflow` |
+| Float decode | absorbs integer terms | floats only |
+| Raise vs. return | one `Error` enum conflates both | split: `Result<T, Raised>` |
+| Atoms | Latin-1 by default (UTF-8 opt-in) | always UTF-8 |
+
+Each row is detailed, with the mechanism on each side, in the sections that follow.
 
 ---
 
@@ -126,8 +151,11 @@ and always passes a NULL caller. So in rustler:
   off-thread-only.
 - You cannot attribute a steal-send to the calling process — it is always NULL-caller.
 
-`send_move` and `send_move_from` have no rustler equivalent. (The per-send and
-per-clear *costs* of rustler's send path are covered under efficiency, below.)
+`send_move_from` has no rustler equivalent — rustler's only steal path
+(`send_and_clear`) is off-thread and NULL-caller, so an in-NIF attributed steal is
+impossible. (`send_move` corresponds to `send_and_clear`, but otter splits the send
+from the clear.) (The per-send and per-clear *costs* of rustler's send path are
+covered under efficiency, below.)
 
 ### Term types rustler's surface omits
 
@@ -360,16 +388,6 @@ per use. (Because the stamp is globally unique, a match alone identifies the exa
 arena generation, so otter needs no env-pointer comparison and is immune to the
 freed-then-reused-env aliasing that a pointer check is exposed to.)
 
-### The honest counter-trade
-
-Faithfulness is not free everywhere. Otter's `Binary<'id>` is a lean one-word term that
-does not cache the inspected buffer, so each `as_bytes(env)` re-runs
-`enif_inspect_binary` and requires an env. Rustler's `Binary` caches `buf`/`size` at
-inspect time, so its `as_slice` is a pointer read with no env and no FFI call. Otter
-trades a per-read inspect for a smaller, env-free-to-store term (and offers
-`BinaryBuf`, whose owner *does* cache the allocation, for the read-heavy case). The
-point of the comparison is the trade, stated in both directions — not a clean sweep.
-
 ---
 
 ## What otter takes from rustler
@@ -418,3 +436,21 @@ design choice, not a gap.
 position against Elixir. otter currently ships no Elixir tooling because getting the
 Erlang-facing surface right is the priority; building Elixir-facing tooling on top of
 otter — or as an opt-in feature — is open once the surface stabilizes.
+
+---
+
+## Who otter is for
+
+otter is for anyone writing a NIF who wants to see exactly what their code does on top
+of `erl_nif`:
+
+- You're writing an **Erlang** application — or an Elixir one where you'd rather work
+  with the real C surface than an Elixir-shaped convenience layer.
+- You need **hot code upgrade**, `unload`, or `priv_data` lifecycle control.
+- You want **faithful types** — range-checked decoders, an explicit raise-vs-return
+  split, no silent reinterpretation.
+- You need what rustler's surface leaves out: improper lists, `Bitstring` / `Port` /
+  `Fun`, `enif_select`, in-NIF attributed steal-sends.
+
+Elixir-specific tooling and serde aren't here yet — that's a matter of scope and
+sequencing, not a limitation of the design (see *What otter deliberately excludes*).

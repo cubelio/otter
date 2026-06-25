@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.1 — 2026-06-25
+
+Documentation-only patch (plus one crate-metadata field).
+
+- Reframed the README intros around otter's Erlang-first positioning and linked the
+  `otter-demo` example app.
+- Reworked `docs/RUSTLER.md`: a dated version marker, an at-a-glance comparison table,
+  a present-tense opening, and a "Who otter is for" section.
+- Added a "Start here" guide and a lifetime-annotation callout to `docs/USAGE.md`.
+- Standardized environment brand lifetimes to `'id` throughout the docs.
+- Fixed stale references in the guides (the `otter-nif` version and the hex plugin
+  form) and corrected rustler type/version labels in `docs/MIGRATION.md`.
+- Corrected the rustler send-matrix comparison in `docs/RUSTLER.md`: `send_move`
+  is equivalent to rustler's `OwnedEnv::send_and_clear` (off-thread, NULL-caller
+  steal); only `send_move_from` (in-NIF, caller-attributed steal) has no rustler
+  equivalent. Dropped the speculative "honest counter-trade" section.
+- Added `homepage` to the `otter-nif` crate metadata.
+
 ## 0.3.0 — 2026-06-22
 
 Branded env/term spine, native codecs, and the enif-ffi extraction. Supersedes

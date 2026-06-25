@@ -128,9 +128,9 @@ jobs:
           rebar3-version: "3.27.0"
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: test_apps/otter_demo/native/otter_demo
-      - name: otter_demo EUnit (build via plugin + load under BEAM)
-        run: cd test_apps/otter_demo && rebar3 eunit
+          workspaces: otter_test/native/otter_test
+      - name: otter_test EUnit (build via plugin + load under BEAM)
+        run: cd otter_test && rebar3 eunit
       - name: rebar3_otter plugin EUnit (scaffold + cdylib-path logic)
         run: cd rebar3_otter && rebar3 eunit
         env:
